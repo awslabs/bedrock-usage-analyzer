@@ -1,0 +1,28 @@
+#!/bin/bash
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Refresh FM quota mappings
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Create virtual environment if it doesn't exist
+if [ ! -d "$PROJECT_ROOT/.venv" ]; then
+    echo "Creating virtual environment..."
+    python3 -m venv "$PROJECT_ROOT/.venv"
+    
+    # Activate and install package
+    source "$PROJECT_ROOT/.venv/bin/activate"
+    echo "Installing bedrock-usage-analyzer..."
+    pip install -e "$PROJECT_ROOT" > /dev/null 2>&1
+else
+    # Activate existing virtual environment
+    source "$PROJECT_ROOT/.venv/bin/activate"
+fi
+
+# Run the Python module with all arguments
+python -m bedrock_analyzer.cli.refresh fm-quotas "$@"
+
+# Deactivate virtual environment
+deactivate

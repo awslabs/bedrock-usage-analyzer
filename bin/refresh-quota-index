@@ -1,0 +1,30 @@
+#!/bin/bash
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Generate quota index CSV for validation
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+VENV_DIR="$PROJECT_ROOT/.venv"
+
+# Create virtual environment if it doesn't exist
+if [ ! -d "$VENV_DIR" ]; then
+    echo "Creating virtual environment..."
+    python3 -m venv "$VENV_DIR"
+fi
+
+# Activate virtual environment
+source "$VENV_DIR/bin/activate"
+
+# Install package in editable mode if not already installed
+if ! python -c "import bedrock_analyzer" 2>/dev/null; then
+    echo "Installing bedrock_analyzer package..."
+    pip install -q -e "$PROJECT_ROOT"
+fi
+
+# Change to project root (needed for metadata/ paths)
+cd "$PROJECT_ROOT"
+
+# Run the quota index command
+python -m bedrock_analyzer.cli.refresh quota-index

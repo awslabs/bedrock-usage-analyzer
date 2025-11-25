@@ -1,3 +1,6 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 rules:
   # Disable AI detection rules - these are false positives for Bedrock model IDs
   # This project analyzes Bedrock foundation models, so references to Anthropic and OpenAI

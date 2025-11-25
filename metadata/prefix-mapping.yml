@@ -1,0 +1,41 @@
+prefixes:
+- description: cross-region inference profile
+  is_regional: true
+  prefix: apac
+  quota_keyword: cross-region
+  source: discovered
+- description: cross-region inference profile
+  is_regional: true
+  prefix: au
+  quota_keyword: cross-region
+  source: discovered
+- description: on-demand
+  is_regional: false
+  prefix: base
+  quota_keyword: on-demand
+  source: manual
+- description: cross-region inference profile
+  is_regional: true
+  prefix: ca
+  quota_keyword: cross-region
+  source: discovered
+- description: cross-region inference profile
+  is_regional: true
+  prefix: eu
+  quota_keyword: cross-region
+  source: discovered
+- description: global inference profile
+  is_regional: false
+  prefix: global
+  quota_keyword: global
+  source: manual
+- description: cross-region inference profile
+  is_regional: true
+  prefix: jp
+  quota_keyword: cross-region
+  source: discovered
+- description: cross-region inference profile
+  is_regional: true
+  prefix: us
+  quota_keyword: cross-region
+  source: discovered

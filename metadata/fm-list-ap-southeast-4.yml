@@ -1,93 +1,155 @@
 models:
-- model_id: amazon.nova-lite-v1:0
-  provider: Amazon
-  inference_types:
-  - INFERENCE_PROFILE
-  inference_profiles:
-  - apac
-  endpoints:
+- endpoints:
     apac:
       quotas:
-        tpm: L-7C42E72A
-        rpm: L-89F8391A
-        tpd: null
         concurrent: null
-- model_id: amazon.nova-pro-v1:0
-  provider: Amazon
-  inference_types:
-  - INFERENCE_PROFILE
+        rpm:
+          code: L-89F8391A
+          name: Cross-region model inference requests per minute for Amazon Nova Lite
+        tpd: null
+        tpm:
+          code: L-7C42E72A
+          name: Cross-region model inference tokens per minute for Amazon Nova Lite
   inference_profiles:
   - apac
-  endpoints:
-    apac:
-      quotas:
-        tpm: L-C0326783
-        rpm: L-ED46B8C5
-        tpd: null
-        concurrent: null
-- model_id: anthropic.claude-haiku-4-5-20251001-v1:0
-  provider: Anthropic
   inference_types:
   - INFERENCE_PROFILE
+  model_id: amazon.nova-lite-v1:0
+  provider: Amazon
+- endpoints:
+    apac:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-ED46B8C5
+          name: Cross-region model inference requests per minute for Amazon Nova Pro
+        tpd: null
+        tpm:
+          code: L-C0326783
+          name: Cross-region model inference tokens per minute for Amazon Nova Pro
+  inference_profiles:
+  - apac
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: amazon.nova-pro-v1:0
+  provider: Amazon
+- endpoints:
+    au:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-CCA5DF70
+          name: Cross-region model inference requests per minute for Anthropic Claude
+            Haiku 4.5
+        tpd:
+          code: L-B5C049AE
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Haiku 4.5
+        tpm:
+          code: L-58BE175A
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            Haiku 4.5
+    global:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-E5084BBA
+          name: Global cross-region model inference requests per minute for Anthropic
+            Claude Haiku 4.5
+        tpd:
+          code: L-B5C049AE
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Haiku 4.5
+        tpm:
+          code: L-9A11C666
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Haiku 4.5
   inference_profiles:
   - au
   - global
-  endpoints:
-    au:
-      quotas:
-        tpm: L-58BE175A
-        rpm: L-CCA5DF70
-        tpd: L-6120CF2D
-        concurrent: null
-    global:
-      quotas:
-        tpm: L-9A11C666
-        rpm: L-E5084BBA
-        tpd: L-B5C049AE
-        concurrent: null
-- model_id: anthropic.claude-sonnet-4-20250514-v1:0
-  provider: Anthropic
   inference_types:
   - INFERENCE_PROFILE
-  inference_profiles:
-  - apac
-  endpoints:
+  model_id: anthropic.claude-haiku-4-5-20251001-v1:0
+  provider: Anthropic
+- endpoints:
     apac:
       quotas:
-        tpm: L-59759B4A
-        rpm: L-559DCC33
-        tpd: L-22F701C5
         concurrent: null
-- model_id: anthropic.claude-sonnet-4-5-20250929-v1:0
-  provider: Anthropic
+        rpm:
+          code: L-559DCC33
+          name: Cross-region model inference requests per minute for Anthropic Claude
+            Sonnet 4 V1
+        tpd:
+          code: L-22F701C5
+          name: Model invocation max tokens per day for Anthropic Claude Sonnet 4
+            V1 (doubled for cross-region calls)
+        tpm:
+          code: L-59759B4A
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            Sonnet 4 V1
+  inference_profiles:
+  - apac
   inference_types:
   - INFERENCE_PROFILE
+  model_id: anthropic.claude-sonnet-4-20250514-v1:0
+  provider: Anthropic
+- endpoints:
+    au:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-4A6BFAB1
+          name: Cross-region model inference requests per minute for Anthropic Claude
+            Sonnet 4.5 V1
+        tpd:
+          code: L-381AD9EE
+          name: Model invocation max tokens per day for Anthropic Claude Sonnet 4.5
+            V1 (doubled for cross-region calls)
+        tpm:
+          code: L-F4DDD3EB
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            Sonnet 4.5 V1
+    global:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-DB84CE56
+          name: Global cross-region model inference requests per minute for Anthropic
+            Claude Sonnet 4.5 V1
+        tpd:
+          code: L-BC182137
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Sonnet 4.5 V1
+        tpm:
+          code: L-27C57EE8
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Sonnet 4.5 V1
   inference_profiles:
   - au
   - global
-  endpoints:
-    au:
-      quotas:
-        tpm: L-8EA73537
-        rpm: L-A052927A
-        tpd: L-E107194C
-        concurrent: null
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-sonnet-4-5-20250929-v1:0
+  provider: Anthropic
+- endpoints:
     global:
       quotas:
-        tpm: L-27C57EE8
-        rpm: L-DB84CE56
-        tpd: L-BC182137
         concurrent: null
-- model_id: cohere.embed-v4:0
+        rpm:
+          code: L-7089DC7D
+          name: Global cross-region model inference requests per minute for Cohere
+            Embed V4
+        tpd:
+          code: L-795ADAB0
+          name: Global cross-region model inference tokens per day for Cohere Embed
+            V4
+        tpm:
+          code: L-02DFBB76
+          name: Global cross-region model inference tokens per minute for Cohere Embed
+            V4
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: cohere.embed-v4:0
   provider: Cohere
-  inference_types:
-  - INFERENCE_PROFILE
-  inference_profiles:
-  - global
-  endpoints:
-    global:
-      quotas:
-        tpm: L-02DFBB76
-        rpm: L-7089DC7D
-        tpd: L-795ADAB0
-        concurrent: null

@@ -1,6 +1,17 @@
 .amazonq/
 results/
 dev/tmp/
+dev/utils/
 *.DS_Store
 __pycache__/
 .venv/
+.backup*/
+docs/
+
+# Python build artifacts
+*.egg-info/
+*.egg
+dist/
+build/
+*.pyc
+*.pyo

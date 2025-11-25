@@ -1,404 +1,589 @@
 models:
-- model_id: amazon.nova-lite-v1:0
-  provider: Amazon
-  inference_types:
-  - INFERENCE_PROFILE
-  inference_profiles:
-  - apac
-  endpoints:
+- endpoints:
     apac:
       quotas:
-        tpm: L-7C42E72A
-        rpm: L-89F8391A
-        tpd: null
         concurrent: null
-- model_id: amazon.nova-micro-v1:0
-  provider: Amazon
-  inference_types:
-  - INFERENCE_PROFILE
+        rpm:
+          code: L-89F8391A
+          name: Cross-region model inference requests per minute for Amazon Nova Lite
+        tpd: null
+        tpm:
+          code: L-7C42E72A
+          name: Cross-region model inference tokens per minute for Amazon Nova Lite
   inference_profiles:
   - apac
-  endpoints:
-    apac:
-      quotas:
-        tpm: L-DC7FF66C
-        rpm: L-3F110E0F
-        tpd: null
-        concurrent: null
-- model_id: amazon.nova-pro-v1:0
-  provider: Amazon
   inference_types:
   - INFERENCE_PROFILE
-  inference_profiles:
-  - apac
-  endpoints:
+  model_id: amazon.nova-lite-v1:0
+  provider: Amazon
+- endpoints:
     apac:
       quotas:
-        tpm: L-C0326783
-        rpm: L-ED46B8C5
-        tpd: null
         concurrent: null
-- model_id: amazon.titan-embed-image-v1
-  provider: Amazon
+        rpm:
+          code: L-3F110E0F
+          name: Cross-region model inference requests per minute for Amazon Nova Micro
+        tpd: null
+        tpm:
+          code: L-DC7FF66C
+          name: Cross-region model inference tokens per minute for Amazon Nova Micro
+  inference_profiles:
+  - apac
   inference_types:
-  - ON_DEMAND
-  endpoints:
+  - INFERENCE_PROFILE
+  model_id: amazon.nova-micro-v1:0
+  provider: Amazon
+- endpoints:
+    apac:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-ED46B8C5
+          name: Cross-region model inference requests per minute for Amazon Nova Pro
+        tpd: null
+        tpm:
+          code: L-C0326783
+          name: Cross-region model inference tokens per minute for Amazon Nova Pro
+  inference_profiles:
+  - apac
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: amazon.nova-pro-v1:0
+  provider: Amazon
+- endpoints:
     base:
       quotas:
-        tpm: L-ABC24664
-        rpm: L-DF0E34D4
-        tpd: null
         concurrent: null
-- model_id: amazon.titan-embed-image-v1:0
-  provider: Amazon
+        rpm:
+          code: L-DF0E34D4
+          name: On-demand model inference requests per minute for Amazon Titan Multimodal
+            Embeddings G1
+        tpd: null
+        tpm:
+          code: L-ABC24664
+          name: On-demand model inference tokens per minute for Amazon Titan Multimodal
+            Embeddings G1
   inference_types:
+  - ON_DEMAND
+  model_id: amazon.titan-embed-image-v1
+  provider: Amazon
+- inference_types:
   - PROVISIONED
-- model_id: amazon.titan-embed-text-v2:0
+  model_id: amazon.titan-embed-image-v1:0
   provider: Amazon
-  inference_types:
-  - ON_DEMAND
-  endpoints:
+- endpoints:
     base:
       quotas:
-        tpm: L-DE641971
-        rpm: L-26C560CE
-        tpd: null
         concurrent: null
-- model_id: amazon.titan-image-generator-v1
-  provider: Amazon
+        rpm:
+          code: L-26C560CE
+          name: On-demand model inference requests per minute for Amazon Titan Text
+            Embeddings V2
+        tpd: null
+        tpm:
+          code: L-DE641971
+          name: On-demand model inference tokens per minute for Amazon Titan Text
+            Embeddings V2
   inference_types:
   - ON_DEMAND
-  endpoints:
+  model_id: amazon.titan-embed-text-v2:0
+  provider: Amazon
+- endpoints:
     base:
       quotas:
-        tpm: L-2B715ABD
-        rpm: L-7DBB06FD
-        tpd: null
         concurrent: null
-- model_id: amazon.titan-image-generator-v1:0
-  provider: Amazon
+        rpm:
+          code: L-7DBB06FD
+          name: On-demand model inference requests per minute for Amazon Titan Image
+            Generator G1
+        tpd: null
+        tpm:
+          code: L-2B715ABD
+          name: On-demand model inference tokens per minute for Amazon Titan Image
+            Generator G1
   inference_types:
+  - ON_DEMAND
+  model_id: amazon.titan-image-generator-v1
+  provider: Amazon
+- inference_types:
   - PROVISIONED
-- model_id: amazon.titan-text-express-v1
+  model_id: amazon.titan-image-generator-v1:0
   provider: Amazon
-  inference_types:
-  - ON_DEMAND
-  endpoints:
+- endpoints:
     base:
       quotas:
-        tpm: L-44992E63
-        rpm: L-9EAB0D12
-        tpd: null
         concurrent: null
-- model_id: amazon.titan-text-express-v1:0:8k
-  provider: Amazon
-  inference_types:
-  - PROVISIONED
-- model_id: amazon.titan-text-lite-v1
-  provider: Amazon
+        rpm:
+          code: L-9EAB0D12
+          name: On-demand model inference requests per minute for Amazon Titan Text
+            Express
+        tpd: null
+        tpm:
+          code: L-44992E63
+          name: On-demand model inference tokens per minute for Amazon Titan Text
+            Express
   inference_types:
   - ON_DEMAND
-  endpoints:
+  model_id: amazon.titan-text-express-v1
+  provider: Amazon
+- inference_types:
+  - PROVISIONED
+  model_id: amazon.titan-text-express-v1:0:8k
+  provider: Amazon
+- endpoints:
     base:
       quotas:
-        tpm: L-70BE83E9
-        rpm: L-A70F1DE3
-        tpd: null
         concurrent: null
-- model_id: amazon.titan-text-lite-v1:0:4k
+        rpm:
+          code: L-A70F1DE3
+          name: On-demand model inference requests per minute for Amazon Titan Text
+            Lite
+        tpd: null
+        tpm:
+          code: L-70BE83E9
+          name: On-demand model inference tokens per minute for Amazon Titan Text
+            Lite
+  inference_types:
+  - ON_DEMAND
+  model_id: amazon.titan-text-lite-v1
   provider: Amazon
-  inference_types:
+- inference_types:
   - PROVISIONED
-- model_id: anthropic.claude-3-5-sonnet-20240620-v1:0
-  provider: Anthropic
-  inference_types:
-  - INFERENCE_PROFILE
-  inference_profiles:
-  - apac
-  endpoints:
+  model_id: amazon.titan-text-lite-v1:0:4k
+  provider: Amazon
+- endpoints:
     apac:
       quotas:
-        tpm: L-479B647F
-        rpm: L-F457545D
-        tpd: null
         concurrent: null
-- model_id: anthropic.claude-3-5-sonnet-20241022-v2:0
-  provider: Anthropic
-  inference_types:
-  - INFERENCE_PROFILE
+        rpm:
+          code: L-F457545D
+          name: Cross-region model inference requests per minute for Anthropic Claude
+            3.5 Sonnet
+        tpd: null
+        tpm:
+          code: L-479B647F
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            3.5 Sonnet
   inference_profiles:
   - apac
-  endpoints:
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-3-5-sonnet-20240620-v1:0
+  provider: Anthropic
+- endpoints:
     apac:
       quotas:
-        tpm: L-FF8B4E28
-        rpm: L-1D3E59A3
-        tpd: null
         concurrent: null
-- model_id: anthropic.claude-3-7-sonnet-20250219-v1:0
-  provider: Anthropic
-  inference_types:
-  - INFERENCE_PROFILE
+        rpm:
+          code: L-1D3E59A3
+          name: Cross-Region model inference requests per minute for Anthropic Claude
+            3.5 Sonnet V2
+        tpd: null
+        tpm:
+          code: L-FF8B4E28
+          name: Cross-Region model inference tokens per minute for Anthropic Claude
+            3.5 Sonnet V2
   inference_profiles:
   - apac
-  endpoints:
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-3-5-sonnet-20241022-v2:0
+  provider: Anthropic
+- endpoints:
     apac:
       quotas:
-        tpm: L-6E888CC2
-        rpm: L-3D8CC480
-        tpd: L-9EB71894
         concurrent: null
-- model_id: anthropic.claude-3-haiku-20240307-v1:0
-  provider: Anthropic
-  inference_types:
-  - ON_DEMAND
-  - INFERENCE_PROFILE
+        rpm:
+          code: L-3D8CC480
+          name: Cross-region model inference requests per minute for Anthropic Claude
+            3.7 Sonnet V1
+        tpd:
+          code: L-9EB71894
+          name: Model invocation max tokens per day for Anthropic Claude 3.7 Sonnet
+            V1 (doubled for cross-region calls)
+        tpm:
+          code: L-6E888CC2
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            3.7 Sonnet V1
   inference_profiles:
   - apac
-  endpoints:
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-3-7-sonnet-20250219-v1:0
+  provider: Anthropic
+- endpoints:
+    apac:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-616A3F5B
+          name: Cross-region model inference requests per minute for Anthropic Claude
+            3 Haiku
+        tpd: null
+        tpm:
+          code: L-DCADBC78
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            3 Haiku
     base:
       quotas:
-        tpm: L-8CE99163
-        rpm: L-2DC80978
-        tpd: null
         concurrent: null
-    apac:
-      quotas:
-        tpm: L-DCADBC78
-        rpm: L-616A3F5B
+        rpm:
+          code: L-2DC80978
+          name: On-demand model inference requests per minute for Anthropic Claude
+            3 Haiku
         tpd: null
-        concurrent: null
-- model_id: anthropic.claude-3-haiku-20240307-v1:0:48k
-  provider: Anthropic
-  inference_types:
-  - PROVISIONED
-- model_id: anthropic.claude-3-sonnet-20240229-v1:0
-  provider: Anthropic
-  inference_types:
-  - ON_DEMAND
-  - INFERENCE_PROFILE
+        tpm:
+          code: L-8CE99163
+          name: On-demand model inference tokens per minute for Anthropic Claude 3
+            Haiku
   inference_profiles:
   - apac
-  endpoints:
-    base:
-      quotas:
-        tpm: L-4C35BB2A
-        rpm: L-F406804E
-        tpd: null
-        concurrent: null
+  inference_types:
+  - ON_DEMAND
+  model_id: anthropic.claude-3-haiku-20240307-v1:0
+  provider: Anthropic
+- inference_types:
+  - PROVISIONED
+  model_id: anthropic.claude-3-haiku-20240307-v1:0:48k
+  provider: Anthropic
+- endpoints:
     apac:
       quotas:
-        tpm: L-5DF13F64
-        rpm: L-46591118
-        tpd: null
         concurrent: null
-- model_id: anthropic.claude-3-sonnet-20240229-v1:0:28k
-  provider: Anthropic
-  inference_types:
-  - PROVISIONED
-- model_id: anthropic.claude-haiku-4-5-20251001-v1:0
-  provider: Anthropic
-  inference_types:
-  - INFERENCE_PROFILE
+        rpm:
+          code: L-46591118
+          name: Cross-region model inference requests per minute for Anthropic Claude
+            3 Sonnet
+        tpd: null
+        tpm:
+          code: L-5DF13F64
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            3 Sonnet
+    base:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-F406804E
+          name: On-demand model inference requests per minute for Anthropic Claude
+            3 Sonnet
+        tpd: null
+        tpm:
+          code: L-4C35BB2A
+          name: On-demand model inference tokens per minute for Anthropic Claude 3
+            Sonnet
   inference_profiles:
-  - global
-  endpoints:
+  - apac
+  inference_types:
+  - ON_DEMAND
+  model_id: anthropic.claude-3-sonnet-20240229-v1:0
+  provider: Anthropic
+- inference_types:
+  - PROVISIONED
+  model_id: anthropic.claude-3-sonnet-20240229-v1:0:28k
+  provider: Anthropic
+- endpoints:
     global:
       quotas:
-        tpm: L-9A11C666
-        rpm: L-E5084BBA
-        tpd: L-B5C049AE
         concurrent: null
-- model_id: anthropic.claude-sonnet-4-20250514-v1:0
-  provider: Anthropic
+        rpm:
+          code: L-E5084BBA
+          name: Global cross-region model inference requests per minute for Anthropic
+            Claude Haiku 4.5
+        tpd:
+          code: L-B5C049AE
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Haiku 4.5
+        tpm:
+          code: L-9A11C666
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Haiku 4.5
+  inference_profiles:
+  - global
   inference_types:
   - INFERENCE_PROFILE
-  inference_profiles:
-  - apac
-  endpoints:
+  model_id: anthropic.claude-haiku-4-5-20251001-v1:0
+  provider: Anthropic
+- endpoints:
     apac:
       quotas:
-        tpm: L-59759B4A
-        rpm: L-559DCC33
-        tpd: L-22F701C5
         concurrent: null
-- model_id: anthropic.claude-sonnet-4-5-20250929-v1:0
+        rpm:
+          code: L-559DCC33
+          name: Cross-region model inference requests per minute for Anthropic Claude
+            Sonnet 4 V1
+        tpd:
+          code: L-22F701C5
+          name: Model invocation max tokens per day for Anthropic Claude Sonnet 4
+            V1 (doubled for cross-region calls)
+        tpm:
+          code: L-59759B4A
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            Sonnet 4 V1
+  inference_profiles:
+  - apac
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-sonnet-4-20250514-v1:0
   provider: Anthropic
-  inference_types:
-  - INFERENCE_PROFILE
-  inference_profiles:
-  - global
-  endpoints:
+- endpoints:
     global:
       quotas:
-        tpm: L-27C57EE8
-        rpm: L-DB84CE56
-        tpd: L-BC182137
         concurrent: null
-- model_id: cohere.embed-english-v3
-  provider: Cohere
-  inference_types:
-  - ON_DEMAND
-  endpoints:
-    base:
-      quotas:
-        tpm: L-A2BE277A
-        rpm: L-FF8E7864
-        tpd: null
-        concurrent: null
-- model_id: cohere.embed-multilingual-v3
-  provider: Cohere
-  inference_types:
-  - ON_DEMAND
-  endpoints:
-    base:
-      quotas:
-        tpm: L-C2F86908
-        rpm: L-9E5BD0C6
-        tpd: null
-        concurrent: null
-- model_id: cohere.embed-v4:0
-  provider: Cohere
-  inference_types:
-  - INFERENCE_PROFILE
+        rpm:
+          code: L-DB84CE56
+          name: Global cross-region model inference requests per minute for Anthropic
+            Claude Sonnet 4.5 V1
+        tpd:
+          code: L-BC182137
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Sonnet 4.5 V1
+        tpm:
+          code: L-27C57EE8
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Sonnet 4.5 V1
   inference_profiles:
   - global
-  endpoints:
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-sonnet-4-5-20250929-v1:0
+  provider: Anthropic
+- endpoints:
+    base:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-FF8E7864
+          name: On-demand model inference requests per minute for Cohere Embed English
+        tpd: null
+        tpm:
+          code: L-A2BE277A
+          name: On-demand model inference tokens per minute for Cohere Embed English
+  inference_types:
+  - ON_DEMAND
+  model_id: cohere.embed-english-v3
+  provider: Cohere
+- endpoints:
+    base:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+  inference_types:
+  - ON_DEMAND
+  model_id: cohere.embed-multilingual-v3
+  provider: Cohere
+- endpoints:
     global:
       quotas:
-        tpm: L-02DFBB76
-        rpm: L-7089DC7D
-        tpd: L-795ADAB0
         concurrent: null
-- model_id: deepseek.v3-v1:0
+        rpm:
+          code: L-7089DC7D
+          name: Global cross-region model inference requests per minute for Cohere
+            Embed V4
+        tpd:
+          code: L-795ADAB0
+          name: Global cross-region model inference tokens per day for Cohere Embed
+            V4
+        tpm:
+          code: L-02DFBB76
+          name: Global cross-region model inference tokens per minute for Cohere Embed
+            V4
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: cohere.embed-v4:0
+  provider: Cohere
+- endpoints:
+    base:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-7A5451CB
+          name: On-demand model inference requests per minute for DeepSeek V3 V1
+        tpd: null
+        tpm:
+          code: L-30A6895A
+          name: On-demand model inference tokens per minute for DeepSeek V3 V1
+  inference_types:
+  - ON_DEMAND
+  model_id: deepseek.v3-v1:0
   provider: DeepSeek
-  inference_types:
-  - ON_DEMAND
-  endpoints:
+- endpoints:
     base:
       quotas:
-        tpm: L-30A6895A
-        rpm: L-7A5451CB
-        tpd: null
         concurrent: null
-- model_id: meta.llama3-70b-instruct-v1:0
+        rpm:
+          code: L-46D383AF
+          name: On-demand model inference requests per minute for Meta Llama 3 70B
+            Instruct
+        tpd: null
+        tpm:
+          code: L-609E24B0
+          name: On-demand model inference tokens per minute for Meta Llama 3 70B Instruct
+  inference_types:
+  - ON_DEMAND
+  model_id: meta.llama3-70b-instruct-v1:0
   provider: Meta
-  inference_types:
-  - ON_DEMAND
-  endpoints:
+- endpoints:
     base:
       quotas:
-        tpm: L-609E24B0
-        rpm: L-46D383AF
-        tpd: null
         concurrent: null
-- model_id: meta.llama3-8b-instruct-v1:0
+        rpm:
+          code: L-320BEFEB
+          name: On-demand model inference requests per minute for Meta Llama 3 8B
+            Instruct
+        tpd: null
+        tpm:
+          code: L-03A9B835
+          name: On-demand model inference tokens per minute for Meta Llama 3 8B Instruct
+  inference_types:
+  - ON_DEMAND
+  model_id: meta.llama3-8b-instruct-v1:0
   provider: Meta
-  inference_types:
-  - ON_DEMAND
-  endpoints:
+- endpoints:
     base:
       quotas:
-        tpm: L-03A9B835
-        rpm: L-320BEFEB
-        tpd: null
         concurrent: null
-- model_id: mistral.mistral-7b-instruct-v0:2
+        rpm:
+          code: L-D9A35062
+          name: On-demand model inference requests per minute for Mistral 7B Instruct
+        tpd: null
+        tpm:
+          code: L-02D831F1
+          name: On-demand model inference tokens per minute for Mistral AI Mistral
+            7B Instruct
+  inference_types:
+  - ON_DEMAND
+  model_id: mistral.mistral-7b-instruct-v0:2
   provider: Mistral AI
-  inference_types:
-  - ON_DEMAND
-  endpoints:
+- endpoints:
     base:
       quotas:
-        tpm: L-02D831F1
-        rpm: L-D9A35062
-        tpd: null
         concurrent: null
-- model_id: mistral.mistral-large-2402-v1:0
+        rpm:
+          code: L-3AF844DB
+          name: On-demand model inference requests per minute for Mistral Large
+        tpd: null
+        tpm:
+          code: L-01447289
+          name: On-demand model inference tokens per minute for Mistral AI Mistral
+            Large
+  inference_types:
+  - ON_DEMAND
+  model_id: mistral.mistral-large-2402-v1:0
   provider: Mistral AI
-  inference_types:
-  - ON_DEMAND
-  endpoints:
+- endpoints:
     base:
       quotas:
-        tpm: L-01447289
-        rpm: L-3AF844DB
-        tpd: null
         concurrent: null
-- model_id: mistral.mixtral-8x7b-instruct-v0:1
+        rpm:
+          code: L-FD938632
+          name: On-demand model inference requests per minute for Mistral Mixtral
+            8x7b Instruct
+        tpd: null
+        tpm:
+          code: L-490F4D1F
+          name: On-demand model inference tokens per minute for Mistral AI Mixtral
+            8X7BB Instruct
+  inference_types:
+  - ON_DEMAND
+  model_id: mistral.mixtral-8x7b-instruct-v0:1
   provider: Mistral AI
-  inference_types:
-  - ON_DEMAND
-  endpoints:
+- endpoints:
     base:
       quotas:
-        tpm: L-490F4D1F
-        rpm: L-FD938632
-        tpd: null
         concurrent: null
-- model_id: openai.gpt-oss-120b-1:0
+        rpm:
+          code: L-25B50707
+          name: On-demand model inference requests per minute for OpenAI GPT OSS 120B
+        tpd: null
+        tpm:
+          code: L-9DC5F595
+          name: On-demand model inference tokens per minute for OpenAI GPT OSS 120B
+  inference_types:
+  - ON_DEMAND
+  model_id: openai.gpt-oss-120b-1:0
   provider: OpenAI
-  inference_types:
-  - ON_DEMAND
-  endpoints:
+- endpoints:
     base:
       quotas:
-        tpm: L-9DC5F595
-        rpm: L-25B50707
-        tpd: null
         concurrent: null
-- model_id: openai.gpt-oss-20b-1:0
+        rpm:
+          code: L-AF7F0545
+          name: On-demand model inference requests per minute for OpenAI GPT OSS 20B
+        tpd: null
+        tpm:
+          code: L-036E14D8
+          name: On-demand model inference tokens per minute for OpenAI GPT OSS 20B
+  inference_types:
+  - ON_DEMAND
+  model_id: openai.gpt-oss-20b-1:0
   provider: OpenAI
-  inference_types:
-  - ON_DEMAND
-  endpoints:
+- endpoints:
     base:
       quotas:
-        tpm: L-036E14D8
-        rpm: L-AF7F0545
-        tpd: null
         concurrent: null
-- model_id: qwen.qwen3-235b-a22b-2507-v1:0
+        rpm:
+          code: L-548A1A32
+          name: On-demand model inference requests per minute for Qwen3 235B a22b
+            2507 V1
+        tpd: null
+        tpm:
+          code: L-3875BCCF
+          name: On-demand model inference tokens per minute for Qwen3 235B a22b 2507
+            V1
+  inference_types:
+  - ON_DEMAND
+  model_id: qwen.qwen3-235b-a22b-2507-v1:0
   provider: Qwen
-  inference_types:
-  - ON_DEMAND
-  endpoints:
+- endpoints:
     base:
       quotas:
-        tpm: L-3875BCCF
-        rpm: L-548A1A32
-        tpd: null
         concurrent: null
-- model_id: qwen.qwen3-32b-v1:0
+        rpm:
+          code: L-E880C759
+          name: On-demand model inference requests per minute for Qwen3 32B V1
+        tpd: null
+        tpm:
+          code: L-B7C52139
+          name: On-demand model inference tokens per minute for Qwen3 32B V1
+  inference_types:
+  - ON_DEMAND
+  model_id: qwen.qwen3-32b-v1:0
   provider: Qwen
-  inference_types:
-  - ON_DEMAND
-  endpoints:
+- endpoints:
     base:
       quotas:
-        tpm: L-B7C52139
-        rpm: L-E880C759
-        tpd: null
         concurrent: null
-- model_id: qwen.qwen3-coder-30b-a3b-v1:0
+        rpm:
+          code: L-66EE6E0B
+          name: On-demand model inference requests per minute for Qwen3 Coder 30B
+            a3b V1
+        tpd: null
+        tpm:
+          code: L-92F81E14
+          name: On-demand model inference tokens per minute for Qwen3 Coder 30B a3b
+            V1
+  inference_types:
+  - ON_DEMAND
+  model_id: qwen.qwen3-coder-30b-a3b-v1:0
   provider: Qwen
-  inference_types:
-  - ON_DEMAND
-  endpoints:
+- endpoints:
     base:
       quotas:
-        tpm: L-92F81E14
-        rpm: L-66EE6E0B
-        tpd: null
         concurrent: null
-- model_id: qwen.qwen3-coder-480b-a35b-v1:0
+        rpm:
+          code: L-CBE7E3CD
+          name: On-demand model inference requests per minute for Qwen3 Coder 480B
+            a35b V1
+        tpd: null
+        tpm:
+          code: L-4D0E44C8
+          name: On-demand model inference tokens per minute for Qwen3 Coder 480B a35b
+            V1
+  inference_types:
+  - ON_DEMAND
+  model_id: qwen.qwen3-coder-480b-a35b-v1:0
   provider: Qwen
-  inference_types:
-  - ON_DEMAND
-  endpoints:
-    base:
-      quotas:
-        tpm: L-4D0E44C8
-        rpm: L-CBE7E3CD
-        tpd: null
-        concurrent: null
