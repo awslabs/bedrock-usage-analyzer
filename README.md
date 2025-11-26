@@ -15,6 +15,8 @@ This tool works by calling AWS APIs from your local machine, including CloudWatc
 
 You can refresh the available regions, the available foundation models, and the service quotas mapping for the FMs using the scripts in `bin` folder. The FM to service quotas mapping is done intelligently with the help of foundation model called through Bedrock.
 
+⚠️ **Important Disclaimer** This tool is currently under 0.2.0-beta version. Before using this tool in any production or critical environment, you are strongly advised to review all code thoroughly and evaluate it against best practices, security and compliance standards, and other requirements.
+
 ## Example Output
 
 The tool generates HTML report showing token usage over time with quota limits. Please find the example screenshots in the following.
@@ -417,3 +419,15 @@ A: CloudWatch queries can take time for large time ranges. To speed up:
 - **Quota Data**: Quota information is fetched from AWS and not hardcoded
 - **API Calls**: All Bedrock API calls use your AWS credentials
 - **Data Storage**: All data is stored locally in `metadata/` and `results/`
+
+## Cost Considerations
+When using `./bin/analyze-bedrock-usage`, the following cost is expected:
+- CloudWatch GetMetricData that is measured on the number of metrics requested
+  - Refer to [CloudWatch pricing page](https://aws.amazon.com/cloudwatch/pricing/) to view the unit price per region.
+  - The total cost of this component depends on the number of metrics being requested, that also depends on how many FMs are included in the query and how many times this tool is run
+
+When FM quotas mapping (`./bin/refresh-fm-quotas-mapping`) to refresh the mapping between FM metric and the quotas, the following additional cost will apply:
+- Bedrock model invocation cost that is based on the total tokens used.
+  -  This is because this functionality invokes FM in Bedrock to intelligently perform the mapping. 
+  -  Refer to [Bedrock pricing page](https://aws.amazon.com/bedrock/pricing/)
+  -  The cost will depend on the FM chosen to perform the intelligent mapping, as well as the number of available FMs and quotas to map. One can run this functionality against only 1 region to save cost, instead of refreshing FM mapping for all regions.
