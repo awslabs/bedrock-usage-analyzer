@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bedrock-usage-analyzer"
-version = "0.2.0-beta"
+version = "0.2.1-beta"
 description = "Calculate token usage statistics and map quotas for Amazon Bedrock models"
 readme = "README.md"
 requires-python = ">=3.9"

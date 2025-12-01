@@ -36,8 +36,8 @@ class UserInputs:
         print()
 
         self.account = self._get_current_account()
-        confirm = input(f"AWS account: {self.account} - Continue? (y/n): ").lower()
-        if confirm != 'y':
+        confirm = input(f"AWS account: {self.account} - Continue? ([y]/n): ").lower()
+        if confirm not in ['','y']:
             sys.exit(1)
         
         # Region selection
@@ -55,7 +55,7 @@ class UserInputs:
             if model_config is not None:  
                 self.models.append(model_config)
             
-            add_more = input("\nAdd another model? (y/n): ").lower()
+            add_more = input("\nAdd another model? (y/[n]): ").lower()
             if add_more != 'y':
                 break
     
@@ -184,8 +184,8 @@ class UserInputs:
         logger.info("  30 days: 5 minutes")
         print()
         
-        use_default = input("Use default granularity settings? (y/n): ").lower()
-        if use_default == 'y':
+        use_default = input("Use default granularity settings? ([y]/n): ").lower()
+        if use_default in ['y', '']:
             return
         
         logger.info("\nConfigure granularity for each period:")
