@@ -1,5 +1,27 @@
 models:
 - endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-D5F39C2F
+          name: Global cross-region model inference requests per minute for Amazon
+            Nova 2 Lite
+        tpd:
+          code: L-AD940EDE
+          name: Global cross-region model inference tokens per day for Amazon Nova
+            2 Lite
+        tpm:
+          code: L-71C69B70
+          name: Global cross-region model inference tokens per minute for Amazon Nova
+            2 Lite
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: amazon.nova-2-lite-v1:0
+  provider: Amazon
+- endpoints:
     apac:
       quotas:
         concurrent: null
@@ -147,7 +169,10 @@ models:
           code: L-616A3F5B
           name: Cross-region model inference requests per minute for Anthropic Claude
             3 Haiku
-        tpd: null
+        tpd:
+          code: L-6120CF2D
+          name: Model invocation max tokens per day for Anthropic Claude Haiku 4.5
+            (doubled for cross-region calls)
         tpm:
           code: L-DCADBC78
           name: Cross-region model inference tokens per minute for Anthropic Claude
@@ -170,7 +195,8 @@ models:
   - ON_DEMAND
   model_id: anthropic.claude-3-haiku-20240307-v1:0
   provider: Anthropic
-- inference_types: []
+- endpoints: {}
+  inference_types: []
   model_id: anthropic.claude-3-haiku-20240307-v1:0:200k
   provider: Anthropic
 - endpoints:
@@ -192,10 +218,12 @@ models:
   - INFERENCE_PROFILE
   model_id: anthropic.claude-3-sonnet-20240229-v1:0
   provider: Anthropic
-- inference_types: []
+- endpoints: {}
+  inference_types: []
   model_id: anthropic.claude-3-sonnet-20240229-v1:0:200k
   provider: Anthropic
-- inference_types: []
+- endpoints: {}
+  inference_types: []
   model_id: anthropic.claude-3-sonnet-20240229-v1:0:28k
   provider: Anthropic
 - endpoints:
@@ -219,6 +247,28 @@ models:
   inference_types:
   - INFERENCE_PROFILE
   model_id: anthropic.claude-haiku-4-5-20251001-v1:0
+  provider: Anthropic
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-58424D95
+          name: Global cross-region model inference requests per minute for Anthropic
+            Claude Opus 4.5
+        tpd:
+          code: L-E2985A8E
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Opus 4.5
+        tpm:
+          code: L-3ABF6ACC
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Opus 4.5
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-opus-4-5-20251101-v1:0
   provider: Anthropic
 - endpoints:
     apac:
@@ -329,6 +379,7 @@ models:
         tpm: null
   inference_profiles:
   - apac
+  - global
   inference_types:
   - INFERENCE_PROFILE
   model_id: twelvelabs.pegasus-1-2-v1:0

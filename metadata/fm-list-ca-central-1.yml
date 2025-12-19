@@ -1,5 +1,42 @@
 models:
 - endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-D5F39C2F
+          name: Global cross-region model inference requests per minute for Amazon
+            Nova 2 Lite
+        tpd:
+          code: L-AD940EDE
+          name: Global cross-region model inference tokens per day for Amazon Nova
+            2 Lite
+        tpm:
+          code: L-71C69B70
+          name: Global cross-region model inference tokens per minute for Amazon Nova
+            2 Lite
+    us:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-F06F1187
+          name: Cross-region model inference requests per minute for Amazon Nova 2
+            Lite
+        tpd:
+          code: L-210172B5
+          name: Model invocation max tokens per day for Amazon Nova 2 Lite (doubled
+            for cross-region calls)
+        tpm:
+          code: L-C6F5908D
+          name: Cross-region model inference tokens per minute for Amazon Nova 2 Lite
+  inference_profiles:
+  - global
+  - us
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: amazon.nova-2-lite-v1:0
+  provider: Amazon
+- endpoints:
     ca:
       quotas:
         concurrent: null
@@ -46,7 +83,8 @@ models:
   - ON_DEMAND
   model_id: amazon.titan-embed-image-v1
   provider: Amazon
-- inference_types:
+- endpoints: {}
+  inference_types:
   - PROVISIONED
   model_id: amazon.titan-embed-image-v1:0
   provider: Amazon
@@ -84,7 +122,8 @@ models:
   - ON_DEMAND
   model_id: amazon.titan-text-express-v1
   provider: Amazon
-- inference_types:
+- endpoints: {}
+  inference_types:
   - PROVISIONED
   model_id: amazon.titan-text-express-v1:0:8k
   provider: Amazon
@@ -105,7 +144,8 @@ models:
   - ON_DEMAND
   model_id: amazon.titan-text-lite-v1
   provider: Amazon
-- inference_types:
+- endpoints: {}
+  inference_types:
   - PROVISIONED
   model_id: amazon.titan-text-lite-v1:0:4k
   provider: Amazon
@@ -186,6 +226,44 @@ models:
       quotas:
         concurrent: null
         rpm:
+          code: L-58424D95
+          name: Global cross-region model inference requests per minute for Anthropic
+            Claude Opus 4.5
+        tpd:
+          code: L-E2985A8E
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Opus 4.5
+        tpm:
+          code: L-3ABF6ACC
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Opus 4.5
+    us:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-27989F42
+          name: Cross-region model inference requests per minute for Anthropic Claude
+            Opus 4.5
+        tpd:
+          code: L-F397ECBF
+          name: Model invocation max tokens per day for Anthropic Claude Opus 4.5
+            (doubled for cross-region calls)
+        tpm:
+          code: L-7007E9C9
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            Opus 4.5
+  inference_profiles:
+  - global
+  - us
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-opus-4-5-20251101-v1:0
+  provider: Anthropic
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm:
           code: L-DB84CE56
           name: Global cross-region model inference requests per minute for Anthropic
             Claude Sonnet 4.5 V1
@@ -234,7 +312,8 @@ models:
   - ON_DEMAND
   model_id: cohere.embed-english-v3
   provider: Cohere
-- inference_types:
+- endpoints: {}
+  inference_types:
   - PROVISIONED
   model_id: cohere.embed-english-v3:0:512
   provider: Cohere
@@ -249,7 +328,8 @@ models:
   - ON_DEMAND
   model_id: cohere.embed-multilingual-v3
   provider: Cohere
-- inference_types:
+- endpoints: {}
+  inference_types:
   - PROVISIONED
   model_id: cohere.embed-multilingual-v3:0:512
   provider: Cohere
@@ -369,3 +449,16 @@ models:
   - ON_DEMAND
   model_id: mistral.mixtral-8x7b-instruct-v0:1
   provider: Mistral AI
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: twelvelabs.pegasus-1-2-v1:0
+  provider: TwelveLabs

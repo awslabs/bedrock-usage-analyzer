@@ -1,5 +1,42 @@
 models:
 - endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-D5F39C2F
+          name: Global cross-region model inference requests per minute for Amazon
+            Nova 2 Lite
+        tpd:
+          code: L-AD940EDE
+          name: Global cross-region model inference tokens per day for Amazon Nova
+            2 Lite
+        tpm:
+          code: L-71C69B70
+          name: Global cross-region model inference tokens per minute for Amazon Nova
+            2 Lite
+    us:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-F06F1187
+          name: Cross-region model inference requests per minute for Amazon Nova 2
+            Lite
+        tpd:
+          code: L-210172B5
+          name: Model invocation max tokens per day for Amazon Nova 2 Lite (doubled
+            for cross-region calls)
+        tpm:
+          code: L-C6F5908D
+          name: Cross-region model inference tokens per minute for Amazon Nova 2 Lite
+  inference_profiles:
+  - global
+  - us
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: amazon.nova-2-lite-v1:0
+  provider: Amazon
+- endpoints:
     us:
       quotas:
         concurrent: null
@@ -72,6 +109,44 @@ models:
   model_id: anthropic.claude-haiku-4-5-20251001-v1:0
   provider: Anthropic
 - endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-58424D95
+          name: Global cross-region model inference requests per minute for Anthropic
+            Claude Opus 4.5
+        tpd:
+          code: L-E2985A8E
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Opus 4.5
+        tpm:
+          code: L-3ABF6ACC
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Opus 4.5
+    us:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-27989F42
+          name: Cross-region model inference requests per minute for Anthropic Claude
+            Opus 4.5
+        tpd:
+          code: L-F397ECBF
+          name: Model invocation max tokens per day for Anthropic Claude Opus 4.5
+            (doubled for cross-region calls)
+        tpm:
+          code: L-7007E9C9
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            Opus 4.5
+  inference_profiles:
+  - global
+  - us
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-opus-4-5-20251101-v1:0
+  provider: Anthropic
+- endpoints:
     us:
       quotas:
         concurrent: null
@@ -93,10 +168,12 @@ models:
   - INFERENCE_PROFILE
   model_id: anthropic.claude-sonnet-4-20250514-v1:0
   provider: Anthropic
-- inference_types: []
+- endpoints: {}
+  inference_types: []
   model_id: anthropic.claude-sonnet-4-20250514-v1:0:200k
   provider: Anthropic
-- inference_types: []
+- endpoints: {}
+  inference_types: []
   model_id: anthropic.claude-sonnet-4-20250514-v1:0:32k
   provider: Anthropic
 - endpoints:
@@ -193,10 +270,12 @@ models:
   - INFERENCE_PROFILE
   model_id: meta.llama4-maverick-17b-instruct-v1:0
   provider: Meta
-- inference_types: []
+- endpoints: {}
+  inference_types: []
   model_id: meta.llama4-maverick-17b-instruct-v1:0:128k
   provider: Meta
-- inference_types: []
+- endpoints: {}
+  inference_types: []
   model_id: meta.llama4-maverick-17b-instruct-v1:0:1m
   provider: Meta
 - endpoints:
@@ -218,10 +297,12 @@ models:
   - INFERENCE_PROFILE
   model_id: meta.llama4-scout-17b-instruct-v1:0
   provider: Meta
-- inference_types: []
+- endpoints: {}
+  inference_types: []
   model_id: meta.llama4-scout-17b-instruct-v1:0:10m
   provider: Meta
-- inference_types: []
+- endpoints: {}
+  inference_types: []
   model_id: meta.llama4-scout-17b-instruct-v1:0:128k
   provider: Meta
 - endpoints:
@@ -234,6 +315,7 @@ models:
         tpd: null
         tpm: null
   inference_profiles:
+  - global
   - us
   inference_types:
   - INFERENCE_PROFILE

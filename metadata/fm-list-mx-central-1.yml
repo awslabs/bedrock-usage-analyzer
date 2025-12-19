@@ -21,3 +21,16 @@ models:
   - INFERENCE_PROFILE
   model_id: anthropic.claude-sonnet-4-5-20250929-v1:0
   provider: Anthropic
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: twelvelabs.pegasus-1-2-v1:0
+  provider: TwelveLabs

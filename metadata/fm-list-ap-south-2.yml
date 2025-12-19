@@ -16,7 +16,8 @@ models:
   - ON_DEMAND
   model_id: amazon.titan-embed-text-v2:0
   provider: Amazon
-- inference_types: []
+- endpoints: {}
+  inference_types: []
   model_id: amazon.titan-embed-text-v2:0:8k
   provider: Amazon
 - endpoints:
@@ -81,6 +82,28 @@ models:
   inference_types:
   - INFERENCE_PROFILE
   model_id: anthropic.claude-haiku-4-5-20251001-v1:0
+  provider: Anthropic
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-58424D95
+          name: Global cross-region model inference requests per minute for Anthropic
+            Claude Opus 4.5
+        tpd:
+          code: L-E2985A8E
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Opus 4.5
+        tpm:
+          code: L-3ABF6ACC
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Opus 4.5
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-opus-4-5-20251101-v1:0
   provider: Anthropic
 - endpoints:
     apac:
@@ -148,3 +171,16 @@ models:
   - INFERENCE_PROFILE
   model_id: cohere.embed-v4:0
   provider: Cohere
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: twelvelabs.pegasus-1-2-v1:0
+  provider: TwelveLabs
