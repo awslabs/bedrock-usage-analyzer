@@ -828,30 +828,6 @@
                 quotaInfo = quotas.tpd;
             }
             
-            if (quotaValue && chartData.datasets.length > 0) {
-                // Get all timestamps from all datasets to find min/max
-                const allTimestamps = chartData.datasets.flatMap(ds => ds.data.map(d => new Date(d.x).getTime()));
-                if (allTimestamps.length > 0) {
-                    const minTime = Math.min(...allTimestamps);
-                    const maxTime = Math.max(...allTimestamps);
-                    
-                    // Create quota line spanning entire time range
-                    chartData.datasets.push({
-                        label: 'Quota Limit',
-                        data: [
-                            { x: new Date(minTime).toISOString(), y: quotaValue },
-                            { x: new Date(maxTime).toISOString(), y: quotaValue }
-                        ],
-                        borderColor: 'red',
-                        borderDash: [5, 5],
-                        borderWidth: 2,
-                        pointRadius: 0,
-                        fill: false,
-                        tension: 0
-                    });
-                }
-            }
-            
             const canvasId = metricType === 'InvocationThrottles' ? 'throttles_{{ time_period }}' : 
                             metricType.toLowerCase() + '_{{ time_period }}';
             
@@ -928,25 +904,36 @@
                     };
                 };
                 
-                // Calculate rounded min/max for cleaner X-axis
-                const allTimestamps = chartData.datasets.flatMap(ds => ds.data.map(d => new Date(d.x).getTime()));
-                if (allTimestamps.length > 0) {
-                    const minTime = Math.min(...allTimestamps);
-                    const maxTime = Math.max(...allTimestamps);
-                    
-                    // Round down to nearest 5 minutes for min
-                    const minDate = new Date(minTime);
-                    minDate.setMinutes(Math.floor(minDate.getMinutes() / 5) * 5, 0, 0);
-                    
-                    // Round up to nearest 5 minutes for max
-                    const maxDate = new Date(maxTime);
-                    maxDate.setMinutes(Math.ceil(maxDate.getMinutes() / 5) * 5, 0, 0);
-                    
-                    var xAxisMin = minDate.getTime();
-                    var xAxisMax = maxDate.getTime();
-                } else {
-                    var xAxisMin = undefined;
-                    var xAxisMax = undefined;
+                // Calculate X-axis boundaries based on time period and actual end time
+                const periodDurations = {
+                    '1hour': 60 * 60 * 1000,
+                    '1day': 24 * 60 * 60 * 1000,
+                    '7days': 7 * 24 * 60 * 60 * 1000,
+                    '14days': 14 * 24 * 60 * 60 * 1000,
+                    '30days': 30 * 24 * 60 * 60 * 1000
+                };
+                const timePeriod = '{{ time_period }}';
+                const duration = periodDurations[timePeriod];
+                const endTimeIso = '{{ end_time_iso }}';
+                
+                var xAxisMax = new Date(endTimeIso).getTime();
+                var xAxisMin = xAxisMax - duration;
+                
+                // Add quota line using chart boundaries
+                if (quotaValue && xAxisMin && xAxisMax) {
+                    chartData.datasets.push({
+                        label: 'Quota Limit',
+                        data: [
+                            { x: new Date(xAxisMin).toISOString(), y: quotaValue },
+                            { x: new Date(xAxisMax).toISOString(), y: quotaValue }
+                        ],
+                        borderColor: 'red',
+                        borderDash: [5, 5],
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        fill: false,
+                        tension: 0
+                    });
                 }
                 
                 const chartInstance = new Chart(canvasElement, { 

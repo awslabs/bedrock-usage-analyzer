@@ -112,7 +112,8 @@ class OutputGenerator:
                 profile_names_json=json.dumps(data.get('profile_names', {})),
                 contributions=data.get('contributions', {}),
                 granularity_config=data.get('granularity_config', {}),
-                period_names=period_names
+                period_names=period_names,
+                end_time_iso=end_time.isoformat() if end_time else None
             ))
         logger.info(f"Generated: {html_file}")
     
