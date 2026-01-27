@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "bedrock-usage-analyzer"
 version = "0.5.0-beta"
-description = "Calculate token usage statistics and map quotas for Amazon Bedrock models"
+description = "Calculate token usage statistics and map quotas for Amazon Bedrock models. Supports both standard AWS regions and AWS GovCloud (US) regions."
 readme = "README.md"
 requires-python = ">=3.9"
 license = "Apache-2.0"
 authors = [
     {name = "Amazon Web Services"}
 ]
-keywords = ["aws", "bedrock", "cloudwatch", "metrics", "tokens", "usage", "statistics"]
+keywords = ["aws", "bedrock", "cloudwatch", "metrics", "tokens", "usage", "statistics", "govcloud", "government"]
 
 dependencies = [
     "boto3",

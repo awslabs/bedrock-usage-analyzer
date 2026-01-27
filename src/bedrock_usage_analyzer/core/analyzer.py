@@ -16,6 +16,8 @@ from bedrock_usage_analyzer.core.profile_fetcher import InferenceProfileFetcher
 from bedrock_usage_analyzer.core.metrics_fetcher import CloudWatchMetricsFetcher
 from bedrock_usage_analyzer.core.output_generator import OutputGenerator
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
+from bedrock_usage_analyzer.aws.client_factory import EnhancedClientFactory
+from bedrock_usage_analyzer.core.govcloud_errors import create_govcloud_error_handler
 from bedrock_usage_analyzer.utils.paths import get_data_path
 
 logger = logging.getLogger(__name__)
@@ -36,10 +38,21 @@ class BedrockAnalyzer:
         self.tz_offset = f"{offset[:3]}:{offset[3:]}"  # +08:00 format
         self.tz_api_format = offset[:5]  # +0800 format for API
         
-        # Initialize clients
-        self.bedrock_client = boto3.client('bedrock', region_name=region)
-        self.cloudwatch_client = boto3.client('cloudwatch', region_name=region)
-        self.sq_client = boto3.client('service-quotas', region_name=region)
+        # Initialize enhanced client factory with GovCloud support
+        self.client_factory = EnhancedClientFactory(region)
+        self.error_handler = create_govcloud_error_handler(region)
+        
+        # Initialize clients using the enhanced factory
+        try:
+            self.bedrock_client = self.client_factory.create_bedrock_client()
+            self.cloudwatch_client = self.client_factory.create_cloudwatch_client()
+            self.sq_client = self.client_factory.create_service_quotas_client()
+        except Exception as e:
+            context = {'service': 'initialization', 'operation': 'client_creation'}
+            enhanced_error = self.error_handler.enhance_error_message(e, context)
+            logger.error(enhanced_error)
+            raise
+        
         self.profile_fetcher = InferenceProfileFetcher(self.bedrock_client)
         self.metrics_fetcher = CloudWatchMetricsFetcher(self.cloudwatch_client, self.tz_api_format)
         self.output_generator = None  # Initialized in analyze() with output_dir
@@ -302,6 +315,10 @@ class BedrockAnalyzer:
             # Step 6: Generate output
             logger.info(f"  Generating output files...")
             end_time_local = datetime.now(self.local_tz)
+            
+            # Get region info for output
+            region_info = self.client_factory.get_region_info()
+            
             self.output_generator.generate({
                 model_id: {
                     'stats': model_results,
@@ -312,7 +329,8 @@ class BedrockAnalyzer:
                     'granularity_config': self.granularity_config,
                     'end_time': end_time_local,
                     'tz_offset': self.tz_offset,
-                    'region': self.region
+                    'region': self.region,
+                    'region_info': region_info
                 }
             })
 

@@ -1,33 +1,121 @@
 regions:
-- af-south-1
-- ap-east-1
-- ap-east-2
-- ap-northeast-1
-- ap-northeast-2
-- ap-northeast-3
-- ap-south-1
-- ap-south-2
-- ap-southeast-1
-- ap-southeast-2
-- ap-southeast-3
-- ap-southeast-4
-- ap-southeast-5
-- ap-southeast-6
-- ap-southeast-7
-- ca-central-1
-- ca-west-1
-- eu-central-1
-- eu-central-2
-- eu-north-1
-- eu-south-1
-- eu-west-1
-- eu-west-2
-- eu-west-3
-- me-central-1
-- me-south-1
-- mx-central-1
-- sa-east-1
-- us-east-1
-- us-east-2
-- us-west-1
-- us-west-2
+- display_name: Africa (Cape Town)
+  name: af-south-1
+  partition: aws
+  type: standard
+- display_name: Asia Pacific (Hong Kong)
+  name: ap-east-1
+  partition: aws
+  type: standard
+- display_name: Asia Pacific (Hyderabad)
+  name: ap-south-2
+  partition: aws
+  type: standard
+- display_name: Asia Pacific (Jakarta)
+  name: ap-southeast-3
+  partition: aws
+  type: standard
+- display_name: Asia Pacific (Melbourne)
+  name: ap-southeast-4
+  partition: aws
+  type: standard
+- display_name: Asia Pacific (Mumbai)
+  name: ap-south-1
+  partition: aws
+  type: standard
+- display_name: Asia Pacific (Osaka)
+  name: ap-northeast-3
+  partition: aws
+  type: standard
+- display_name: Asia Pacific (Seoul)
+  name: ap-northeast-2
+  partition: aws
+  type: standard
+- display_name: Asia Pacific (Singapore)
+  name: ap-southeast-1
+  partition: aws
+  type: standard
+- display_name: Asia Pacific (Sydney)
+  name: ap-southeast-2
+  partition: aws
+  type: standard
+- display_name: Asia Pacific (Tokyo)
+  name: ap-northeast-1
+  partition: aws
+  type: standard
+- display_name: AWS GovCloud (US-East)
+  name: us-gov-east-1
+  partition: aws-us-gov
+  type: govcloud
+- display_name: AWS GovCloud (US-West)
+  name: us-gov-west-1
+  partition: aws-us-gov
+  type: govcloud
+- display_name: Canada (Central)
+  name: ca-central-1
+  partition: aws
+  type: standard
+- display_name: Canada West (Calgary)
+  name: ca-west-1
+  partition: aws
+  type: standard
+- display_name: Europe (Frankfurt)
+  name: eu-central-1
+  partition: aws
+  type: standard
+- display_name: Europe (Ireland)
+  name: eu-west-1
+  partition: aws
+  type: standard
+- display_name: Europe (London)
+  name: eu-west-2
+  partition: aws
+  type: standard
+- display_name: Europe (Milan)
+  name: eu-south-1
+  partition: aws
+  type: standard
+- display_name: Europe (Paris)
+  name: eu-west-3
+  partition: aws
+  type: standard
+- display_name: Europe (Stockholm)
+  name: eu-north-1
+  partition: aws
+  type: standard
+- display_name: Europe (Zurich)
+  name: eu-central-2
+  partition: aws
+  type: standard
+- display_name: Middle East (Bahrain)
+  name: me-south-1
+  partition: aws
+  type: standard
+- display_name: Middle East (UAE)
+  name: me-central-1
+  partition: aws
+  type: standard
+- display_name: Mexico (Central)
+  name: mx-central-1
+  partition: aws
+  type: standard
+- display_name: South America (São Paulo)
+  name: sa-east-1
+  partition: aws
+  type: standard
+- display_name: US East (N. Virginia)
+  name: us-east-1
+  partition: aws
+  type: standard
+- display_name: US East (Ohio)
+  name: us-east-2
+  partition: aws
+  type: standard
+- display_name: US West (N. California)
+  name: us-west-1
+  partition: aws
+  type: standard
+- display_name: US West (Oregon)
+  name: us-west-2
+  partition: aws
+  type: standard
