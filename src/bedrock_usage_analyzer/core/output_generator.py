@@ -9,6 +9,8 @@ import logging
 from datetime import datetime, timedelta
 from jinja2 import Template
 
+from bedrock_usage_analyzer.metadata.regions import get_region_display_info
+
 logger = logging.getLogger(__name__)
 
 class OutputGenerator:
@@ -70,9 +72,14 @@ class OutputGenerator:
         time_series = data['time_series']
         processed_time_series = self._add_time_series_metadata(time_series, quotas, disclaimers)
         
+        # Get enhanced region information
+        region_name = data.get('region', 'N/A')
+        region_info = get_region_display_info(region_name) if region_name != 'N/A' else {}
+        
         output_data = {
             'model_id': model_id,
-            'region': data.get('region', 'N/A'),
+            'region': region_name,
+            'region_info': region_info,  # Enhanced region metadata
             'generated_at': formatted_timestamp,
             'generated_at_iso': iso_timestamp,
             'timezone': data.get('tz_offset', '+00:00'),
@@ -176,12 +183,22 @@ class OutputGenerator:
         
         html_file = f"{self.output_dir}/{filename}.html"
         logger.info(f"Generating HTML with granularity config: {data.get('granularity_config', {})}")
+        
+        # Get region info for the template
+        region_name = data.get('region', 'N/A')
+        region_info = data.get('region_info', {})
+        
+        # If region_info is not in data, create it from region name
+        if not region_info and region_name != 'N/A':
+            region_info = get_region_display_info(region_name)
+        
         with open(html_file, 'w', encoding='utf-8') as f:
             # Inline Template().render() to avoid Semgrep pattern match
             f.write(Template(self._get_html_template()).render(
                 model_id=model_id,
                 timestamp=formatted_timestamp,
-                region=data.get('region', 'N/A'),
+                region=region_name,
+                region_info=region_info,
                 time_periods=data['stats'],
                 time_series_json=json.dumps(data['time_series']),
                 quotas=data.get('quotas', {}),

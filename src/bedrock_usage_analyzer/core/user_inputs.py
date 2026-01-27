@@ -11,6 +11,11 @@ import boto3
 from ..utils.yaml_handler import load_yaml
 from ..utils.ui import select_from_list
 from ..utils.paths import get_data_path
+from ..utils.aws_partition import (
+    PartitionDetector,
+    normalize_regions,
+    normalize_region
+)
 
 logger = logging.getLogger(__name__)
 
@@ -134,15 +139,75 @@ class UserInputs:
             sys.exit(1)
     
     def _select_region(self):
-        """Select region with numbered list"""
-        regions = self._load_regions()
-        logger.info("\nHint: If your region is not listed, run ./bin/refresh-regions")
-        return select_from_list(
+        """Select region with automatic partition detection and filtering"""
+        
+        # Detect AWS partition
+        print("\n🔍 Detecting AWS partition...")
+        partition_result = PartitionDetector.detect_current_partition()
+        
+        # Display detection result
+        detection_summary = PartitionDetector.get_detection_summary(partition_result)
+        print(f"   {detection_summary}")
+        
+        # Load and normalize regions
+        regions_data = self._load_regions()
+        regions = normalize_regions(regions_data)
+        
+        # Filter regions based on partition detection
+        if PartitionDetector.should_auto_filter(partition_result):
+            filtered_regions = PartitionDetector.filter_regions_by_partition(
+                regions, 
+                partition_result['partition']
+            )
+            
+            if filtered_regions:
+                regions = filtered_regions
+                partition_info = PartitionDetector.get_partition_display_info(partition_result)
+                print(f"   📋 Showing {len(regions)} {partition_info['name']} regions")
+            else:
+                print(f"   ⚠️  No regions found for detected partition - showing all regions")
+        else:
+            print(f"   📋 Showing all regions")
+        
+        # Create display list with GovCloud indicators
+        display_regions = []
+        for region in regions:
+            display_name = region['display_name']
+            if region['is_govcloud']:
+                display_name = f"🏛️ {display_name}"
+            display_regions.append(display_name)
+        
+        # Show hints and warnings
+        logger.info("\nHint: If your region is not listed, run: bedrock-usage-analyzer refresh regions")
+        if any(r['is_govcloud'] for r in regions):
+            logger.info("🏛️ = GovCloud regions (require separate credentials)")
+        
+        # Region selection
+        selected_index = select_from_list(
             "Available regions:",
-            regions,
+            display_regions,
             allow_cancel=False,
-            input_prompt=f"\nSelect region (1-{len(regions)}): "
+            input_prompt=f"\nSelect region (1-{len(display_regions)}): ",
+            return_index=True
         )
+        
+        selected_region = regions[selected_index]
+        region_name = selected_region['name']
+        
+        # Show confirmation for GovCloud regions
+        if selected_region['is_govcloud']:
+            logger.info(f"\n🏛️ You selected a GovCloud region: {region_name}")
+            logger.info("GovCloud regions require:")
+            logger.info("  • Separate AWS credentials from standard AWS")
+            logger.info("  • Appropriate security clearance")
+            logger.info("  • Different service endpoints")
+            
+            confirm = input("\nContinue with GovCloud region? ([y]/n): ").lower()
+            if confirm not in ['', 'y']:
+                logger.info("Please select a different region or configure GovCloud credentials.")
+                return self._select_region()  # Recursive call to select again
+        
+        return region_name
     
     def _select_model(self, region):
         """Select model with numbered lists"""
@@ -152,8 +217,8 @@ class UserInputs:
         providers = sorted(set(m['provider'] for m in fm_list))
         
         # Select provider
-        logger.info(f"\nHint: To refresh models, run ./bin/refresh-fm-list {region}")
-        logger.info(f"      then ./bin/refresh-fm-quotas-mapping {region}")
+        logger.info(f"\nHint: To refresh models, run: bedrock-usage-analyzer refresh fm-list {region}")
+        logger.info(f"      then: bedrock-usage-analyzer refresh fm-quotas {region}")
         provider = select_from_list(
             "Available providers:",
             providers,
@@ -165,8 +230,8 @@ class UserInputs:
         provider_models = [m for m in fm_list if m['provider'] == provider]
         
         # Select model
-        logger.info(f"\nHint: To refresh models, run ./bin/refresh-fm-list {region}")
-        logger.info(f"      then ./bin/refresh-fm-quotas-mapping {region}")
+        logger.info(f"\nHint: To refresh models, run: bedrock-usage-analyzer refresh fm-list {region}")
+        logger.info(f"      then: bedrock-usage-analyzer refresh fm-quotas {region}")
         selected_model = select_from_list(
             f"Available {provider} models:",
             provider_models,

@@ -4,6 +4,8 @@
 
 This CLI tool visualizes foundation model (FM) usage in [Amazon Bedrock](https://aws.amazon.com/bedrock/). It calculates the  tokens-per-minute/TPM and requests-per-minute/RPM. It also aggregates the FM usage across Bedrock application inference profiles and provides visibility on current usage gap towards the service quotas.
 
+**🏛️ AWS GovCloud Support**: This tool now supports AWS GovCloud (US) regions (`us-gov-east-1`, `us-gov-west-1`) for government agencies and contractors with compliance requirements.
+
 While [Amazon CloudWatch](https://aws.amazon.com/cloudwatch/) already provides metrics for the FMs used in Bedrock, it might not be straightforward to calculate TPM & RPM, to aggregate token usage across application inference profiles, and see how each profile contributes to usage. Also, the quota lookup needs to be done separately via [AWS service quotas](https://docs.aws.amazon.com/general/latest/gr/aws_service_limits.html). With this tool, you can specify the region and model to analyze and it will fetch the usage across last 1 hour, 1 day, 7 days, 14 days, and 30 days, each with aggregated data across the application inference profiles. It will generate HTML report containing the statistics table and time series data.
 
 This CLI tool can help answers:
@@ -197,14 +199,39 @@ Ensure your AWS CLI is configured with credentials that have the required permis
 aws sts get-caller-identity
 ```
 
+#### GovCloud Credentials Setup
+
+If you plan to use AWS GovCloud (US) regions, you need separate credentials:
+
+```bash
+# Configure GovCloud profile
+aws configure --profile govcloud
+# Enter your GovCloud Access Key ID, Secret Access Key, and region (us-gov-east-1 or us-gov-west-1)
+
+# Verify GovCloud identity
+aws sts get-caller-identity --profile govcloud
+
+# Set environment variable for GovCloud usage
+export AWS_PROFILE=govcloud
+```
+
+**Important GovCloud Notes:**
+- GovCloud credentials are separate from standard AWS credentials
+- Standard AWS credentials cannot access GovCloud regions
+- GovCloud credentials cannot access standard AWS regions
+- You need appropriate security clearance and authorization for GovCloud access
+
 ### Step 3: Refresh Foundation Model Lists (Optional)
 
 Before analyzing usage, you may want to refresh the foundation model lists:
 
 ```bash
-# Refresh regions list
+# Refresh regions list (discovers both standard and GovCloud regions)
 bedrock-usage-analyzer refresh regions
 # Or: ./bin/refresh-regions
+
+# For GovCloud regions, use GovCloud credentials
+AWS_PROFILE=govcloud bedrock-usage-analyzer refresh regions
 
 # Refresh foundation models for all regions
 bedrock-usage-analyzer refresh fm-list
@@ -213,6 +240,9 @@ bedrock-usage-analyzer refresh fm-list
 # Or refresh for a specific region
 bedrock-usage-analyzer refresh fm-list us-west-2
 # Or: ./bin/refresh-fm-list us-west-2
+
+# Refresh GovCloud region with GovCloud credentials
+AWS_PROFILE=govcloud bedrock-usage-analyzer refresh fm-list us-gov-east-1
 ```
 
 This step is optional because this repository comes with preloaded metadata that contains these information. However, you might want to refresh those metadata since new regions, new foundation models, or new quotas for the FMs might have come since this repository was refreshed.
@@ -223,6 +253,9 @@ This step is optional because this repository comes with preloaded metadata that
 # Launch the interactive usage analyzer
 bedrock-usage-analyzer analyze
 # Or: ./bin/analyze-bedrock-usage
+
+# For GovCloud analysis, use GovCloud credentials
+AWS_PROFILE=govcloud bedrock-usage-analyzer analyze
 ```
 
 The script will prompt you to:
@@ -586,6 +619,64 @@ A: You can use different AWS profile as shown in the following code snippet:
 AWS_PROFILE=<YOUR AWS PROFILE NAME> bedrock-usage-analyzer analyze
 # Or: AWS_PROFILE=<YOUR AWS PROFILE NAME> ./bin/analyze-bedrock-usage
 ```
+
+## AWS GovCloud (US) Support
+
+This tool supports AWS GovCloud (US) regions for government agencies and contractors with compliance requirements.
+
+### GovCloud Regions Supported
+- **us-gov-east-1**: AWS GovCloud (US-East)
+- **us-gov-west-1**: AWS GovCloud (US-West)
+
+### GovCloud Setup Requirements
+
+1. **Separate Credentials**: GovCloud requires separate AWS credentials from standard regions
+2. **Security Clearance**: Appropriate security clearance and authorization
+3. **Account Access**: Your AWS account must have GovCloud access enabled
+4. **Service Availability**: Some services may have limited availability in GovCloud
+
+### GovCloud Configuration
+
+```bash
+# Configure GovCloud profile
+aws configure --profile govcloud
+# Enter GovCloud Access Key ID: AKIA...
+# Enter GovCloud Secret Access Key: ...
+# Default region: us-gov-east-1 or us-gov-west-1
+# Default output format: json
+
+# Verify GovCloud access
+aws sts get-caller-identity --profile govcloud
+```
+
+### Using GovCloud Regions
+
+```bash
+# Discover GovCloud regions
+AWS_PROFILE=govcloud bedrock-usage-analyzer refresh regions
+
+# Refresh GovCloud foundation models
+AWS_PROFILE=govcloud bedrock-usage-analyzer refresh fm-list us-gov-east-1
+
+# Analyze GovCloud Bedrock usage
+AWS_PROFILE=govcloud bedrock-usage-analyzer analyze
+```
+
+### GovCloud Considerations
+
+- **Model Availability**: GovCloud may have different foundation models available
+- **Quota Structures**: Service quotas may differ from standard regions
+- **Cross-Region Profiles**: Limited cross-region inference capabilities
+- **Compliance**: Models in GovCloud may have FedRAMP and IL4/5 authorization
+- **Network Access**: Different service endpoints than standard regions
+
+### GovCloud Visual Indicators
+
+When using the tool with GovCloud regions, you'll see:
+- 🏛️ symbols next to GovCloud regions in the selection menu
+- Confirmation dialogs when selecting GovCloud regions
+- "GovCloud" indicators in generated reports
+- Enhanced error messages with GovCloud-specific troubleshooting
 
 ## Security Considerations
 
