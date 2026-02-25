@@ -8,6 +8,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from jinja2 import Template
+from bedrock_usage_analyzer.utils.partition import get_console_domain
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +61,11 @@ class OutputGenerator:
         # Add quota disclaimer if quotas exist
         quotas = data.get('quotas', {})
         if quotas:
+            console_domain = get_console_domain()
             disclaimers['quota_mapping'] = (
                 "Quota mappings were inferred using AI and may not be accurate. "
-                "Always verify with AWS Service Quotas console: "
-                "https://console.aws.amazon.com/servicequotas"
+                f"Always verify with AWS Service Quotas console: "
+                f"https://{console_domain}/servicequotas"
             )
         
         # Process time_series to add per-metric disclaimers and quota info
@@ -176,6 +178,7 @@ class OutputGenerator:
         
         html_file = f"{self.output_dir}/{filename}.html"
         logger.info(f"Generating HTML with granularity config: {data.get('granularity_config', {})}")
+        console_domain = get_console_domain()
         with open(html_file, 'w', encoding='utf-8') as f:
             # Inline Template().render() to avoid Semgrep pattern match
             f.write(Template(self._get_html_template()).render(
@@ -190,7 +193,8 @@ class OutputGenerator:
                 contributions=data.get('contributions', {}),
                 granularity_config=data.get('granularity_config', {}),
                 period_names=period_names,
-                end_time_iso=end_time.isoformat() if end_time else None
+                end_time_iso=end_time.isoformat() if end_time else None,
+                console_domain=console_domain
             ))
         logger.info(f"Generated: {html_file}")
     

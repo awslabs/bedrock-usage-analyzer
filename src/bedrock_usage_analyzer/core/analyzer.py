@@ -17,6 +17,7 @@ from bedrock_usage_analyzer.core.metrics_fetcher import CloudWatchMetricsFetcher
 from bedrock_usage_analyzer.core.output_generator import OutputGenerator
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
 from bedrock_usage_analyzer.utils.paths import get_data_path
+from bedrock_usage_analyzer.utils.partition import get_service_quota_url
 
 logger = logging.getLogger(__name__)
 
@@ -109,8 +110,8 @@ class BedrockAnalyzer:
                             QuotaCode=code
                         )
                         value = response['Quota']['Value']
-                        url = f"https://{self.region}.console.aws.amazon.com/servicequotas/home/services/bedrock/quotas/{code}"
-                        
+                        url = get_service_quota_url(self.region, 'bedrock', code)
+
                         quota_info = {'value': value, 'code': code, 'name': name, 'url': url}
                         
                         if 'tpm' in quota_type.lower():
