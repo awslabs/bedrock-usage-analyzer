@@ -17,7 +17,7 @@ This tool works by calling AWS APIs from your local machine, including CloudWatc
 
 You can refresh the available regions, the available foundation models, and the service quotas mapping for the FMs using the `bedrock-usage-analyzer refresh` commands (or `bua refresh` for short). The FM to service quotas mapping is done intelligently with the help of foundation model called through Bedrock.
 
-⚠️ **Important Disclaimer** This tool is currently under 0.5.0-beta version. Before using this tool in any production or critical environment, you are strongly advised to review all code thoroughly and evaluate it against best practices, security and compliance standards, and other requirements.
+⚠️ **Important Disclaimer** This tool is currently under 0.5.1-beta version. Before using this tool in any production or critical environment, you are strongly advised to review all code thoroughly and evaluate it against best practices, security and compliance standards, and other requirements.
 
 ## Example Output
 
