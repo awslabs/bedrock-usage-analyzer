@@ -16,7 +16,8 @@ models:
   - ON_DEMAND
   model_id: amazon.titan-embed-image-v1
   provider: Amazon
-- inference_types:
+- endpoints: {}
+  inference_types:
   - PROVISIONED
   model_id: amazon.titan-embed-image-v1:0
   provider: Amazon
@@ -97,18 +98,9 @@ models:
     global:
       quotas:
         concurrent: null
-        rpm:
-          code: L-58424D95
-          name: Global cross-region model inference requests per minute for Anthropic
-            Claude Opus 4.5
-        tpd:
-          code: L-E2985A8E
-          name: Global cross-region model inference tokens per day for Anthropic Claude
-            Opus 4.5
-        tpm:
-          code: L-3ABF6ACC
-          name: Global cross-region model inference tokens per minute for Anthropic
-            Claude Opus 4.5
+        rpm: null
+        tpd: null
+        tpm: null
   inference_profiles:
   - global
   inference_types:
@@ -120,17 +112,55 @@ models:
       quotas:
         concurrent: null
         rpm:
-          code: L-DB84CE56
+          code: L-3DD46812
           name: Global cross-region model inference requests per minute for Anthropic
-            Claude Sonnet 4.5 V1
+            Claude Opus 4.6 V1
         tpd:
-          code: L-BC182137
+          code: L-ED2BADF9
           name: Global cross-region model inference tokens per day for Anthropic Claude
-            Sonnet 4.5 V1
+            Opus 4.6 V1
         tpm:
-          code: L-27C57EE8
+          code: L-3DCCFAA4
           name: Global cross-region model inference tokens per minute for Anthropic
-            Claude Sonnet 4.5 V1
+            Claude Opus 4.6 V1
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-opus-4-6-v1
+  provider: Anthropic
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm:
+          code: L-34152C1D
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Opus 4.7
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-opus-4-7
+  provider: Anthropic
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-F6E116D7
+          name: Global cross-region model inference requests per minute for Anthropic
+            Claude Sonnet 4.6
+        tpd:
+          code: L-248E47B7
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Sonnet 4.6
+        tpm:
+          code: L-7BEE40FB
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Sonnet 4.6
   inference_profiles:
   - global
   inference_types:
@@ -138,17 +168,44 @@ models:
   model_id: anthropic.claude-sonnet-4-5-20250929-v1:0
   provider: Anthropic
 - endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-F6E116D7
+          name: Global cross-region model inference requests per minute for Anthropic
+            Claude Sonnet 4.6
+        tpd:
+          code: L-248E47B7
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Sonnet 4.6
+        tpm:
+          code: L-7BEE40FB
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Sonnet 4.6
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-sonnet-4-6
+  provider: Anthropic
+- endpoints:
     base:
       quotas:
         concurrent: null
-        rpm: null
+        rpm:
+          code: L-FF8E7864
+          name: On-demand model inference requests per minute for Cohere Embed English
         tpd: null
-        tpm: null
+        tpm:
+          code: L-A2BE277A
+          name: On-demand model inference tokens per minute for Cohere Embed English
   inference_types:
   - ON_DEMAND
   model_id: cohere.embed-english-v3
   provider: Cohere
-- inference_types:
+- endpoints: {}
+  inference_types:
   - PROVISIONED
   model_id: cohere.embed-english-v3:0:512
   provider: Cohere
@@ -163,7 +220,8 @@ models:
   - ON_DEMAND
   model_id: cohere.embed-multilingual-v3
   provider: Cohere
-- inference_types:
+- endpoints: {}
+  inference_types:
   - PROVISIONED
   model_id: cohere.embed-multilingual-v3:0:512
   provider: Cohere
@@ -189,6 +247,21 @@ models:
   - INFERENCE_PROFILE
   model_id: cohere.embed-v4:0
   provider: Cohere
+- endpoints:
+    base:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-3AE31EFC
+          name: On-demand model inference requests per minute for DeepSeek V3.2
+        tpd: null
+        tpm:
+          code: L-C43703DE
+          name: On-demand model inference tokens per minute for DeepSeek V3.2
+  inference_types:
+  - ON_DEMAND
+  model_id: deepseek.v3.2
+  provider: DeepSeek
 - endpoints:
     base:
       quotas:
@@ -249,6 +322,53 @@ models:
   - ON_DEMAND
   model_id: minimax.minimax-m2
   provider: MiniMax
+- endpoints:
+    base:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-2DA44933
+          name: On-demand model inference requests per minute for Minimax M2.1
+        tpd: null
+        tpm:
+          code: L-D795937C
+          name: On-demand model inference tokens per minute for Minimax M2.1
+  inference_types:
+  - ON_DEMAND
+  model_id: minimax.minimax-m2.1
+  provider: MiniMax
+- endpoints:
+    base:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-6185F03F
+          name: On-demand model inference requests per minute for MiniMax M2.5
+        tpd: null
+        tpm:
+          code: L-359D5670
+          name: On-demand model inference tokens per minute for MiniMax M2.5
+  inference_types:
+  - ON_DEMAND
+  model_id: minimax.minimax-m2.5
+  provider: MiniMax
+- endpoints:
+    base:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-0197660A
+          name: On-demand model inference requests per minute for Mistral Devstral
+            2 123b
+        tpd: null
+        tpm:
+          code: L-904A6762
+          name: On-demand model inference tokens per minute for Mistral Devstral 2
+            123b
+  inference_types:
+  - ON_DEMAND
+  model_id: mistral.devstral-2-123b
+  provider: Mistral AI
 - endpoints:
     base:
       quotas:
@@ -424,6 +544,22 @@ models:
       quotas:
         concurrent: null
         rpm:
+          code: L-C1711F26
+          name: On-demand model inference requests per minute for Moonshot AI Kimi
+            K2.5
+        tpd: null
+        tpm:
+          code: L-B8D04761
+          name: On-demand model inference tokens per minute for Moonshot AI Kimi K2.5
+  inference_types:
+  - ON_DEMAND
+  model_id: moonshotai.kimi-k2.5
+  provider: Moonshot AI
+- endpoints:
+    base:
+      quotas:
+        concurrent: null
+        rpm:
           code: L-AC7B3FB9
           name: On-demand model inference requests per minute for NVIDIA Nemotron
             Nano 2
@@ -468,6 +604,23 @@ models:
   inference_types:
   - ON_DEMAND
   model_id: nvidia.nemotron-nano-9b-v2
+  provider: NVIDIA
+- endpoints:
+    base:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-E722E1BB
+          name: On-demand model inference requests per minute for NVIDIA Nemotron
+            3 Super 120B A12B
+        tpd: null
+        tpm:
+          code: L-EB4CADEE
+          name: On-demand model inference tokens per minute for NVIDIA Nemotron 3
+            Super 120B A12B
+  inference_types:
+  - ON_DEMAND
+  model_id: nvidia.nemotron-super-3-120b
   provider: NVIDIA
 - endpoints:
     base:
@@ -602,3 +755,48 @@ models:
   - INFERENCE_PROFILE
   model_id: twelvelabs.pegasus-1-2-v1:0
   provider: TwelveLabs
+- endpoints:
+    base:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-497DDDD7
+          name: On-demand model inference requests per minute for Z.ai GLM-4.7
+        tpd: null
+        tpm:
+          code: L-12454D86
+          name: On-demand model inference tokens per minute for Z.ai GLM-4.7
+  inference_types:
+  - ON_DEMAND
+  model_id: zai.glm-4.7
+  provider: Z.AI
+- endpoints:
+    base:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-5E856AD9
+          name: On-demand model inference requests per minute for Z.ai GLM-4.7 Flash
+        tpd: null
+        tpm:
+          code: L-B40F2E56
+          name: On-demand model inference tokens per minute for Z.ai GLM-4.7 Flash
+  inference_types:
+  - ON_DEMAND
+  model_id: zai.glm-4.7-flash
+  provider: Z.AI
+- endpoints:
+    base:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-7BF266A9
+          name: On-demand model inference requests per minute for Z.ai GLM 5
+        tpd: null
+        tpm:
+          code: L-99316427
+          name: On-demand model inference tokens per minute for Z.ai GLM 5
+  inference_types:
+  - ON_DEMAND
+  model_id: zai.glm-5
+  provider: Z.AI

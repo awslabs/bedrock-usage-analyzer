@@ -28,7 +28,10 @@ models:
         rpm:
           code: L-89F8391A
           name: Cross-region model inference requests per minute for Amazon Nova Lite
-        tpd: null
+        tpd:
+          code: L-45E0AD92
+          name: Model invocation max tokens per day for Amazon Nova Lite (doubled
+            for cross-region calls)
         tpm:
           code: L-7C42E72A
           name: Cross-region model inference tokens per minute for Amazon Nova Lite
@@ -45,7 +48,10 @@ models:
         rpm:
           code: L-ED46B8C5
           name: Cross-region model inference requests per minute for Amazon Nova Pro
-        tpd: null
+        tpd:
+          code: L-D690997B
+          name: Model invocation max tokens per day for Amazon Nova Pro (doubled for
+            cross-region calls)
         tpm:
           code: L-C0326783
           name: Cross-region model inference tokens per minute for Amazon Nova Pro
@@ -64,9 +70,9 @@ models:
           name: Cross-region model inference requests per minute for Anthropic Claude
             Haiku 4.5
         tpd:
-          code: L-6120CF2D
-          name: Model invocation max tokens per day for Anthropic Claude Haiku 4.5
-            (doubled for cross-region calls)
+          code: L-B5C049AE
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Haiku 4.5
         tpm:
           code: L-58BE175A
           name: Cross-region model inference tokens per minute for Anthropic Claude
@@ -97,18 +103,9 @@ models:
     global:
       quotas:
         concurrent: null
-        rpm:
-          code: L-58424D95
-          name: Global cross-region model inference requests per minute for Anthropic
-            Claude Opus 4.5
-        tpd:
-          code: L-E2985A8E
-          name: Global cross-region model inference tokens per day for Anthropic Claude
-            Opus 4.5
-        tpm:
-          code: L-3ABF6ACC
-          name: Global cross-region model inference tokens per minute for Anthropic
-            Claude Opus 4.5
+        rpm: null
+        tpd: null
+        tpm: null
   inference_profiles:
   - global
   inference_types:
@@ -116,21 +113,66 @@ models:
   model_id: anthropic.claude-opus-4-5-20251101-v1:0
   provider: Anthropic
 - endpoints:
-    apac:
+    au:
       quotas:
         concurrent: null
         rpm:
-          code: L-559DCC33
+          code: L-11DFF789
           name: Cross-region model inference requests per minute for Anthropic Claude
-            Sonnet 4 V1
+            Opus 4.6 V1
         tpd:
-          code: L-22F701C5
-          name: Model invocation max tokens per day for Anthropic Claude Sonnet 4
+          code: L-82CD9B28
+          name: Model invocation max tokens per day for Anthropic Claude Opus 4.6
             V1 (doubled for cross-region calls)
         tpm:
-          code: L-59759B4A
+          code: L-0AD9BBE8
           name: Cross-region model inference tokens per minute for Anthropic Claude
-            Sonnet 4 V1
+            Opus 4.6 V1
+    global:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-3DD46812
+          name: Global cross-region model inference requests per minute for Anthropic
+            Claude Opus 4.6 V1
+        tpd:
+          code: L-ED2BADF9
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Opus 4.6 V1
+        tpm:
+          code: L-3DCCFAA4
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Opus 4.6 V1
+  inference_profiles:
+  - au
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-opus-4-6-v1
+  provider: Anthropic
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm:
+          code: L-34152C1D
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Opus 4.7
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-opus-4-7
+  provider: Anthropic
+- endpoints:
+    apac:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
   inference_profiles:
   - apac
   inference_types:
@@ -157,23 +199,61 @@ models:
       quotas:
         concurrent: null
         rpm:
-          code: L-DB84CE56
+          code: L-F6E116D7
           name: Global cross-region model inference requests per minute for Anthropic
-            Claude Sonnet 4.5 V1
+            Claude Sonnet 4.6
         tpd:
-          code: L-BC182137
+          code: L-248E47B7
           name: Global cross-region model inference tokens per day for Anthropic Claude
-            Sonnet 4.5 V1
+            Sonnet 4.6
         tpm:
-          code: L-27C57EE8
+          code: L-7BEE40FB
           name: Global cross-region model inference tokens per minute for Anthropic
-            Claude Sonnet 4.5 V1
+            Claude Sonnet 4.6
   inference_profiles:
   - au
   - global
   inference_types:
   - INFERENCE_PROFILE
   model_id: anthropic.claude-sonnet-4-5-20250929-v1:0
+  provider: Anthropic
+- endpoints:
+    au:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-00FF3314
+          name: Cross-region model inference requests per minute for Anthropic Claude
+            Sonnet 4.6
+        tpd:
+          code: L-248E47B7
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Sonnet 4.6
+        tpm:
+          code: L-15B8E632
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            Sonnet 4.6
+    global:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-F6E116D7
+          name: Global cross-region model inference requests per minute for Anthropic
+            Claude Sonnet 4.6
+        tpd:
+          code: L-248E47B7
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Sonnet 4.6
+        tpm:
+          code: L-7BEE40FB
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Sonnet 4.6
+  inference_profiles:
+  - au
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-sonnet-4-6
   provider: Anthropic
 - endpoints:
     global:
