@@ -181,20 +181,21 @@ class InferenceProfileFetcher:
                 best, best_score = candidates, score
             elif score == best_score:
                 best = best + candidates
+        # A routing set inside one country geography (au, jp, in) is a copy of that country's
+        # profile even if only the wider apac.* profile is listed: overlapping with apac is
+        # not evidence of an apac copy (issue #7)
+        regions = {region_from_arn(a) for a in arns}
+        country = self._country_prefix(regions) if all(regions) else None
+        if country:
+            return [f"{country}.{model_id}"]
         if best:
             return _specific_first(best)
 
         inferred = self._infer_from_regions(arns, model_id)
         return [inferred] if inferred else []
 
-    def _infer_from_regions(self, model_arns: List[str], model_id: str) -> Optional[str]:
-        """Fallback when no system profile matches: guess from the ARN regions."""
-        regions = [region_from_arn(a) for a in model_arns]
-        if any(not r for r in regions):
-            return f"global.{model_id}"  # global profiles include a region-less ARN
-        region_set = set(regions)
-        # Country-level Asia Pacific profiles route to a small set of ap-* regions; tell them
-        # apart from apac.* instead of lumping every ap-* set into apac (issue #7)
+    def _country_prefix(self, region_set) -> Optional[str]:
+        """The country-level prefix (au, jp, in, ...) whose regions contain ``region_set``."""
         # Defaults merged with what the listed system profiles show, per prefix, so a
         # retired jp.* profile still leaves jp recognisable when au.* is listed
         country_regions = {p: set(r) for p, r in COUNTRY_PROFILE_REGIONS.items()}
@@ -203,8 +204,20 @@ class InferenceProfileFetcher:
                     all(region_group(x) == 'ap' for x in regions_of_prefix):
                 country_regions.setdefault(p, set()).update(regions_of_prefix)
         for prefix, members in sorted(country_regions.items()):
-            if region_set <= members and prefix in self.prefix_map:
-                return f"{prefix}.{model_id}"
+            if set(region_set) <= members and prefix in self.prefix_map:
+                return prefix
+        return None
+
+    def _infer_from_regions(self, model_arns: List[str], model_id: str) -> Optional[str]:
+        """Fallback when no system profile matches: guess from the ARN regions."""
+        regions = [region_from_arn(a) for a in model_arns]
+        if any(not r for r in regions):
+            return f"global.{model_id}"  # global profiles include a region-less ARN
+        # Country-level Asia Pacific profiles route to a small set of ap-* regions; tell them
+        # apart from apac.* instead of lumping every ap-* set into apac (issue #7)
+        country = self._country_prefix(set(regions))
+        if country:
+            return f"{country}.{model_id}"
         groups = {region_group(r) for r in regions}
         if len(groups) == 1:
             group = groups.pop()
@@ -214,6 +227,11 @@ class InferenceProfileFetcher:
                 return None
             return f"{self.prefix_map[group]}.{model_id}"
         return f"global.{model_id}"
+
+    def is_system_profile(self, profile_id: str) -> bool:
+        """True when ``profile_id`` is a system-defined inference profile in the region."""
+        self._load_system_profiles()
+        return profile_id in self._system_ids
 
     def resolve_application_profile(self, identifier: str) -> Optional[Dict]:
         """Find an application profile by ID, ARN or name."""

@@ -412,3 +412,10 @@ def test_cli_accepts_system_profile_with_new_prefix(inputs):
     assert inputs._parse_model_id(f"kr.{HAIKU}") == {'model_id': HAIKU, 'profile_prefix': 'kr'}
     # Base model IDs with two dots stay base models
     assert inputs._parse_model_id('deepseek.v3.2') == {'model_id': 'deepseek.v3.2', 'profile_prefix': None}
+
+
+def test_unknown_dotted_model_warns(inputs, caplog):
+    import logging
+    caplog.set_level(logging.WARNING)
+    assert inputs._parse_model_id('team.prd') == {'model_id': 'team.prd', 'profile_prefix': None}
+    assert 'is not a model, inference profile or application inference profile known' in caplog.text

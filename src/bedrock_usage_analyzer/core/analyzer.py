@@ -51,14 +51,7 @@ class BedrockAnalyzer:
         self.metrics_fetcher = CloudWatchMetricsFetcher(self.cloudwatch_client, self.tz_api_format)
         self.output_generator = None  # Initialized in analyze() with output_dir
         self._fm_models = None  # Region's fm-list, loaded on first quota lookup
-        self._regional = None
     
-    def _regional_prefixes(self):
-        """Regional (geographic) profile prefixes, computed once per run."""
-        if getattr(self, '_regional', None) is None:
-            self._regional = set(get_regional_profile_prefixes())
-        return self._regional
-
     def _load_quota_codes(self, model_id, profile_prefix=None):
         """Load quota codes for a model from FM list based on endpoint
         
@@ -94,9 +87,10 @@ class BedrockAnalyzer:
                 return {}
             # Skip codes that contradict this model or endpoint (e.g. saved by an older
             # version, before the mapping checks existed) instead of showing another limit
+            regional = set(get_regional_profile_prefixes())
             for metric, quota in list(quotas.items()):
                 if isinstance(quota, dict):
-                    reason = mapping_conflict(model_id, endpoint_key, quota.get('name'), self._regional_prefixes())
+                    reason = mapping_conflict(model_id, endpoint_key, quota.get('name'), regional)
                     if reason:
                         logger.info(f"  Ignoring {metric} quota {quota.get('code')}: {reason}")
                         quotas[metric] = None
@@ -142,7 +136,7 @@ class BedrockAnalyzer:
                 logger.info(f"  Warning: Could not fetch {quota_type} quota {code} for {model_id}")
         
         # Apply 2x multiplier for TPD on regional cross-region profiles
-        regional_profile_prefixes = self._regional_prefixes()
+        regional_profile_prefixes = set(get_regional_profile_prefixes())
         if profile_prefix in regional_profile_prefixes and quotas['tpd'] and quotas['tpd']['value'] is not None:
             quotas['tpd']['value'] = quotas['tpd']['value'] * 2
         
@@ -285,6 +279,9 @@ class BedrockAnalyzer:
 
             # Step 2: Fetch quotas
             quota_codes = self._load_quota_codes(model_id, profile_prefix)
+            if not any(quota_codes.values()) and profile_prefix != UNKNOWN_SOURCE:
+                logger.info(f"  No quota codes mapped for this endpoint in {self.region}; the report will "
+                            f"show usage without limits. To map them: bua refresh fm-quotas {self.region}")
             quotas = self._fetch_quotas(model_id, quota_codes, profile_prefix)
             if any(quotas.values()):
                 logger.info(f"  Quotas: TPM={quotas['tpm']}, RPM={quotas['rpm']}, TPD={quotas['tpd']}")

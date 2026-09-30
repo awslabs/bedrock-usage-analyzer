@@ -345,3 +345,16 @@ def test_prefixes_come_from_the_mapping_file(tmp_path, monkeypatch):
     assert bedrock.get_profile_prefixes() == frozenset({'zz', 'global'})
     monkeypatch.setattr(bedrock, '_load_prefix_mapping', lambda: [])
     assert 'us-gov' in bedrock.get_regional_profile_prefixes() and 'global' not in bedrock.get_regional_profile_prefixes()
+
+
+def test_au_copy_is_not_attributed_to_listed_apac_when_au_is_missing():
+    apac_wide = [arn(r, HAIKU) for r in ('ap-northeast-1', 'ap-northeast-2', 'ap-south-1',
+                                          'ap-southeast-1', 'ap-southeast-2', 'ap-southeast-4')]
+    fetcher = InferenceProfileFetcher(FakeBedrock(system=[system_profile(f"apac.{HAIKU}", apac_wide)],
+                                                  application=[app_profile('auonly00001', 'a', AU_ARNS)]))
+    assert fetcher.list_application_profiles()[0]['source'] == f"au.{HAIKU}"
+
+
+def test_public_is_system_profile(sydney_bedrock):
+    fetcher = InferenceProfileFetcher(sydney_bedrock)
+    assert fetcher.is_system_profile(f"au.{HAIKU}") and not fetcher.is_system_profile('nope')

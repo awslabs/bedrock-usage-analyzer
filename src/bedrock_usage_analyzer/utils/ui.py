@@ -50,8 +50,8 @@ def select_from_list(
             raise
 
 
-def _claude_endpoints_in(region: str) -> list:
-    """Invokable Claude endpoint IDs listed in the region's fm-list, newest first."""
+def _claude_endpoints_in(region: str, limit: int = 12) -> list:
+    """Invokable Claude endpoint IDs listed in the region's fm-list (Haiku first, then newest)."""
     import os
     from bedrock_usage_analyzer.sync.quota_rules import model_version
     from bedrock_usage_analyzer.utils.paths import get_data_path
@@ -65,19 +65,18 @@ def _claude_endpoints_in(region: str) -> list:
         if not model_id.startswith('anthropic.claude') or model_id.count(':') > 1:
             continue  # skip context-window variants such as ...-v1:0:200k
         endpoints = model.get('endpoints') or {}
-        for prefix in ('us-gov', 'global'):
-            if prefix in endpoints:
-                options.append(f"{prefix}.{model_id}")
-        if 'base' in endpoints:
-            options.append(model_id)
+        for prefix in endpoints:
+            options.append(model_id if prefix == 'base' else f"{prefix}.{model_id}")
 
     def newest_first(option):
-        # Model generation (e.g. 4.5 > 3.7 > 3.5), then profile endpoints before base models
-        version = model_version(option.split('.', 1)[1] if option.startswith(('us-gov.', 'global.')) else option)
+        # Haiku first (mapping makes many small calls), then model generation (4.5 > 3.7 > 3.5),
+        # then profile endpoints before base models
+        is_profile = not option.startswith('anthropic.')
+        version = model_version(option.split('.', 1)[1] if is_profile else option)
         numbers = tuple(int(x) for x in version.split('.')) if version else ()
-        return (numbers, option.startswith(('us-gov.', 'global.')))
+        return ('haiku' in option, numbers, is_profile)
 
-    return sorted(options, key=newest_first, reverse=True)
+    return sorted(options, key=newest_first, reverse=True)[:limit]
 
 
 def select_quota_mapping_params(target_region: str = None, bedrock_region: str = None, model_id: str = None) -> Tuple[str, str, str]:
@@ -123,23 +122,20 @@ def select_quota_mapping_params(target_region: str = None, bedrock_region: str =
 
     # Step 2: Select model for mapping (skip if provided)
     if not model_id:
-        if get_partition_for_region(bedrock_region) == GOVCLOUD:
-            # What each GovCloud region serves differs (base model in one, only a us-gov.
-            # profile in the other), so offer the endpoints its own model list shows
-            model_options = _claude_endpoints_in(bedrock_region) or [
-                "us-gov.anthropic.claude-sonnet-4-5-20250929-v1:0",
-            ]
-        else:
+        # Only endpoints the chosen region serves (base model, geography or global profile);
+        # the fixed list is a fallback for regions without a bundled model list
+        model_options = _claude_endpoints_in(bedrock_region)
+        if not model_options and get_partition_for_region(bedrock_region) == GOVCLOUD:
+            model_options = ["us-gov.anthropic.claude-sonnet-4-5-20250929-v1:0"]
+        elif not model_options:
             model_options = [
                 "us.anthropic.claude-haiku-4-5-20251001-v1:0",
                 "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
                 "au.anthropic.claude-haiku-4-5-20251001-v1:0",
                 "jp.anthropic.claude-haiku-4-5-20251001-v1:0",
                 "global.anthropic.claude-haiku-4-5-20251001-v1:0",
-                "anthropic.claude-3-5-sonnet-20241022-v2:0",
-                "anthropic.claude-3-5-haiku-20241022-v1:0"
             ]
-        
+
         model_id = select_from_list(
             "Step 2: Select Claude model to use for intelligent mapping:",
             model_options

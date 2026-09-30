@@ -17,6 +17,9 @@ from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict
 
 logger = logging.getLogger(__name__)
 
+# 'partition' tells apart identical rows of commercial and GovCloud lists
+CSV_HEADERS = ['model_id', 'endpoint', 'quota_type', 'quota_code', 'quota_name', 'partition']
+
 
 class QuotaIndexGenerator:
     """Generates CSV index of all quota mappings for validation"""
@@ -75,6 +78,15 @@ class QuotaIndexGenerator:
         if not fm_files:
             logger.error("No fm-list files found")
             sys.exit(1)
+
+        # Each model endpoint is validated in the first region listing a mapping for it, so
+        # order the partition's home region first, then regions the account has enabled
+        # (the user's regions.yml), and opt-in regions it may not have enabled last
+        from bedrock_usage_analyzer.sync.regions import read_region_file
+        from bedrock_usage_analyzer.utils.partition import PARTITION_HOME_REGIONS
+        enabled = set(read_region_file(get_writable_path('regions.yml')))
+        homes = set(PARTITION_HOME_REGIONS.values())
+        fm_files.sort(key=lambda item: (item[0] not in homes, item[0] not in enabled, item[0]))
 
         logger.info(f"Found {len(fm_files)} fm-list files")
 
@@ -317,14 +329,14 @@ class QuotaIndexGenerator:
     def _generate_csv(self):
         """Generate CSV file with valid entries"""
         valid_rows = [
-            [e['model_id'], e['endpoint'], e['quota_type'], e['quota_code'], e['quota_name']]
+            [e['model_id'], e['endpoint'], e['quota_type'], e['quota_code'], e['quota_name'], e['partition']]
             for e in self.entries if e.get('quota_name') not in ('ERROR', 'MISMATCH')
         ]
         
         output_file = get_writable_path('quota-index.csv')
         write_csv(
             str(output_file),
-            ['model_id', 'endpoint', 'quota_type', 'quota_code', 'quota_name'],
+            CSV_HEADERS,
             valid_rows
         )
         logger.info(f"\n✓ Generated {output_file} with {len(valid_rows)} valid entries")
@@ -335,7 +347,7 @@ class QuotaIndexGenerator:
                 bundle_file = bundle_path / 'quota-index.csv'
                 write_csv(
                     str(bundle_file),
-                    ['model_id', 'endpoint', 'quota_type', 'quota_code', 'quota_name'],
+                    CSV_HEADERS,
                     valid_rows
                 )
                 logger.info(f"✓ Generated {bundle_file} (bundled)")

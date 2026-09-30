@@ -295,10 +295,6 @@
           "description": "Initialize analyzer with region and granularity config, setup AWS clients"
         },
         {
-          "name": "_regional_prefixes",
-          "description": "Regional (geographic) profile prefixes, computed once per run."
-        },
-        {
           "name": "_load_quota_codes",
           "description": "Load quota codes for a model from FM list YAML based on endpoint type"
         },
@@ -581,8 +577,16 @@
           "description": "Return the endpoint IDs an application profile may have been copied from."
         },
         {
+          "name": "_country_prefix",
+          "description": "The country-level prefix (au, jp, in, ...) whose regions contain ``region_set``."
+        },
+        {
           "name": "_infer_from_regions",
           "description": "Fallback when no system profile matches: guess from the ARN regions."
+        },
+        {
+          "name": "is_system_profile",
+          "description": "True when ``profile_id`` is a system-defined inference profile in the region."
         },
         {
           "name": "resolve_application_profile",
@@ -919,10 +923,6 @@
         {
           "name": "_get_quota_mapping",
           "description": "Get quota mapping for a specific endpoint using LLM"
-        },
-        {
-          "name": "_regional_prefixes",
-          "description": "Regional (geographic) profile prefixes, computed once per mapper run."
         },
         {
           "name": "_drop_invalid_choices",
@@ -1401,6 +1401,7 @@
       "path": "tests/test_regions.py",
       "summary": "Region discovery and filtering across partitions.",
       "imports_libraries": [
+        "logging",
         "pytest",
         "sys"
       ],
@@ -1416,6 +1417,7 @@
       "imports_libraries": [
         "builtins",
         "conftest",
+        "logging",
         "pytest",
         "sys"
       ],

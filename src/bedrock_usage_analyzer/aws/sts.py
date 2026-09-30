@@ -5,17 +5,17 @@
 
 from typing import Optional
 
-from bedrock_usage_analyzer.utils.partition import get_caller_identity
+from bedrock_usage_analyzer.utils.partition import resolve_caller_identity
 
 
 def get_account_id(region: Optional[str] = None) -> str:
-    """Get current AWS account ID (cached per STS region).
+    """Get current AWS account ID (cached; same STS fallback as the account check).
 
     Args:
-        region: Region whose STS endpoint to use; required for GovCloud or
+        region: Region whose STS endpoint to try first; required for GovCloud or
             China credentials when no region is configured.
 
     Raises:
         Exception: If unable to get account ID
     """
-    return get_caller_identity(region)['Account']
+    return resolve_caller_identity(region)['Account']

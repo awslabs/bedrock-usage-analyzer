@@ -333,6 +333,11 @@ class UserInputs:
         if prefix is None and value.count('.') >= 2 and not known_model and self._is_system_profile(value):
             # A system profile with a prefix newer than this release (e.g. 'kr.')
             prefix, base_model_id = value.split('.', 1)
+        elif not known_model and self.region:
+            # Still analyzed (the model list may predate a new model), but not silently
+            logger.warning(f"  WARNING: {value} is not a model, inference profile or application "
+                           f"inference profile known in {self.region}. If it is new, run "
+                           f"'bua refresh fm-list {self.region}'; otherwise check the ID.")
         return {
             'model_id': base_model_id,
             'profile_prefix': prefix
@@ -341,9 +346,7 @@ class UserInputs:
     def _is_system_profile(self, value: str) -> bool:
         """True when ``value`` is the ID of a system inference profile in the region."""
         try:
-            fetcher = self._get_profile_fetcher()
-            fetcher._load_system_profiles()
-            return value in fetcher._system_ids
+            return self._get_profile_fetcher().is_system_profile(value)
         except Exception as e:
             logger.debug(f"Could not list system inference profiles: {e}")
             return False

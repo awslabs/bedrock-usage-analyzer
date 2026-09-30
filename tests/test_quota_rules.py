@@ -258,3 +258,18 @@ def test_quota_index_keeps_other_partitions_rows(monkeypatch, tmp_path, no_bundl
     csv_text = (tmp_path / 'data' / 'quota-index.csv').read_text()
     assert 'L-COMM' in csv_text and 'L-GOV' in csv_text
     assert checked == ['L-GOV']
+
+
+def test_quota_index_prefers_home_and_enabled_regions_and_writes_partition(monkeypatch, tmp_path, no_bundle, commercial_creds):
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['eu-west-1', 'us-east-1']})
+    for region in ('af-south-1', 'eu-west-1', 'us-east-1'):
+        save_yaml(str(tmp_path / 'data' / f'fm-list-{region}.yml'), {'models': [
+            {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': {
+                'tpm': {'code': 'L-1', 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
+    checked = []
+    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: checked.append(region) or ('ok', {'QuotaName': 'n'}))
+    quota_index.QuotaIndexGenerator().run()
+    assert checked == ['us-east-1']                     # not the opt-in af-south-1
+    header = (tmp_path / 'data' / 'quota-index.csv').read_text().splitlines()[0]
+    assert header.endswith(',partition')

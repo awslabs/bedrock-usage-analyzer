@@ -117,7 +117,7 @@ def test_quota_mapper_rejects_region_outside_partition(monkeypatch):
 
 def test_sts_get_account_id(monkeypatch):
     from bedrock_usage_analyzer.aws import sts
-    monkeypatch.setattr(sts, 'get_caller_identity', lambda region=None: {'Account': '42'})
+    monkeypatch.setattr(sts, 'resolve_caller_identity', lambda region=None: {'Account': '42'})
     assert sts.get_account_id('us-gov-west-1') == '42'
 
 
@@ -344,7 +344,7 @@ def test_hint_classification_by_botocore_type_and_code():
 def test_gov_quota_mapping_options_follow_region_metadata():
     from bedrock_usage_analyzer.utils.ui import _claude_endpoints_in
     east = _claude_endpoints_in('us-gov-east-1')
-    assert east and all(o.startswith('us-gov.') for o in east)        # no on-demand there
+    assert east and not any(o.startswith('anthropic.') for o in east)   # no on-demand there
     assert 'anthropic.claude-3-5-sonnet-20240620-v1:0' in _claude_endpoints_in('us-gov-west-1')
     assert not any(o.count(':') > 1 for o in east)
 
@@ -372,5 +372,8 @@ def test_quota_mapping_picker_uses_target_region_for_sts(monkeypatch):
 def test_gov_quota_mapping_options_newest_first():
     from bedrock_usage_analyzer.utils.ui import _claude_endpoints_in
     west = _claude_endpoints_in('us-gov-west-1')
-    assert west.index('anthropic.claude-3-7-sonnet-20250219-v1:0') < west.index('anthropic.claude-3-haiku-20240307-v1:0')
-    assert west[0].startswith('us-gov.anthropic.claude-sonnet-4-5')
+    assert west[0] == 'anthropic.claude-3-haiku-20240307-v1:0'          # Haiku first (cheap bulk calls)
+    assert west.index('us-gov.anthropic.claude-sonnet-4-5-20250929-v1:0') < \
+        west.index('anthropic.claude-3-7-sonnet-20250219-v1:0') < west.index('anthropic.claude-3-5-sonnet-20240620-v1:0')
+    commercial = _claude_endpoints_in('us-east-1')
+    assert commercial and 'haiku' in commercial[0] and len(commercial) <= 12

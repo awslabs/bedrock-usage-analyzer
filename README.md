@@ -665,9 +665,11 @@ The tool supports AWS GovCloud (US) (`us-gov-east-1`, `us-gov-west-1`) next to c
 # Verify GovCloud access
 aws sts get-caller-identity --profile govcloud --region us-gov-west-1
 
-# Refresh GovCloud metadata (optional; GovCloud model lists are bundled)
+# Refresh GovCloud metadata. The GovCloud model lists are bundled, but their quota
+# mappings are not: without fm-quotas the reports show usage without quota limits.
 AWS_PROFILE=govcloud bedrock-usage-analyzer refresh regions
 AWS_PROFILE=govcloud bedrock-usage-analyzer refresh fm-list us-gov-west-1
+AWS_PROFILE=govcloud bedrock-usage-analyzer refresh fm-quotas us-gov-west-1
 
 # Analyze
 AWS_PROFILE=govcloud bedrock-usage-analyzer analyze --region us-gov-west-1
