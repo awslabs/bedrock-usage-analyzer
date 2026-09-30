@@ -238,3 +238,33 @@ def test_concurrent_quota_is_fetched_and_missing_codes_explained(analyzer, caplo
                                             'tpm': {'code': 'L-GONE', 'name': 't'}}, None)
     assert quotas['concurrent']['value'] == 7.0 and quotas['tpm'] is None
     assert "run 'bua refresh quota-index'" in caplog.text
+
+
+def test_report_is_well_formed_utf8(tmp_path):
+    """Charset declared first (symbols render in every browser) and every tag balanced."""
+    import html.parser
+    OutputGenerator(str(tmp_path)).generate({'m': base_data()})
+    src = (tmp_path / next(f for f in os.listdir(tmp_path) if f.endswith('.html'))).read_text(encoding='utf-8')
+    assert src.index('<meta charset="utf-8">') < src.index('<title>')
+    void = {'meta', 'link', 'br', 'img', 'input', 'hr'}
+
+    class Checker(html.parser.HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.stack, self.errors = [], []
+
+        def handle_starttag(self, tag, attrs):
+            if tag not in void:
+                self.stack.append(tag)
+
+        def handle_endtag(self, tag):
+            if tag in void:
+                return
+            if self.stack and self.stack[-1] == tag:
+                self.stack.pop()
+            else:
+                self.errors.append(tag)
+
+    checker = Checker()
+    checker.feed(src)
+    assert checker.errors == [] and checker.stack == []
