@@ -1,0 +1,88 @@
+models:
+- endpoints:
+    base:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+  inference_types:
+  - ON_DEMAND
+  model_id: amazon.titan-embed-text-v2:0
+  provider: Amazon
+- inference_types: []
+  model_id: amazon.titan-embed-text-v2:0:8k
+  provider: Amazon
+- endpoints:
+    us:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+    us-gov:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+  inference_profiles:
+  - us
+  - us-gov
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-3-5-sonnet-20240620-v1:0
+  provider: Anthropic
+- endpoints:
+    us-gov:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+  inference_profiles:
+  - us-gov
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-3-7-sonnet-20250219-v1:0
+  provider: Anthropic
+- endpoints:
+    us:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+    us-gov:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+  inference_profiles:
+  - us
+  - us-gov
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-3-haiku-20240307-v1:0
+  provider: Anthropic
+- inference_types: []
+  model_id: anthropic.claude-3-haiku-20240307-v1:0:200k
+  provider: Anthropic
+- inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-3-haiku-20240307-v1:0:48k
+  provider: Anthropic
+- endpoints:
+    us-gov:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+  inference_profiles:
+  - us-gov
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-sonnet-4-5-20250929-v1:0
+  provider: Anthropic

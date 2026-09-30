@@ -50,20 +50,28 @@ def save_models(filepath: str, models: List[Dict]):
     save_yaml(filepath, {'models': sorted_models})
 
 
-def refresh_region(region: str, update_bundle: bool = False):
+def refresh_region(region, update_bundle: bool = False):
     """Refresh foundation models for a region
     
     Also refreshes prefix mapping, merging with existing prefixes.
     
     Args:
-        region: AWS region name
+        region: AWS region name (string) or region object (dict)
         update_bundle: Also update bundled metadata (for maintainers)
     """
-    logger.info(f"\nProcessing region: {region}")
+    # Handle both old format (strings) and new format (dicts)
+    if isinstance(region, dict):
+        region_name = region['name']
+        region_display = region.get('display_name', region_name)
+    else:
+        region_name = region
+        region_display = region_name
+    
+    logger.info(f"\nProcessing region: {region_display} ({region_name})")
     
     # Refresh prefix mapping - merge with existing
     logger.info("  Refreshing prefix mapping...")
-    discovered = discover_prefix_mapping(region)
+    discovered = discover_prefix_mapping(region_name)
     
     # Load existing prefixes if file exists
     existing_prefixes = {}
@@ -116,10 +124,10 @@ def refresh_region(region: str, update_bundle: bool = False):
     
     logger.info(f"  ({len(discovered)} discovered, {len(all_prefixes)} total prefixes)")
     
-    output_file = get_writable_path(f'fm-list-{region}.yml')
+    output_file = get_writable_path(f'fm-list-{region_name}.yml')
     
     # Fetch foundation models
-    models = fetch_foundation_models(region)
+    models = fetch_foundation_models(region_name)
     if models is None:
         return
     
@@ -128,7 +136,7 @@ def refresh_region(region: str, update_bundle: bool = False):
     
     # Fetch ALL inference profiles once
     logger.info(f"  Fetching inference profiles...")
-    all_profiles = fetch_all_inference_profiles(region)
+    all_profiles = fetch_all_inference_profiles(region_name)
     # Build mapping from model to inference profiles
     profile_map = build_profile_map(all_profiles)
     logger.info(f"  Found {len(profile_map)} models with inference profiles")
@@ -190,12 +198,18 @@ def refresh_region(region: str, update_bundle: bool = False):
             logger.info(f"  ✓ Saved: {bundle_file} (bundled)")
 
 
-def refresh_all_regions(regions: List[str], update_bundle: bool = False):
+def refresh_all_regions(regions: List, update_bundle: bool = False):
     """Refresh foundation models for all regions
     
     Args:
-        regions: List of AWS region names
+        regions: List of AWS region names (strings) or region objects (dicts)
         update_bundle: Also update bundled metadata (for maintainers)
     """
     for region in regions:
-        refresh_region(region, update_bundle=update_bundle)
+        # Handle both old format (strings) and new format (dicts)
+        if isinstance(region, dict):
+            region_name = region['name']
+        else:
+            region_name = region
+        
+        refresh_region(region_name, update_bundle=update_bundle)
