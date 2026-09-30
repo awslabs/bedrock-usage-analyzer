@@ -358,3 +358,12 @@ def test_au_copy_is_not_attributed_to_listed_apac_when_au_is_missing():
 def test_public_is_system_profile(sydney_bedrock):
     fetcher = InferenceProfileFetcher(sydney_bedrock)
     assert fetcher.is_system_profile(f"au.{HAIKU}") and not fetcher.is_system_profile('nope')
+
+
+def test_unlisted_country_copy_also_shows_under_closest_endpoint():
+    tokyo_osaka_plus = [arn(r, HAIKU) for r in ('ap-northeast-1', 'ap-northeast-2', 'ap-northeast-3', 'ap-southeast-1')]
+    fetcher = InferenceProfileFetcher(FakeBedrock(system=[system_profile(f"apac.{HAIKU}", tokyo_osaka_plus)],
+                                                  application=[app_profile('jponly00001', 'j', JP_ARNS)]))
+    app = fetcher.list_application_profiles()[0]
+    assert app['sources'] == [f"jp.{HAIKU}", f"apac.{HAIKU}"]
+    assert fetcher.find_profiles(HAIKU, 'apac')[0][1:] == ['jponly00001']      # not lost from apac

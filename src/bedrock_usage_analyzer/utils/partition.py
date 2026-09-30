@@ -251,6 +251,25 @@ def resolve_caller_identity(region: Optional[str] = None, lookup=None) -> Dict[s
         return identity
 
 
+def probe_other_partitions(region: Optional[str], lookup=None) -> Optional[Dict[str, str]]:
+    """Identity found by asking STS in the home region of each *other* partition.
+
+    Used after STS for ``region`` rejected the token, to tell whether the credentials
+    belong to another partition. Single attempts with short timeouts, so a blocked
+    endpoint cannot delay the real error message. None when no partition accepts them.
+    """
+    lookup = lookup or (lambda r: get_caller_identity(r, probe=True))
+    asked = get_partition_for_region(region)
+    for partition, home in PARTITION_HOME_REGIONS.items():
+        if partition == asked:
+            continue
+        try:
+            return lookup(home)
+        except Exception as e:
+            logger.debug(f"STS probe in {home} rejected the credentials: {e}")
+    return None
+
+
 def detect_credentials_partition(region: Optional[str] = None) -> Optional[str]:
     """Partition of the current credentials, or None if it cannot be determined."""
     try:

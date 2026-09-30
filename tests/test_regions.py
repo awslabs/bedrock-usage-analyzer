@@ -157,7 +157,7 @@ def test_old_user_regions_file_still_gets_bundled_govcloud(tmp_path):
 def test_partition_found_when_named_region_is_in_another_partition(monkeypatch, caplog):
     import logging
     caplog.set_level(logging.WARNING)
-    monkeypatch.setattr(r, 'detect_credentials_partition',
-                        lambda region=None: 'aws' if region == 'us-east-1' else None)
+    monkeypatch.setattr(r, 'detect_credentials_partition', lambda region=None: None)
+    monkeypatch.setattr(r, 'probe_other_partitions', lambda region: {'Partition': 'aws'})
     assert r.credentials_partition_or_exit('us-gov-west-1') == 'aws'
     assert 'credentials are for AWS Commercial, but us-gov-west-1 is in AWS GovCloud (US)' in caplog.text

@@ -52,6 +52,13 @@ class BedrockAnalyzer:
         self.output_generator = None  # Initialized in analyze() with output_dir
         self._fm_models = None  # Region's fm-list, loaded on first quota lookup
     
+    def _endpoint_listed(self, model_id, profile_prefix) -> bool:
+        """True when the region's fm-list has this model with this endpoint."""
+        self._load_quota_codes(model_id, profile_prefix)  # loads the list once
+        key = profile_prefix or 'base'
+        return any(m.get('model_id') == model_id and key in (m.get('endpoints') or {})
+                   for m in self._fm_models or [])
+
     def _load_quota_codes(self, model_id, profile_prefix=None):
         """Load quota codes for a model from FM list based on endpoint
         
@@ -280,8 +287,13 @@ class BedrockAnalyzer:
             # Step 2: Fetch quotas
             quota_codes = self._load_quota_codes(model_id, profile_prefix)
             if not any(quota_codes.values()) and profile_prefix != UNKNOWN_SOURCE:
+                if self._endpoint_listed(model_id, profile_prefix):
+                    fix = f"bua refresh fm-quotas {self.region}"
+                else:
+                    # fm-quotas only maps endpoints already in the model list
+                    fix = f"bua refresh fm-list {self.region}, then bua refresh fm-quotas {self.region}"
                 logger.info(f"  No quota codes mapped for this endpoint in {self.region}; the report will "
-                            f"show usage without limits. To map them: bua refresh fm-quotas {self.region}")
+                            f"show usage without limits. To map them: {fix}")
             quotas = self._fetch_quotas(model_id, quota_codes, profile_prefix)
             if any(quotas.values()):
                 logger.info(f"  Quotas: TPM={quotas['tpm']}, RPM={quotas['rpm']}, TPD={quotas['tpd']}")

@@ -167,6 +167,15 @@ class InferenceProfileFetcher:
             # endpoint at all, and a copy of a real base model still shows under 'base'.
             return _specific_first(exact or []) + [model_id]
 
+        # A routing set inside one country geography (au, jp, in) is a copy of that country's
+        # profile: overlapping with the wider apac.* set is not evidence of an apac copy
+        # (issue #7). If that country's profile is listed, that settles it.
+        regions = {region_from_arn(a) for a in arns}
+        country = self._country_prefix(regions) if all(regions) else None
+        country_id = f"{country}.{model_id}" if country else None
+        if country_id and country_id in self._system_ids:
+            return [country_id]
+
         # Closest system profile for the same model (routing sets change over time)
         best, best_score = [], 0.0
         for system_arns, profile_ids in self._system_by_arns.items():
@@ -181,13 +190,11 @@ class InferenceProfileFetcher:
                 best, best_score = candidates, score
             elif score == best_score:
                 best = best + candidates
-        # A routing set inside one country geography (au, jp, in) is a copy of that country's
-        # profile even if only the wider apac.* profile is listed: overlapping with apac is
-        # not evidence of an apac copy (issue #7)
-        regions = {region_from_arn(a) for a in arns}
-        country = self._country_prefix(regions) if all(regions) else None
-        if country:
-            return [f"{country}.{model_id}"]
+        if country_id:
+            # The country profile is not listed (retired, or not offered here): keep the
+            # country as the source, but also show the profile under the closest listed
+            # endpoint so it does not vanish from that endpoint's report
+            return [country_id] + [p for p in _specific_first(best) if p != country_id]
         if best:
             return _specific_first(best)
 
@@ -213,11 +220,7 @@ class InferenceProfileFetcher:
         regions = [region_from_arn(a) for a in model_arns]
         if any(not r for r in regions):
             return f"global.{model_id}"  # global profiles include a region-less ARN
-        # Country-level Asia Pacific profiles route to a small set of ap-* regions; tell them
-        # apart from apac.* instead of lumping every ap-* set into apac (issue #7)
-        country = self._country_prefix(set(regions))
-        if country:
-            return f"{country}.{model_id}"
+        # Country geographies (au, jp, in) were already handled by resolve_sources
         groups = {region_group(r) for r in regions}
         if len(groups) == 1:
             group = groups.pop()

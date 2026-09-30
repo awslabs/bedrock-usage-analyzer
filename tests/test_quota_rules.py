@@ -273,3 +273,13 @@ def test_quota_index_prefers_home_and_enabled_regions_and_writes_partition(monke
     assert checked == ['us-east-1']                     # not the opt-in af-south-1
     header = (tmp_path / 'data' / 'quota-index.csv').read_text().splitlines()[0]
     assert header.endswith(',partition')
+
+
+def test_endpoint_listed_tells_missing_endpoint_from_unmapped_one():
+    from bedrock_usage_analyzer.core.analyzer import BedrockAnalyzer
+    analyzer = BedrockAnalyzer.__new__(BedrockAnalyzer)
+    analyzer.region = 'us-east-1'
+    analyzer._fm_models = [{'model_id': 'm', 'endpoints': {'base': {'quotas': {}}, 'us': None}}]
+    assert analyzer._endpoint_listed('m', None) and analyzer._endpoint_listed('m', 'us')
+    assert not analyzer._endpoint_listed('m', 'eu')
+    assert not analyzer._endpoint_listed('new-model', None)

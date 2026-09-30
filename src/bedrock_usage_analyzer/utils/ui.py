@@ -118,6 +118,11 @@ def select_quota_mapping_params(target_region: str = None, bedrock_region: str =
             "Step 1: Select AWS region to use for Bedrock API calls:",
             all_regions
         )
+    elif get_partition_for_region(bedrock_region) != get_partition_for_region(all_regions[0]):
+        # e.g. GovCloud credentials with a commercial Bedrock region: every LLM call would fail
+        print(f"\nBedrock region {bedrock_region} is not in the credentials' partition "
+              f"(regions available: {', '.join(all_regions)}).", file=sys.stderr)
+        sys.exit(1)
     print(f"\n✓ Bedrock calls will use region: {bedrock_region}")
 
     # Step 2: Select model for mapping (skip if provided)

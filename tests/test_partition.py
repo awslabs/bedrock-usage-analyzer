@@ -199,3 +199,17 @@ def test_identity_fallback_is_remembered():
     p.resolve_caller_identity('ap-east-1', lookup)
     p.resolve_caller_identity('ap-east-1', lookup)
     assert calls == ['ap-east-1', 'us-east-1', 'us-east-1']
+
+
+def test_probe_other_partitions_skips_the_asked_partition():
+    asked = []
+
+    def lookup(region):
+        asked.append(region)
+        if region == 'us-gov-west-1':
+            return {'Partition': 'aws-us-gov'}
+        raise RuntimeError('InvalidClientTokenId')
+
+    assert p.probe_other_partitions('us-east-2', lookup)['Partition'] == 'aws-us-gov'
+    assert 'us-east-1' not in asked
+    assert p.probe_other_partitions('cn-north-1', lambda r: (_ for _ in ()).throw(RuntimeError('x'))) is None

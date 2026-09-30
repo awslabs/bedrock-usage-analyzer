@@ -377,3 +377,11 @@ def test_gov_quota_mapping_options_newest_first():
         west.index('anthropic.claude-3-7-sonnet-20250219-v1:0') < west.index('anthropic.claude-3-5-sonnet-20240620-v1:0')
     commercial = _claude_endpoints_in('us-east-1')
     assert commercial and 'haiku' in commercial[0] and len(commercial) <= 12
+
+
+def test_quota_mapping_rejects_bedrock_region_of_other_partition(monkeypatch):
+    from bedrock_usage_analyzer.utils import ui
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.regions_for_credentials',
+                        lambda regions, region=None: (['us-gov-east-1', 'us-gov-west-1'], 'aws-us-gov'))
+    with pytest.raises(SystemExit):
+        ui.select_quota_mapping_params(target_region='us-gov-west-1', bedrock_region='us-east-1', model_id='m')

@@ -17,7 +17,6 @@ from ..utils.yaml_handler import load_yaml
 from ..utils.ui import select_from_list
 from ..utils.paths import get_data_path
 from ..utils.partition import (
-    PARTITION_HOME_REGIONS,
     filter_regions_by_partition,
     get_caller_identity,
     get_partition_display_name,
@@ -26,6 +25,7 @@ from ..utils.partition import (
     is_govcloud_region,
     is_token_rejection,
     is_valid_region_name,
+    probe_other_partitions,
     region_hint,
     resolve_caller_identity,
 )
@@ -221,20 +221,12 @@ class UserInputs:
         """
         if not region:
             return
-        requested = get_partition_for_region(region)
-        # One STS region per other partition (the commercial STS endpoint rejects
-        # GovCloud credentials and vice versa)
-        probes = [r for p, r in PARTITION_HOME_REGIONS.items() if p != requested]
-        for probe in probes:
-            try:
-                identity = get_caller_identity(probe, probe=True)
-            except Exception as e:
-                # Expected for every partition the credentials do not belong to
-                logger.debug(f"STS probe in {probe} rejected the credentials: {e}")
-                continue
+        # Shared with the refresh commands; the lookup goes through this module's
+        # get_caller_identity so it can be stubbed in tests
+        identity = probe_other_partitions(region, lookup=lambda r: get_caller_identity(r, probe=True))
+        if identity:
             self.partition = identity['Partition']
             self._check_region_partition(region)
-            return
 
     def _check_region_partition(self, region):
         """Stop early when the region belongs to a different partition than the credentials."""
