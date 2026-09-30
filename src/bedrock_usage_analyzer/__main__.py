@@ -13,7 +13,6 @@ from bedrock_usage_analyzer.utils.paths import (
     get_refresh_location_message,
     get_writable_path,
     get_bundle_path,
-    get_data_path,
 )
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')

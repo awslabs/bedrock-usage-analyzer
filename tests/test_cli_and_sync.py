@@ -222,7 +222,7 @@ def _index_fixture(tmp_path, codes):
 
 def test_quota_index_removes_only_codes_reported_missing(monkeypatch, tmp_path):
     from bedrock_usage_analyzer.sync import quota_index
-    from bedrock_usage_analyzer.aws.servicequotas import QUOTA_OK, QUOTA_MISSING, QUOTA_ERROR
+    from bedrock_usage_analyzer.aws.servicequotas import QUOTA_MISSING, QUOTA_ERROR
     _index_fixture(tmp_path, {'tpm': 'L-GONE', 'rpm': 'L-FLAKY'})
     answers = {'L-GONE': (QUOTA_MISSING, None), 'L-FLAKY': (QUOTA_ERROR, None)}
     monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: answers[code])

@@ -4,7 +4,7 @@
 """Generate quota index CSV for validation"""
 
 import logging
-from typing import Dict, List
+from typing import Dict
 import sys
 
 from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml

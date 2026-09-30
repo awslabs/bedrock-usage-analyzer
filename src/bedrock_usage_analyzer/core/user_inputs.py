@@ -17,7 +17,7 @@ from ..utils.yaml_handler import load_yaml
 from ..utils.ui import select_from_list
 from ..utils.paths import get_data_path
 from ..utils.partition import (
-    REGION_PATTERN,  # re-exported for callers of the previous location
+    REGION_PATTERN,  # noqa: F401  re-exported for callers of the previous location
     get_caller_identity,
     get_partition_display_name,
     get_partition_for_region,
