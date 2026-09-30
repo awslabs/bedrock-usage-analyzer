@@ -1,350 +1,347 @@
-model_id,endpoint,quota_type,quota_code,quota_name
-anthropic.claude-fable-5,global,tpm,L-D06938E7,Global cross-region model inference tokens per minute for Anthropic Claude Fable 5
-anthropic.claude-fable-5,us,tpm,L-9B258944,Cross-region model inference tokens per minute for Anthropic Claude Fable 5
-anthropic.claude-fable-5-1,global,tpm,L-50CC5674,Global cross-region model inference tokens per minute for Anthropic Claude Fable 5.1
-anthropic.claude-fable-5-1,us,tpm,L-E8940935,Cross-region model inference tokens per minute for Anthropic Claude Fable 5.1
-anthropic.claude-haiku-4-5-20251001-v1:0,global,rpm,L-E5084BBA,Global cross-region model inference requests per minute for Anthropic Claude Haiku 4.5
-anthropic.claude-haiku-4-5-20251001-v1:0,global,tpm,L-9A11C666,Global cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5
-anthropic.claude-haiku-4-5-20251001-v1:0,jp,rpm,L-CCA5DF70,Cross-region model inference requests per minute for Anthropic Claude Haiku 4.5
-anthropic.claude-haiku-4-5-20251001-v1:0,jp,tpm,L-58BE175A,Cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5
-anthropic.claude-haiku-4-5-20251001-v1:0,au,rpm,L-CCA5DF70,Cross-region model inference requests per minute for Anthropic Claude Haiku 4.5
-anthropic.claude-haiku-4-5-20251001-v1:0,au,tpm,L-58BE175A,Cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5
-anthropic.claude-haiku-4-5-20251001-v1:0,us,rpm,L-CCA5DF70,Cross-region model inference requests per minute for Anthropic Claude Haiku 4.5
-anthropic.claude-haiku-4-5-20251001-v1:0,us,tpm,L-58BE175A,Cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5
-anthropic.claude-haiku-4-5-20251001-v1:0,eu,rpm,L-CCA5DF70,Cross-region model inference requests per minute for Anthropic Claude Haiku 4.5
-anthropic.claude-haiku-4-5-20251001-v1:0,eu,tpm,L-58BE175A,Cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5
-anthropic.claude-opus-4-5-20251101-v1:0,global,rpm,L-58424D95,Global cross-region model inference requests per minute for Anthropic Claude Opus 4.5
-anthropic.claude-opus-4-5-20251101-v1:0,global,tpd,L-E2985A8E,Global cross-region model inference tokens per day for Anthropic Claude Opus 4.5
-anthropic.claude-opus-4-5-20251101-v1:0,global,tpm,L-3ABF6ACC,Global cross-region model inference tokens per minute for Anthropic Claude Opus 4.5
-anthropic.claude-opus-4-5-20251101-v1:0,us,rpm,L-27989F42,Cross-region model inference requests per minute for Anthropic Claude Opus 4.5
-anthropic.claude-opus-4-5-20251101-v1:0,us,tpd,L-F397ECBF,Model invocation max tokens per day for Anthropic Claude Opus 4.5 (doubled for cross-region calls)
-anthropic.claude-opus-4-5-20251101-v1:0,us,tpm,L-7007E9C9,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.5
-anthropic.claude-opus-4-5-20251101-v1:0,eu,rpm,L-27989F42,Cross-region model inference requests per minute for Anthropic Claude Opus 4.5
-anthropic.claude-opus-4-5-20251101-v1:0,eu,tpd,L-F397ECBF,Model invocation max tokens per day for Anthropic Claude Opus 4.5 (doubled for cross-region calls)
-anthropic.claude-opus-4-5-20251101-v1:0,eu,tpm,L-7007E9C9,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.5
-anthropic.claude-opus-4-6-v1,global,rpm,L-3DD46812,Global cross-region model inference requests per minute for Anthropic Claude Opus 4.6 V1
-anthropic.claude-opus-4-6-v1,global,tpm,L-3DCCFAA4,Global cross-region model inference tokens per minute for Anthropic Claude Opus 4.6 V1
-anthropic.claude-opus-4-6-v1,au,rpm,L-11DFF789,Cross-region model inference requests per minute for Anthropic Claude Opus 4.6 V1
-anthropic.claude-opus-4-6-v1,au,tpm,L-0AD9BBE8,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.6 V1
-anthropic.claude-opus-4-6-v1,us,rpm,L-11DFF789,Cross-region model inference requests per minute for Anthropic Claude Opus 4.6 V1
-anthropic.claude-opus-4-6-v1,us,tpm,L-0AD9BBE8,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.6 V1
-anthropic.claude-opus-4-6-v1,eu,rpm,L-11DFF789,Cross-region model inference requests per minute for Anthropic Claude Opus 4.6 V1
-anthropic.claude-opus-4-6-v1,eu,tpm,L-0AD9BBE8,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.6 V1
-anthropic.claude-opus-4-6-v1,base,rpm,L-0491E43A,On-demand model inference requests per minute for Anthropic Claude Opus 4.6 V1
-anthropic.claude-opus-4-6-v1,base,tpm,L-98944717,On-demand model inference tokens per minute for Anthropic Claude Opus 4.6 V1
-anthropic.claude-opus-4-7,global,tpm,L-34152C1D,Global cross-region model inference tokens per minute for Anthropic Claude Opus 4.7
-anthropic.claude-opus-4-7,jp,tpm,L-5DB28B7B,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.7
-anthropic.claude-opus-4-7,au,tpm,L-5DB28B7B,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.7
-anthropic.claude-opus-4-7,us,tpm,L-5DB28B7B,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.7
-anthropic.claude-opus-4-7,eu,tpm,L-5DB28B7B,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.7
-anthropic.claude-opus-4-8,global,tpm,L-4FCE27C7,Global cross-region model inference tokens per minute for Anthropic Claude Opus 4.8
-anthropic.claude-opus-4-8,jp,tpm,L-DB99DCDB,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.8
-anthropic.claude-opus-4-8,au,tpm,L-DB99DCDB,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.8
-anthropic.claude-opus-4-8,us,tpm,L-DB99DCDB,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.8
-anthropic.claude-opus-4-8,eu,tpm,L-DB99DCDB,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.8
-anthropic.claude-opus-5,global,tpm,L-D73B1244,Global cross-region model inference tokens per minute for Anthropic Claude Opus 5
-anthropic.claude-opus-5,au,tpm,L-99296DCD,Cross-region model inference tokens per minute for Anthropic Claude Opus 5
-anthropic.claude-opus-5,us,tpm,L-99296DCD,Cross-region model inference tokens per minute for Anthropic Claude Opus 5
-anthropic.claude-opus-5,eu,tpm,L-99296DCD,Cross-region model inference tokens per minute for Anthropic Claude Opus 5
-anthropic.claude-opus-5-5,global,tpm,L-A103A344,Global cross-region model inference tokens per minute for Anthropic Claude Opus 5.5
-anthropic.claude-opus-5-5,jp,tpm,L-A4430697,Cross-region model inference tokens per minute for Anthropic Claude Opus 5.5
-anthropic.claude-opus-5-5,au,tpm,L-A4430697,Cross-region model inference tokens per minute for Anthropic Claude Opus 5.5
-anthropic.claude-opus-5-5,us,tpm,L-A4430697,Cross-region model inference tokens per minute for Anthropic Claude Opus 5.5
-anthropic.claude-opus-5-5,eu,tpm,L-A4430697,Cross-region model inference tokens per minute for Anthropic Claude Opus 5.5
-anthropic.claude-sonnet-4-5-20250929-v1:0,global,rpm,L-DB84CE56,Global cross-region model inference requests per minute for Anthropic Claude Sonnet 4.5 V1
-anthropic.claude-sonnet-4-5-20250929-v1:0,global,tpm,L-27C57EE8,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1
-anthropic.claude-sonnet-4-5-20250929-v1:0,jp,rpm,L-4A6BFAB1,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.5 V1
-anthropic.claude-sonnet-4-5-20250929-v1:0,jp,tpm,L-F4DDD3EB,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1
-anthropic.claude-sonnet-4-5-20250929-v1:0,au,rpm,L-4A6BFAB1,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.5 V1
-anthropic.claude-sonnet-4-5-20250929-v1:0,au,tpm,L-F4DDD3EB,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1
-anthropic.claude-sonnet-4-5-20250929-v1:0,us,rpm,L-4A6BFAB1,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.5 V1
-anthropic.claude-sonnet-4-5-20250929-v1:0,us,tpm,L-F4DDD3EB,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1
-anthropic.claude-sonnet-4-5-20250929-v1:0,eu,rpm,L-4A6BFAB1,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.5 V1
-anthropic.claude-sonnet-4-5-20250929-v1:0,eu,tpm,L-F4DDD3EB,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1
-anthropic.claude-sonnet-4-6,global,rpm,L-F6E116D7,Global cross-region model inference requests per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-4-6,global,tpm,L-7BEE40FB,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-4-6,jp,rpm,L-00FF3314,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-4-6,jp,tpm,L-15B8E632,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-4-6,au,rpm,L-00FF3314,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-4-6,au,tpm,L-15B8E632,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-4-6,us,rpm,L-00FF3314,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-4-6,us,tpm,L-15B8E632,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-4-6,eu,rpm,L-00FF3314,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-4-6,eu,tpm,L-15B8E632,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-4-6,base,rpm,L-9B878FAE,On-demand model inference requests per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-4-6,base,tpm,L-5F5A169C,On-demand model inference tokens per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-5,global,tpm,L-DD84E5CA,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 5
-anthropic.claude-sonnet-5,au,tpm,L-D4FBCF4E,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 5
-anthropic.claude-sonnet-5,us,tpm,L-D4FBCF4E,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 5
-anthropic.claude-sonnet-5,eu,tpm,L-D4FBCF4E,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 5
-moonshotai.kimi-k3,global,tpd,L-0EDA3E92,Global cross-region model inference tokens per day for Moonshot AI Kimi K3
-moonshotai.kimi-k3,global,tpm,L-2B5A3FA2,Global cross-region model inference tokens per minute for Moonshot AI Kimi K3
-moonshotai.kimi-k3,us,tpd,L-BA59CBAA,Model invocation max tokens per day for Moonshot AI Kimi K3 (doubled for cross-region calls)
-moonshotai.kimi-k3,us,tpm,L-51FF35D5,Cross-region model inference tokens per minute for Moonshot AI Kimi K3
-openai.gpt-6-astra,global,tpm,L-B38B530A,Global cross-region model inference tokens per minute for GPT-6 Astra
-openai.gpt-6-astra,us,tpm,L-53A144CD,Cross-region model inference tokens per minute for GPT-6 Astra
-openai.gpt-6-luna,global,tpd,L-C0FA489B,Global cross-region model inference tokens per day for GPT-6 Luna
-openai.gpt-6-luna,global,tpm,L-CCC92354,Global cross-region model inference tokens per minute for GPT-6 Luna
-openai.gpt-6-luna,us,tpd,L-F3D482FA,Model invocation max tokens per day for GPT-6 Luna (doubled for cross-region calls)
-openai.gpt-6-luna,us,tpm,L-AB39D760,Cross-region model inference tokens per minute for GPT-6 Luna
-openai.gpt-6-sol,global,tpd,L-685F85F7,Global cross-region model inference tokens per day for GPT-6 Sol
-openai.gpt-6-sol,global,tpm,L-039AF68B,Global cross-region model inference tokens per minute for GPT-6 Sol
-openai.gpt-6-sol,us,tpd,L-B55D3318,Model invocation max tokens per day for GPT-6 Sol (doubled for cross-region calls)
-openai.gpt-6-sol,us,tpm,L-8FD128CF,Cross-region model inference tokens per minute for GPT-6 Sol
-twelvelabs.pegasus-1-2-v1:0,apac,rpm,L-6E046197,Cross-region model inference requests per minute for Twelve Labs Pegasus
-twelvelabs.pegasus-1-2-v1:0,base,concurrent,L-CABD464E,On-demand InvokeModel concurrent requests for Twelve Labs Pegasus
-twelvelabs.pegasus-1-2-v1:0,base,rpm,L-5E8692C5,On-demand model inference requests per minute for Twelve Labs Pegasus
-twelvelabs.pegasus-1-2-v1:0,eu,rpm,L-6E046197,Cross-region model inference requests per minute for Twelve Labs Pegasus
-twelvelabs.pegasus-1-2-v1:0,us,rpm,L-6E046197,Cross-region model inference requests per minute for Twelve Labs Pegasus
-amazon.nova-2-lite-v1:0,global,rpm,L-D5F39C2F,Global cross-region model inference requests per minute for Amazon Nova 2 Lite
-amazon.nova-2-lite-v1:0,global,tpd,L-AD940EDE,Global cross-region model inference tokens per day for Amazon Nova 2 Lite
-amazon.nova-2-lite-v1:0,global,tpm,L-71C69B70,Global cross-region model inference tokens per minute for Amazon Nova 2 Lite
-amazon.nova-2-lite-v1:0,jp,rpm,L-F06F1187,Cross-region model inference requests per minute for Amazon Nova 2 Lite
-amazon.nova-2-lite-v1:0,jp,tpd,L-210172B5,Model invocation max tokens per day for Amazon Nova 2 Lite (doubled for cross-region calls)
-amazon.nova-2-lite-v1:0,jp,tpm,L-C6F5908D,Cross-region model inference tokens per minute for Amazon Nova 2 Lite
-amazon.nova-2-lite-v1:0,us,rpm,L-F06F1187,Cross-region model inference requests per minute for Amazon Nova 2 Lite
-amazon.nova-2-lite-v1:0,us,tpd,L-210172B5,Model invocation max tokens per day for Amazon Nova 2 Lite (doubled for cross-region calls)
-amazon.nova-2-lite-v1:0,us,tpm,L-C6F5908D,Cross-region model inference tokens per minute for Amazon Nova 2 Lite
-amazon.nova-2-lite-v1:0,eu,rpm,L-F06F1187,Cross-region model inference requests per minute for Amazon Nova 2 Lite
-amazon.nova-2-lite-v1:0,eu,tpd,L-210172B5,Model invocation max tokens per day for Amazon Nova 2 Lite (doubled for cross-region calls)
-amazon.nova-2-lite-v1:0,eu,tpm,L-C6F5908D,Cross-region model inference tokens per minute for Amazon Nova 2 Lite
-amazon.nova-lite-v1:0,apac,rpm,L-89F8391A,Cross-region model inference requests per minute for Amazon Nova Lite
-amazon.nova-lite-v1:0,apac,tpd,L-45E0AD92,Model invocation max tokens per day for Amazon Nova Lite (doubled for cross-region calls)
-amazon.nova-lite-v1:0,apac,tpm,L-7C42E72A,Cross-region model inference tokens per minute for Amazon Nova Lite
-amazon.nova-lite-v1:0,base,rpm,L-E386A278,On-demand model inference requests per minute for Amazon Nova Lite
-amazon.nova-lite-v1:0,base,tpm,L-70423BF8,On-demand model inference tokens per minute for Amazon Nova Lite
-amazon.nova-lite-v1:0,ca,rpm,L-89F8391A,Cross-region model inference requests per minute for Amazon Nova Lite
-amazon.nova-lite-v1:0,ca,tpd,L-45E0AD92,Model invocation max tokens per day for Amazon Nova Lite (doubled for cross-region calls)
-amazon.nova-lite-v1:0,ca,tpm,L-7C42E72A,Cross-region model inference tokens per minute for Amazon Nova Lite
-amazon.nova-lite-v1:0,eu,rpm,L-89F8391A,Cross-region model inference requests per minute for Amazon Nova Lite
-amazon.nova-lite-v1:0,eu,tpd,L-45E0AD92,Model invocation max tokens per day for Amazon Nova Lite (doubled for cross-region calls)
-amazon.nova-lite-v1:0,eu,tpm,L-7C42E72A,Cross-region model inference tokens per minute for Amazon Nova Lite
-amazon.nova-lite-v1:0,us,rpm,L-89F8391A,Cross-region model inference requests per minute for Amazon Nova Lite
-amazon.nova-lite-v1:0,us,tpd,L-45E0AD92,Model invocation max tokens per day for Amazon Nova Lite (doubled for cross-region calls)
-amazon.nova-lite-v1:0,us,tpm,L-7C42E72A,Cross-region model inference tokens per minute for Amazon Nova Lite
-amazon.nova-micro-v1:0,apac,rpm,L-3F110E0F,Cross-region model inference requests per minute for Amazon Nova Micro
-amazon.nova-micro-v1:0,apac,tpd,L-D2912E70,Model invocation max tokens per day for Amazon Nova Micro (doubled for cross-region calls)
-amazon.nova-micro-v1:0,apac,tpm,L-DC7FF66C,Cross-region model inference tokens per minute for Amazon Nova Micro
-amazon.nova-micro-v1:0,base,rpm,L-E118F160,On-demand model inference requests per minute for Amazon Nova Micro
-amazon.nova-micro-v1:0,base,tpm,L-CFA4FA0D,On-demand model inference tokens per minute for Amazon Nova Micro
-amazon.nova-micro-v1:0,eu,rpm,L-3F110E0F,Cross-region model inference requests per minute for Amazon Nova Micro
-amazon.nova-micro-v1:0,eu,tpd,L-D2912E70,Model invocation max tokens per day for Amazon Nova Micro (doubled for cross-region calls)
-amazon.nova-micro-v1:0,eu,tpm,L-DC7FF66C,Cross-region model inference tokens per minute for Amazon Nova Micro
-amazon.nova-micro-v1:0,us,rpm,L-3F110E0F,Cross-region model inference requests per minute for Amazon Nova Micro
-amazon.nova-micro-v1:0,us,tpd,L-D2912E70,Model invocation max tokens per day for Amazon Nova Micro (doubled for cross-region calls)
-amazon.nova-micro-v1:0,us,tpm,L-DC7FF66C,Cross-region model inference tokens per minute for Amazon Nova Micro
-amazon.nova-pro-v1:0,apac,rpm,L-ED46B8C5,Cross-region model inference requests per minute for Amazon Nova Pro
-amazon.nova-pro-v1:0,apac,tpd,L-D690997B,Model invocation max tokens per day for Amazon Nova Pro (doubled for cross-region calls)
-amazon.nova-pro-v1:0,apac,tpm,L-C0326783,Cross-region model inference tokens per minute for Amazon Nova Pro
-amazon.nova-pro-v1:0,base,rpm,L-F2717A44,On-demand model inference requests per minute for Amazon Nova Pro
-amazon.nova-pro-v1:0,base,tpm,L-CE33604C,On-demand model inference tokens per minute for Amazon Nova Pro
-amazon.nova-pro-v1:0,eu,rpm,L-ED46B8C5,Cross-region model inference requests per minute for Amazon Nova Pro
-amazon.nova-pro-v1:0,eu,tpd,L-D690997B,Model invocation max tokens per day for Amazon Nova Pro (doubled for cross-region calls)
-amazon.nova-pro-v1:0,eu,tpm,L-C0326783,Cross-region model inference tokens per minute for Amazon Nova Pro
-amazon.nova-pro-v1:0,us,rpm,L-ED46B8C5,Cross-region model inference requests per minute for Amazon Nova Pro
-amazon.nova-pro-v1:0,us,tpd,L-D690997B,Model invocation max tokens per day for Amazon Nova Pro (doubled for cross-region calls)
-amazon.nova-pro-v1:0,us,tpm,L-C0326783,Cross-region model inference tokens per minute for Amazon Nova Pro
-anthropic.claude-sonnet-4-20250514-v1:0,apac,rpm,L-559DCC33,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4 V1
-anthropic.claude-sonnet-4-20250514-v1:0,apac,tpd,L-22F701C5,Model invocation max tokens per day for Anthropic Claude Sonnet 4 V1 (doubled for cross-region calls)
-anthropic.claude-sonnet-4-20250514-v1:0,apac,tpm,L-59759B4A,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4 V1
-openai.gpt-5.6-luna,global,tpm,L-D983F7C0,Global cross-region model inference tokens per minute for GPT-5.6 Luna
-openai.gpt-5.6-luna,in,tpm,L-E3C70889,Cross-region model inference tokens per minute for GPT-5.6 Luna
-openai.gpt-5.6-luna,us,tpm,L-E3C70889,Cross-region model inference tokens per minute for GPT-5.6 Luna
-openai.gpt-5.6-sol,global,tpm,L-4D7537CF,Global cross-region model inference tokens per minute for GPT-5.6 Sol
-openai.gpt-5.6-sol,us,tpm,L-D94ECE3B,Cross-region model inference tokens per minute for GPT-5.6 Sol
-openai.gpt-5.6-terra,global,tpm,L-8E752C84,Global cross-region model inference tokens per minute for GPT-5.6 Terra
-openai.gpt-5.6-terra,in,tpm,L-99936FBF,Cross-region model inference tokens per minute for GPT-5.6 Terra
-openai.gpt-5.6-terra,us,tpm,L-99936FBF,Cross-region model inference tokens per minute for GPT-5.6 Terra
-xai.grok-4.6,global,tpm,L-2AD735F5,Global cross-region model inference tokens per minute for Grok 4.6
-xai.grok-4.6,us,tpm,L-0F2ECB41,Cross-region model inference tokens per minute for Grok 4.6
-amazon.nova-2-sonic-v1:0,base,concurrent,L-995EBD81,On-demand InvokeModel concurrent requests for Amazon Nova 2 Sonic
-amazon.rerank-v1:0,base,rpm,L-AAB0080F,On-demand model inference requests per minute for Amazon Rerank 1.0
-amazon.titan-embed-text-v1,base,rpm,L-879F6850,On-demand model inference requests per minute for Amazon Titan Text Embeddings
-amazon.titan-embed-text-v1,base,tpm,L-74B5B793,On-demand model inference tokens per minute for Amazon Titan Text Embeddings
-amazon.titan-embed-text-v2:0,base,rpm,L-26C560CE,On-demand model inference requests per minute for Amazon Titan Text Embeddings V2
-amazon.titan-embed-text-v2:0,base,tpm,L-DE641971,On-demand model inference tokens per minute for Amazon Titan Text Embeddings V2
-cohere.embed-english-v3,base,rpm,L-FF8E7864,On-demand model inference requests per minute for Cohere Embed English
-cohere.embed-english-v3,base,tpm,L-A2BE277A,On-demand model inference tokens per minute for Cohere Embed English
-cohere.embed-multilingual-v3,base,rpm,L-9E5BD0C6,On-demand model inference requests per minute for Cohere Embed Multilingual
-cohere.embed-multilingual-v3,base,tpm,L-C2F86908,On-demand model inference tokens per minute for Cohere Embed Multilingual
-cohere.embed-v4:0,base,rpm,L-BE5FD99B,On-demand model inference requests per minute for Cohere Embed V4
-cohere.embed-v4:0,base,tpm,L-C47B85D5,On-demand model inference tokens per minute for Cohere Embed V4
-cohere.embed-v4:0,global,rpm,L-7089DC7D,Global cross-region model inference requests per minute for Cohere Embed V4
-cohere.embed-v4:0,global,tpd,L-795ADAB0,Global cross-region model inference tokens per day for Cohere Embed V4
-cohere.embed-v4:0,global,tpm,L-02DFBB76,Global cross-region model inference tokens per minute for Cohere Embed V4
-cohere.embed-v4:0,eu,rpm,L-EB8C1F30,Cross-region model inference requests per minute for Cohere Embed V4
-cohere.embed-v4:0,eu,tpd,L-F1BB08BB,Model invocation max tokens per day for Cohere Embed V4 (doubled for cross-region calls)
-cohere.embed-v4:0,eu,tpm,L-4C3F0FE6,Cross-region model inference tokens per minute for Cohere Embed V4
-cohere.embed-v4:0,us,rpm,L-EB8C1F30,Cross-region model inference requests per minute for Cohere Embed V4
-cohere.embed-v4:0,us,tpd,L-F1BB08BB,Model invocation max tokens per day for Cohere Embed V4 (doubled for cross-region calls)
-cohere.embed-v4:0,us,tpm,L-4C3F0FE6,Cross-region model inference tokens per minute for Cohere Embed V4
-cohere.rerank-v3-5:0,base,rpm,L-11512E58,On-demand model inference requests per minute for Cohere Rerank 3.5
-deepseek.v3-v1:0,base,rpm,L-7A5451CB,On-demand model inference requests per minute for DeepSeek V3 V1
-deepseek.v3-v1:0,base,tpm,L-30A6895A,On-demand model inference tokens per minute for DeepSeek V3 V1
-deepseek.v3.2,base,rpm,L-3AE31EFC,On-demand model inference requests per minute for DeepSeek V3.2
-deepseek.v3.2,base,tpm,L-C43703DE,On-demand model inference tokens per minute for DeepSeek V3.2
-google.gemma-3-12b-it,base,rpm,L-999037CA,On-demand model inference requests per minute for Gemma 3 12B
-google.gemma-3-12b-it,base,tpm,L-3FD4A73E,On-demand model inference tokens per minute for Gemma 3 12B
-google.gemma-3-27b-it,base,rpm,L-5D46C7AF,On-demand model inference requests per minute for Gemma 3 27B
-google.gemma-3-27b-it,base,tpm,L-F8729E94,On-demand model inference tokens per minute for Gemma 3 27B
-google.gemma-3-4b-it,base,rpm,L-3056DF33,On-demand model inference requests per minute for Gemma 3 4B
-google.gemma-3-4b-it,base,tpm,L-73FB8466,On-demand model inference tokens per minute for Gemma 3 4B
-minimax.minimax-m2,base,rpm,L-828C986E,On-demand model inference requests per minute for Minimax M2
-minimax.minimax-m2,base,tpm,L-A81B7C40,On-demand model inference tokens per minute for Minimax M2
-minimax.minimax-m2.1,base,rpm,L-2DA44933,On-demand model inference requests per minute for Minimax M2.1
-minimax.minimax-m2.1,base,tpm,L-D795937C,On-demand model inference tokens per minute for Minimax M2.1
-minimax.minimax-m2.5,base,rpm,L-6185F03F,On-demand model inference requests per minute for MiniMax M2.5
-minimax.minimax-m2.5,base,tpm,L-359D5670,On-demand model inference tokens per minute for MiniMax M2.5
-mistral.devstral-2-123b,base,rpm,L-0197660A,On-demand model inference requests per minute for Mistral Devstral 2 123b
-mistral.devstral-2-123b,base,tpm,L-904A6762,On-demand model inference tokens per minute for Mistral Devstral 2 123b
-mistral.magistral-small-2509,base,rpm,L-B14A9603,On-demand model inference requests per minute for Magistral Small 1.2
-mistral.magistral-small-2509,base,tpm,L-D18AC5F7,On-demand model inference tokens per minute for Magistral Small 1.2
-mistral.ministral-3-14b-instruct,base,rpm,L-99F7BDBC,On-demand model inference requests per minute for Ministral 14B 3.0
-mistral.ministral-3-14b-instruct,base,tpm,L-334E5409,On-demand model inference tokens per minute for Ministral 14B 3.0
-mistral.ministral-3-3b-instruct,base,rpm,L-DCA37E91,On-demand model inference requests per minute for Ministral 3B 3.0
-mistral.ministral-3-3b-instruct,base,tpm,L-8A4BEE90,On-demand model inference tokens per minute for Ministral 3B 3.0
-mistral.ministral-3-8b-instruct,base,rpm,L-2BDF9A55,On-demand model inference requests per minute for Ministral 8B 3.0
-mistral.ministral-3-8b-instruct,base,tpm,L-3B98F300,On-demand model inference tokens per minute for Ministral 8B 3.0
-mistral.mistral-large-3-675b-instruct,base,rpm,L-5B274E24,On-demand model inference requests per minute for Mistral Large 3
-mistral.mistral-large-3-675b-instruct,base,tpm,L-C709F563,On-demand model inference tokens per minute for Mistral Large 3
-mistral.voxtral-mini-3b-2507,base,rpm,L-17AE85BD,On-demand model inference requests per minute for Voxtral Mini 1.0
-mistral.voxtral-mini-3b-2507,base,tpm,L-0B767044,On-demand model inference tokens per minute for Voxtral Mini 1.0
-mistral.voxtral-small-24b-2507,base,rpm,L-ACB2FB6A,On-demand model inference requests per minute for Voxtral Small 1.0
-mistral.voxtral-small-24b-2507,base,tpm,L-930E2896,On-demand model inference tokens per minute for Voxtral Small 1.0
-moonshot.kimi-k2-thinking,base,rpm,L-02572418,On-demand model inference requests per minute for Kimi K2 Thinking
-moonshot.kimi-k2-thinking,base,tpm,L-03579AC2,On-demand model inference tokens per minute for Kimi K2 Thinking
-moonshotai.kimi-k2.5,base,rpm,L-C1711F26,On-demand model inference requests per minute for Moonshot AI Kimi K2.5
-moonshotai.kimi-k2.5,base,tpm,L-B8D04761,On-demand model inference tokens per minute for Moonshot AI Kimi K2.5
-nvidia.nemotron-nano-12b-v2,base,rpm,L-AC7B3FB9,On-demand model inference requests per minute for NVIDIA Nemotron Nano 2
-nvidia.nemotron-nano-12b-v2,base,tpm,L-33D3627D,On-demand model inference tokens per minute for NVIDIA Nemotron Nano 2
-nvidia.nemotron-nano-3-30b,base,rpm,L-2DA9C9CC,On-demand model inference requests per minute for Nemotron Nano 3 30B
-nvidia.nemotron-nano-3-30b,base,tpm,L-C0663FA3,On-demand model inference tokens per minute for Nemotron Nano 3 30B
-nvidia.nemotron-nano-9b-v2,base,rpm,L-AC7B3FB9,On-demand model inference requests per minute for NVIDIA Nemotron Nano 2
-nvidia.nemotron-nano-9b-v2,base,tpm,L-33D3627D,On-demand model inference tokens per minute for NVIDIA Nemotron Nano 2
-nvidia.nemotron-super-3-120b,base,rpm,L-E722E1BB,On-demand model inference requests per minute for NVIDIA Nemotron 3 Super 120B A12B
-nvidia.nemotron-super-3-120b,base,tpm,L-EB4CADEE,On-demand model inference tokens per minute for NVIDIA Nemotron 3 Super 120B A12B
-openai.gpt-oss-120b-1:0,base,rpm,L-25B50707,On-demand model inference requests per minute for OpenAI GPT OSS 120B
-openai.gpt-oss-120b-1:0,base,tpm,L-9DC5F595,On-demand model inference tokens per minute for OpenAI GPT OSS 120B
-openai.gpt-oss-20b-1:0,base,rpm,L-AF7F0545,On-demand model inference requests per minute for OpenAI GPT OSS 20B
-openai.gpt-oss-20b-1:0,base,tpm,L-036E14D8,On-demand model inference tokens per minute for OpenAI GPT OSS 20B
-openai.gpt-oss-safeguard-120b,base,rpm,L-C4E013EF,On-demand model inference requests per minute for GPT OSS Safeguard 120B
-openai.gpt-oss-safeguard-120b,base,tpm,L-594C7AC9,On-demand model inference tokens per minute for GPT OSS Safeguard 120B
-openai.gpt-oss-safeguard-20b,base,rpm,L-65833D55,On-demand model inference requests per minute for GPT OSS Safeguard 20B
-openai.gpt-oss-safeguard-20b,base,tpm,L-5D8F2F54,On-demand model inference tokens per minute for GPT OSS Safeguard 20B
-qwen.qwen3-235b-a22b-2507-v1:0,base,rpm,L-548A1A32,On-demand model inference requests per minute for Qwen3 235B a22b 2507 V1
-qwen.qwen3-235b-a22b-2507-v1:0,base,tpm,L-3875BCCF,On-demand model inference tokens per minute for Qwen3 235B a22b 2507 V1
-qwen.qwen3-32b-v1:0,base,rpm,L-E880C759,On-demand model inference requests per minute for Qwen3 32B V1
-qwen.qwen3-32b-v1:0,base,tpm,L-B7C52139,On-demand model inference tokens per minute for Qwen3 32B V1
-qwen.qwen3-coder-30b-a3b-v1:0,base,rpm,L-66EE6E0B,On-demand model inference requests per minute for Qwen3 Coder 30B a3b V1
-qwen.qwen3-coder-30b-a3b-v1:0,base,tpm,L-92F81E14,On-demand model inference tokens per minute for Qwen3 Coder 30B a3b V1
-qwen.qwen3-coder-480b-a35b-v1:0,base,rpm,L-CBE7E3CD,On-demand model inference requests per minute for Qwen3 Coder 480B a35b V1
-qwen.qwen3-coder-480b-a35b-v1:0,base,tpm,L-4D0E44C8,On-demand model inference tokens per minute for Qwen3 Coder 480B a35b V1
-qwen.qwen3-next-80b-a3b,base,rpm,L-07B3CEEA,On-demand model inference requests per minute for Qwen3 Next 80B A3B
-qwen.qwen3-next-80b-a3b,base,tpm,L-37AB702E,On-demand model inference tokens per minute for Qwen3 Next 80B A3B
-qwen.qwen3-vl-235b-a22b,base,rpm,L-11B56FB0,On-demand model inference requests per minute for Qwen3 VL 235B A22B
-qwen.qwen3-vl-235b-a22b,base,tpm,L-46063925,On-demand model inference tokens per minute for Qwen3 VL 235B A22B
-zai.glm-4.7,base,rpm,L-497DDDD7,On-demand model inference requests per minute for Z.ai GLM-4.7
-zai.glm-4.7,base,tpm,L-12454D86,On-demand model inference tokens per minute for Z.ai GLM-4.7
-zai.glm-4.7-flash,base,rpm,L-5E856AD9,On-demand model inference requests per minute for Z.ai GLM-4.7 Flash
-zai.glm-4.7-flash,base,tpm,L-B40F2E56,On-demand model inference tokens per minute for Z.ai GLM-4.7 Flash
-zai.glm-5,base,rpm,L-7BF266A9,On-demand model inference requests per minute for Z.ai GLM 5
-zai.glm-5,base,tpm,L-99316427,On-demand model inference tokens per minute for Z.ai GLM 5
-anthropic.claude-3-5-sonnet-20240620-v1:0,apac,rpm,L-F457545D,Cross-region model inference requests per minute for Anthropic Claude 3.5 Sonnet
-anthropic.claude-3-5-sonnet-20240620-v1:0,apac,tpd,L-E7D41161,Model invocation max tokens per day for Anthropic Claude 3.5 Sonnet V1 (doubled for cross-region calls)
-anthropic.claude-3-5-sonnet-20240620-v1:0,apac,tpm,L-479B647F,Cross-region model inference tokens per minute for Anthropic Claude 3.5 Sonnet
-anthropic.claude-3-5-sonnet-20240620-v1:0,base,rpm,L-254CACF4,On-demand model inference requests per minute for Anthropic Claude 3.5 Sonnet
-anthropic.claude-3-5-sonnet-20240620-v1:0,base,tpm,L-A50569E5,On-demand model inference tokens per minute for Anthropic Claude 3.5 Sonnet
-anthropic.claude-3-5-sonnet-20241022-v2:0,apac,rpm,L-1D3E59A3,Cross-Region model inference requests per minute for Anthropic Claude 3.5 Sonnet V2
-anthropic.claude-3-5-sonnet-20241022-v2:0,apac,tpm,L-FF8B4E28,Cross-Region model inference tokens per minute for Anthropic Claude 3.5 Sonnet V2
-anthropic.claude-3-haiku-20240307-v1:0,apac,rpm,L-616A3F5B,Cross-region model inference requests per minute for Anthropic Claude 3 Haiku
-anthropic.claude-3-haiku-20240307-v1:0,apac,tpd,L-A60EE1AF,Model invocation max tokens per day for Anthropic Claude 3 Haiku (doubled for cross-region calls)
-anthropic.claude-3-haiku-20240307-v1:0,apac,tpm,L-DCADBC78,Cross-region model inference tokens per minute for Anthropic Claude 3 Haiku
-anthropic.claude-3-haiku-20240307-v1:0,base,rpm,L-2DC80978,On-demand model inference requests per minute for Anthropic Claude 3 Haiku
-anthropic.claude-3-haiku-20240307-v1:0,base,tpm,L-8CE99163,On-demand model inference tokens per minute for Anthropic Claude 3 Haiku
-twelvelabs.marengo-embed-2-7-v1:0,apac,rpm,L-E967C2DE,Cross-region model inference requests per minute for Twelve Labs Marengo
-twelvelabs.marengo-embed-2-7-v1:0,eu,rpm,L-E967C2DE,Cross-region model inference requests per minute for Twelve Labs Marengo
-twelvelabs.marengo-embed-2-7-v1:0,us,rpm,L-E967C2DE,Cross-region model inference requests per minute for Twelve Labs Marengo
-twelvelabs.marengo-embed-3-0-v1:0,base,concurrent,L-BC3096B9,On-demand InvokeModel async concurrent requests for TwelveLabs Marengo Embed 3.0
-twelvelabs.marengo-embed-3-0-v1:0,base,rpm,L-8CBCC2C0,On-demand model inference requests per minute for TwelveLabs Marengo Embed 3.0
-twelvelabs.marengo-embed-3-0-v1:0,eu,rpm,L-E5197E26,Cross-region model inference requests per minute for TwelveLabs Marengo Embed 3.0
-twelvelabs.marengo-embed-3-0-v1:0,us,rpm,L-E5197E26,Cross-region model inference requests per minute for TwelveLabs Marengo Embed 3.0
-amazon.titan-embed-image-v1,base,rpm,L-DF0E34D4,On-demand model inference requests per minute for Amazon Titan Multimodal Embeddings G1
-amazon.titan-embed-image-v1,base,tpm,L-ABC24664,On-demand model inference tokens per minute for Amazon Titan Multimodal Embeddings G1
-anthropic.claude-3-7-sonnet-20250219-v1:0,apac,rpm,L-3D8CC480,Cross-region model inference requests per minute for Anthropic Claude 3.7 Sonnet V1
-anthropic.claude-3-7-sonnet-20250219-v1:0,apac,tpd,L-9EB71894,Model invocation max tokens per day for Anthropic Claude 3.7 Sonnet V1 (doubled for cross-region calls)
-anthropic.claude-3-7-sonnet-20250219-v1:0,apac,tpm,L-6E888CC2,Cross-region model inference tokens per minute for Anthropic Claude 3.7 Sonnet V1
-anthropic.claude-3-7-sonnet-20250219-v1:0,base,rpm,L-0651A8FB,On-demand model inference requests per minute for Anthropic Claude 3.7 Sonnet V1
-anthropic.claude-3-7-sonnet-20250219-v1:0,base,tpm,L-8F2EEEA3,On-demand model inference tokens per minute for Anthropic Claude 3.7 Sonnet V1
-anthropic.claude-3-sonnet-20240229-v1:0,apac,rpm,L-46591118,Cross-region model inference requests per minute for Anthropic Claude 3 Sonnet
-anthropic.claude-3-sonnet-20240229-v1:0,apac,tpm,L-5DF13F64,Cross-region model inference tokens per minute for Anthropic Claude 3 Sonnet
-anthropic.claude-3-sonnet-20240229-v1:0,base,rpm,L-F406804E,On-demand model inference requests per minute for Anthropic Claude 3 Sonnet
-anthropic.claude-3-sonnet-20240229-v1:0,base,tpm,L-4C35BB2A,On-demand model inference tokens per minute for Anthropic Claude 3 Sonnet
-meta.llama3-70b-instruct-v1:0,base,rpm,L-46D383AF,On-demand model inference requests per minute for Meta Llama 3 70B Instruct
-meta.llama3-70b-instruct-v1:0,base,tpm,L-609E24B0,On-demand model inference tokens per minute for Meta Llama 3 70B Instruct
-meta.llama3-8b-instruct-v1:0,base,rpm,L-320BEFEB,On-demand model inference requests per minute for Meta Llama 3 8B Instruct
-meta.llama3-8b-instruct-v1:0,base,tpm,L-03A9B835,On-demand model inference tokens per minute for Meta Llama 3 8B Instruct
-mistral.mistral-7b-instruct-v0:2,base,rpm,L-D9A35062,On-demand model inference requests per minute for Mistral 7B Instruct
-mistral.mistral-7b-instruct-v0:2,base,tpm,L-02D831F1,On-demand model inference tokens per minute for Mistral AI Mistral 7B Instruct
-mistral.mistral-large-2402-v1:0,base,rpm,L-3AF844DB,On-demand model inference requests per minute for Mistral Large
-mistral.mistral-large-2402-v1:0,base,tpm,L-01447289,On-demand model inference tokens per minute for Mistral AI Mistral Large
-mistral.mixtral-8x7b-instruct-v0:1,base,rpm,L-FD938632,On-demand model inference requests per minute for Mistral Mixtral 8x7b Instruct
-mistral.mixtral-8x7b-instruct-v0:1,base,tpm,L-490F4D1F,On-demand model inference tokens per minute for Mistral AI Mixtral 8X7BB Instruct
-qwen.qwen3-coder-next,base,rpm,L-4153B066,On-demand model inference requests per minute for Qwen3 Coder Next
-qwen.qwen3-coder-next,base,tpm,L-A4C6122D,On-demand model inference tokens per minute for Qwen3 Coder Next
-mistral.pixtral-large-2502-v1:0,eu,rpm,L-674F42D5,Cross-region model inference requests per minute for Mistral Pixtral Large 25.02 V1
-mistral.pixtral-large-2502-v1:0,eu,tpd,L-58280E37,Model invocation max tokens per day for Mistral Pixtral Large 25.02 V1 (doubled for cross-region calls)
-mistral.pixtral-large-2502-v1:0,eu,tpm,L-4B9F76B0,Cross-region model inference tokens per minute for Mistral Pixtral Large 25.02 V1
-mistral.pixtral-large-2502-v1:0,us,rpm,L-674F42D5,Cross-region model inference requests per minute for Mistral Pixtral Large 25.02 V1
-mistral.pixtral-large-2502-v1:0,us,tpd,L-58280E37,Model invocation max tokens per day for Mistral Pixtral Large 25.02 V1 (doubled for cross-region calls)
-mistral.pixtral-large-2502-v1:0,us,tpm,L-4B9F76B0,Cross-region model inference tokens per minute for Mistral Pixtral Large 25.02 V1
-ai21.jamba-1-5-large-v1:0,base,rpm,L-F4CAA0FD,On-demand model inference requests per minute for AI21 Labs Jamba 1.5 Large
-ai21.jamba-1-5-large-v1:0,base,tpm,L-CFAB19FF,On-demand model inference tokens per minute for AI21 Labs Jamba 1.5 Large
-ai21.jamba-1-5-mini-v1:0,base,rpm,L-0449ADC5,On-demand model inference requests per minute for AI21 Labs Jamba 1.5 Mini
-ai21.jamba-1-5-mini-v1:0,base,tpm,L-5A778346,On-demand model inference tokens per minute for AI21 Labs Jamba 1.5 Mini
-amazon.nova-2-multimodal-embeddings-v1:0,base,concurrent,L-44704E61,On-demand InvokeModel async concurrent requests for Amazon Nova 2 Multimodal Embeddings V1
-amazon.nova-2-multimodal-embeddings-v1:0,base,rpm,L-29E17D48,On-demand model inference requests per minute for Amazon Nova 2 Multimodal Embeddings V1
-amazon.titan-embed-g1-text-02,base,rpm,L-879F6850,On-demand model inference requests per minute for Amazon Titan Text Embeddings
-amazon.titan-embed-g1-text-02,base,tpm,L-74B5B793,On-demand model inference tokens per minute for Amazon Titan Text Embeddings
-deepseek.r1-v1:0,us,rpm,L-F52323AB,Cross-region model inference requests per minute for DeepSeek R1 V1
-deepseek.r1-v1:0,us,tpm,L-06B03968,Cross-region model inference tokens per minute for DeepSeek R1 V1
-meta.llama3-1-70b-instruct-v1:0,us,rpm,L-29644EB3,Cross-region model inference requests per minute for Meta Llama 3.1 70B Instruct
-meta.llama3-1-70b-instruct-v1:0,us,tpm,L-92E68994,Cross-region model inference tokens per minute for Meta Llama 3.1 70B Instruct
-meta.llama3-1-70b-instruct-v1:0,base,rpm,L-ECA5B974,On-demand model inference requests per minute for Meta Llama 3.1 70B Instruct
-meta.llama3-1-70b-instruct-v1:0,base,tpm,L-48E55E59,On-demand model inference tokens per minute for Meta Llama 3.1 70B Instruct
-meta.llama3-1-8b-instruct-v1:0,us,rpm,L-396C5302,Cross-region model inference requests per minute for Meta Llama 3.1 8B Instruct
-meta.llama3-1-8b-instruct-v1:0,us,tpm,L-9782749C,Cross-region model inference tokens per minute for Meta Llama 3.1 8B Instruct
-meta.llama3-1-8b-instruct-v1:0,base,rpm,L-19A2ED6C,On-demand model inference requests per minute for Meta Llama 3.1 8B Instruct
-meta.llama3-1-8b-instruct-v1:0,base,tpm,L-9E79C230,On-demand model inference tokens per minute for Meta Llama 3.1 8B Instruct
-meta.llama3-3-70b-instruct-v1:0,us,rpm,L-DEDE703C,Cross-region model inference requests per minute for Meta Llama 3.3 70B Instruct
-meta.llama3-3-70b-instruct-v1:0,us,tpm,L-0E7AA8B7,Cross-region model inference tokens per minute for Meta Llama 3.3 70B Instruct
-meta.llama3-3-70b-instruct-v1:0,base,rpm,L-22EF3256,On-demand model inference requests per minute for Meta Llama 3.3 70B Instruct
-meta.llama3-3-70b-instruct-v1:0,base,tpm,L-372A660C,On-demand model inference tokens per minute for Meta Llama 3.3 70B Instruct
-meta.llama4-maverick-17b-instruct-v1:0,us,rpm,L-4F18EF2F,Cross-region model inference requests per minute for Meta Llama 4 Maverick V1
-meta.llama4-maverick-17b-instruct-v1:0,us,tpm,L-DE3FBBF4,Cross-region model inference tokens per minute for Meta Llama 4 Maverick V1
-meta.llama4-scout-17b-instruct-v1:0,us,rpm,L-751B753A,Cross-region model inference requests per minute for Meta Llama 4 Scout V1
-meta.llama4-scout-17b-instruct-v1:0,us,tpm,L-532E6630,Cross-region model inference tokens per minute for Meta Llama 4 Scout V1
-mistral.mistral-small-2402-v1:0,base,rpm,L-1CBB0490,On-demand model inference requests per minute for Mistral AI Mistral Small
-mistral.mistral-small-2402-v1:0,base,tpm,L-82C15FA8,On-demand model inference tokens per minute for Mistral AI Mistral Small
-stability.stable-conservative-upscale-v1:0,us,rpm,L-0C7F3C72,Cross-region model inference requests per minute for Stable Image Conservative Upscale
-stability.stable-creative-upscale-v1:0,us,rpm,L-DB8B3F46,Cross-region model inference requests per minute for Stable Image Creative Upscale
-stability.stable-fast-upscale-v1:0,us,rpm,L-D3D76E8D,Cross-region model inference requests per minute for Stable Image Fast Upscale
-stability.stable-image-control-sketch-v1:0,us,rpm,L-F335C1D6,Cross-region model inference requests per minute for Stable Image Control Sketch
-stability.stable-image-control-structure-v1:0,us,rpm,L-9B65945A,Cross-region model inference requests per minute for Stable Image Control Structure
-stability.stable-image-erase-object-v1:0,us,rpm,L-14BB1F8E,Cross-region model inference requests per minute for Stable Image Erase Object
-stability.stable-image-inpaint-v1:0,us,rpm,L-3CD80F9F,Cross-region model inference requests per minute for Stable Image Inpaint
-stability.stable-image-remove-background-v1:0,us,rpm,L-E347CF0D,Cross-region model inference requests per minute for Stable Image Remove Background
-stability.stable-image-search-replace-v1:0,us,rpm,L-AE5771D9,Cross-region model inference requests per minute for Stable Image Search and Replace
-stability.stable-image-style-guide-v1:0,us,rpm,L-D15F5A64,Cross-region model inference requests per minute for Stable Image Style Guide
-writer.palmyra-vision-7b,base,rpm,L-23BFF4A6,On-demand model inference requests per minute for Writer Palmyra Vision 7B
-writer.palmyra-vision-7b,base,tpm,L-C53E98ED,On-demand model inference tokens per minute for Writer Palmyra Vision 7B
-writer.palmyra-x4-v1:0,us,rpm,L-79AAC482,Cross-region model inference requests per minute for Writer AI Palmyra X4 V1
-writer.palmyra-x4-v1:0,us,tpd,L-B9B77872,Model invocation max tokens per day for Writer AI Palmyra X4 V1 (doubled for cross-region calls)
-writer.palmyra-x4-v1:0,us,tpm,L-FF1F238B,Cross-region model inference tokens per minute for Writer AI Palmyra X4 V1
-writer.palmyra-x5-v1:0,us,rpm,L-D655BF6C,Cross-region model inference requests per minute for Writer AI Palmyra X5 V1
-writer.palmyra-x5-v1:0,us,tpd,L-7E80DA80,Model invocation max tokens per day for Writer AI Palmyra X5 V1 (doubled for cross-region calls)
-writer.palmyra-x5-v1:0,us,tpm,L-90DFE70F,Cross-region model inference tokens per minute for Writer AI Palmyra X5 V1
-luma.ray-v2:0,base,concurrent,L-3447D96F,On-demand model inference concurrent requests for Luma Ray V2
-mistral.mistral-large-2407-v1:0,base,rpm,L-1402869F,On-demand model inference requests per minute for Mistral Large 2407
-mistral.mistral-large-2407-v1:0,base,tpm,L-1C28E1AB,On-demand model inference tokens per minute for Mistral Large 2407
-stability.stable-image-core-v1:1,base,rpm,L-5D30A162,On-demand model inference requests per minute for Stability.ai Stable Image Core
-stability.stable-image-ultra-v1:1,base,rpm,L-F192B1D7,On-demand model inference requests per minute for Stability.ai Stable Image Ultra
+model_id,endpoint,quota_type,quota_code,quota_name,partition
+ai21.jamba-1-5-large-v1:0,base,rpm,L-F4CAA0FD,On-demand model inference requests per minute for AI21 Labs Jamba 1.5 Large,aws
+ai21.jamba-1-5-large-v1:0,base,tpm,L-CFAB19FF,On-demand model inference tokens per minute for AI21 Labs Jamba 1.5 Large,aws
+ai21.jamba-1-5-mini-v1:0,base,rpm,L-0449ADC5,On-demand model inference requests per minute for AI21 Labs Jamba 1.5 Mini,aws
+ai21.jamba-1-5-mini-v1:0,base,tpm,L-5A778346,On-demand model inference tokens per minute for AI21 Labs Jamba 1.5 Mini,aws
+amazon.nova-2-lite-v1:0,global,rpm,L-D5F39C2F,Global cross-region model inference requests per minute for Amazon Nova 2 Lite,aws
+amazon.nova-2-lite-v1:0,global,tpd,L-AD940EDE,Global cross-region model inference tokens per day for Amazon Nova 2 Lite,aws
+amazon.nova-2-lite-v1:0,global,tpm,L-71C69B70,Global cross-region model inference tokens per minute for Amazon Nova 2 Lite,aws
+amazon.nova-2-lite-v1:0,us,rpm,L-F06F1187,Cross-region model inference requests per minute for Amazon Nova 2 Lite,aws
+amazon.nova-2-lite-v1:0,us,tpd,L-210172B5,Model invocation max tokens per day for Amazon Nova 2 Lite (doubled for cross-region calls),aws
+amazon.nova-2-lite-v1:0,us,tpm,L-C6F5908D,Cross-region model inference tokens per minute for Amazon Nova 2 Lite,aws
+amazon.nova-2-lite-v1:0,jp,rpm,L-F06F1187,Cross-region model inference requests per minute for Amazon Nova 2 Lite,aws
+amazon.nova-2-lite-v1:0,jp,tpd,L-210172B5,Model invocation max tokens per day for Amazon Nova 2 Lite (doubled for cross-region calls),aws
+amazon.nova-2-lite-v1:0,jp,tpm,L-C6F5908D,Cross-region model inference tokens per minute for Amazon Nova 2 Lite,aws
+amazon.nova-2-lite-v1:0,eu,rpm,L-F06F1187,Cross-region model inference requests per minute for Amazon Nova 2 Lite,aws
+amazon.nova-2-lite-v1:0,eu,tpd,L-210172B5,Model invocation max tokens per day for Amazon Nova 2 Lite (doubled for cross-region calls),aws
+amazon.nova-2-lite-v1:0,eu,tpm,L-C6F5908D,Cross-region model inference tokens per minute for Amazon Nova 2 Lite,aws
+amazon.nova-2-multimodal-embeddings-v1:0,base,concurrent,L-44704E61,On-demand InvokeModel async concurrent requests for Amazon Nova 2 Multimodal Embeddings V1,aws
+amazon.nova-2-multimodal-embeddings-v1:0,base,rpm,L-29E17D48,On-demand model inference requests per minute for Amazon Nova 2 Multimodal Embeddings V1,aws
+amazon.nova-2-sonic-v1:0,base,concurrent,L-995EBD81,On-demand InvokeModel concurrent requests for Amazon Nova 2 Sonic,aws
+amazon.nova-lite-v1:0,base,rpm,L-E386A278,On-demand model inference requests per minute for Amazon Nova Lite,aws
+amazon.nova-lite-v1:0,base,tpm,L-70423BF8,On-demand model inference tokens per minute for Amazon Nova Lite,aws
+amazon.nova-lite-v1:0,us,rpm,L-89F8391A,Cross-region model inference requests per minute for Amazon Nova Lite,aws
+amazon.nova-lite-v1:0,us,tpd,L-45E0AD92,Model invocation max tokens per day for Amazon Nova Lite (doubled for cross-region calls),aws
+amazon.nova-lite-v1:0,us,tpm,L-7C42E72A,Cross-region model inference tokens per minute for Amazon Nova Lite,aws
+amazon.nova-lite-v1:0,apac,rpm,L-89F8391A,Cross-region model inference requests per minute for Amazon Nova Lite,aws
+amazon.nova-lite-v1:0,apac,tpd,L-45E0AD92,Model invocation max tokens per day for Amazon Nova Lite (doubled for cross-region calls),aws
+amazon.nova-lite-v1:0,apac,tpm,L-7C42E72A,Cross-region model inference tokens per minute for Amazon Nova Lite,aws
+amazon.nova-lite-v1:0,ca,rpm,L-89F8391A,Cross-region model inference requests per minute for Amazon Nova Lite,aws
+amazon.nova-lite-v1:0,ca,tpd,L-45E0AD92,Model invocation max tokens per day for Amazon Nova Lite (doubled for cross-region calls),aws
+amazon.nova-lite-v1:0,ca,tpm,L-7C42E72A,Cross-region model inference tokens per minute for Amazon Nova Lite,aws
+amazon.nova-lite-v1:0,eu,rpm,L-89F8391A,Cross-region model inference requests per minute for Amazon Nova Lite,aws
+amazon.nova-lite-v1:0,eu,tpd,L-45E0AD92,Model invocation max tokens per day for Amazon Nova Lite (doubled for cross-region calls),aws
+amazon.nova-lite-v1:0,eu,tpm,L-7C42E72A,Cross-region model inference tokens per minute for Amazon Nova Lite,aws
+amazon.nova-micro-v1:0,base,rpm,L-E118F160,On-demand model inference requests per minute for Amazon Nova Micro,aws
+amazon.nova-micro-v1:0,base,tpm,L-CFA4FA0D,On-demand model inference tokens per minute for Amazon Nova Micro,aws
+amazon.nova-micro-v1:0,us,rpm,L-3F110E0F,Cross-region model inference requests per minute for Amazon Nova Micro,aws
+amazon.nova-micro-v1:0,us,tpd,L-D2912E70,Model invocation max tokens per day for Amazon Nova Micro (doubled for cross-region calls),aws
+amazon.nova-micro-v1:0,us,tpm,L-DC7FF66C,Cross-region model inference tokens per minute for Amazon Nova Micro,aws
+amazon.nova-micro-v1:0,apac,rpm,L-3F110E0F,Cross-region model inference requests per minute for Amazon Nova Micro,aws
+amazon.nova-micro-v1:0,apac,tpd,L-D2912E70,Model invocation max tokens per day for Amazon Nova Micro (doubled for cross-region calls),aws
+amazon.nova-micro-v1:0,apac,tpm,L-DC7FF66C,Cross-region model inference tokens per minute for Amazon Nova Micro,aws
+amazon.nova-micro-v1:0,eu,rpm,L-3F110E0F,Cross-region model inference requests per minute for Amazon Nova Micro,aws
+amazon.nova-micro-v1:0,eu,tpd,L-D2912E70,Model invocation max tokens per day for Amazon Nova Micro (doubled for cross-region calls),aws
+amazon.nova-micro-v1:0,eu,tpm,L-DC7FF66C,Cross-region model inference tokens per minute for Amazon Nova Micro,aws
+amazon.nova-pro-v1:0,base,rpm,L-F2717A44,On-demand model inference requests per minute for Amazon Nova Pro,aws
+amazon.nova-pro-v1:0,base,tpm,L-CE33604C,On-demand model inference tokens per minute for Amazon Nova Pro,aws
+amazon.nova-pro-v1:0,us,rpm,L-ED46B8C5,Cross-region model inference requests per minute for Amazon Nova Pro,aws
+amazon.nova-pro-v1:0,us,tpd,L-D690997B,Model invocation max tokens per day for Amazon Nova Pro (doubled for cross-region calls),aws
+amazon.nova-pro-v1:0,us,tpm,L-C0326783,Cross-region model inference tokens per minute for Amazon Nova Pro,aws
+amazon.nova-pro-v1:0,apac,rpm,L-ED46B8C5,Cross-region model inference requests per minute for Amazon Nova Pro,aws
+amazon.nova-pro-v1:0,apac,tpd,L-D690997B,Model invocation max tokens per day for Amazon Nova Pro (doubled for cross-region calls),aws
+amazon.nova-pro-v1:0,apac,tpm,L-C0326783,Cross-region model inference tokens per minute for Amazon Nova Pro,aws
+amazon.nova-pro-v1:0,eu,rpm,L-ED46B8C5,Cross-region model inference requests per minute for Amazon Nova Pro,aws
+amazon.nova-pro-v1:0,eu,tpd,L-D690997B,Model invocation max tokens per day for Amazon Nova Pro (doubled for cross-region calls),aws
+amazon.nova-pro-v1:0,eu,tpm,L-C0326783,Cross-region model inference tokens per minute for Amazon Nova Pro,aws
+amazon.titan-embed-g1-text-02,base,rpm,L-879F6850,On-demand model inference requests per minute for Amazon Titan Text Embeddings,aws
+amazon.titan-embed-g1-text-02,base,tpm,L-74B5B793,On-demand model inference tokens per minute for Amazon Titan Text Embeddings,aws
+amazon.titan-embed-image-v1,base,rpm,L-DF0E34D4,On-demand model inference requests per minute for Amazon Titan Multimodal Embeddings G1,aws
+amazon.titan-embed-image-v1,base,tpm,L-ABC24664,On-demand model inference tokens per minute for Amazon Titan Multimodal Embeddings G1,aws
+amazon.titan-embed-text-v1,base,rpm,L-879F6850,On-demand model inference requests per minute for Amazon Titan Text Embeddings,aws
+amazon.titan-embed-text-v1,base,tpm,L-74B5B793,On-demand model inference tokens per minute for Amazon Titan Text Embeddings,aws
+amazon.titan-embed-text-v2:0,base,rpm,L-26C560CE,On-demand model inference requests per minute for Amazon Titan Text Embeddings V2,aws
+amazon.titan-embed-text-v2:0,base,tpm,L-DE641971,On-demand model inference tokens per minute for Amazon Titan Text Embeddings V2,aws
+anthropic.claude-fable-5,global,tpm,L-D06938E7,Global cross-region model inference tokens per minute for Anthropic Claude Fable 5,aws
+anthropic.claude-fable-5,us,tpm,L-9B258944,Cross-region model inference tokens per minute for Anthropic Claude Fable 5,aws
+anthropic.claude-fable-5-1,global,tpm,L-50CC5674,Global cross-region model inference tokens per minute for Anthropic Claude Fable 5.1,aws
+anthropic.claude-fable-5-1,us,tpm,L-E8940935,Cross-region model inference tokens per minute for Anthropic Claude Fable 5.1,aws
+anthropic.claude-haiku-4-5-20251001-v1:0,global,rpm,L-E5084BBA,Global cross-region model inference requests per minute for Anthropic Claude Haiku 4.5,aws
+anthropic.claude-haiku-4-5-20251001-v1:0,global,tpm,L-9A11C666,Global cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5,aws
+anthropic.claude-haiku-4-5-20251001-v1:0,us,rpm,L-CCA5DF70,Cross-region model inference requests per minute for Anthropic Claude Haiku 4.5,aws
+anthropic.claude-haiku-4-5-20251001-v1:0,us,tpm,L-58BE175A,Cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5,aws
+anthropic.claude-haiku-4-5-20251001-v1:0,jp,rpm,L-CCA5DF70,Cross-region model inference requests per minute for Anthropic Claude Haiku 4.5,aws
+anthropic.claude-haiku-4-5-20251001-v1:0,jp,tpm,L-58BE175A,Cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5,aws
+anthropic.claude-haiku-4-5-20251001-v1:0,au,rpm,L-CCA5DF70,Cross-region model inference requests per minute for Anthropic Claude Haiku 4.5,aws
+anthropic.claude-haiku-4-5-20251001-v1:0,au,tpm,L-58BE175A,Cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5,aws
+anthropic.claude-haiku-4-5-20251001-v1:0,eu,rpm,L-CCA5DF70,Cross-region model inference requests per minute for Anthropic Claude Haiku 4.5,aws
+anthropic.claude-haiku-4-5-20251001-v1:0,eu,tpm,L-58BE175A,Cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5,aws
+anthropic.claude-opus-4-5-20251101-v1:0,global,rpm,L-58424D95,Global cross-region model inference requests per minute for Anthropic Claude Opus 4.5,aws
+anthropic.claude-opus-4-5-20251101-v1:0,global,tpd,L-E2985A8E,Global cross-region model inference tokens per day for Anthropic Claude Opus 4.5,aws
+anthropic.claude-opus-4-5-20251101-v1:0,global,tpm,L-3ABF6ACC,Global cross-region model inference tokens per minute for Anthropic Claude Opus 4.5,aws
+anthropic.claude-opus-4-5-20251101-v1:0,us,rpm,L-27989F42,Cross-region model inference requests per minute for Anthropic Claude Opus 4.5,aws
+anthropic.claude-opus-4-5-20251101-v1:0,us,tpd,L-F397ECBF,Model invocation max tokens per day for Anthropic Claude Opus 4.5 (doubled for cross-region calls),aws
+anthropic.claude-opus-4-5-20251101-v1:0,us,tpm,L-7007E9C9,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.5,aws
+anthropic.claude-opus-4-5-20251101-v1:0,eu,rpm,L-27989F42,Cross-region model inference requests per minute for Anthropic Claude Opus 4.5,aws
+anthropic.claude-opus-4-5-20251101-v1:0,eu,tpd,L-F397ECBF,Model invocation max tokens per day for Anthropic Claude Opus 4.5 (doubled for cross-region calls),aws
+anthropic.claude-opus-4-5-20251101-v1:0,eu,tpm,L-7007E9C9,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.5,aws
+anthropic.claude-opus-4-6-v1,global,rpm,L-3DD46812,Global cross-region model inference requests per minute for Anthropic Claude Opus 4.6 V1,aws
+anthropic.claude-opus-4-6-v1,global,tpm,L-3DCCFAA4,Global cross-region model inference tokens per minute for Anthropic Claude Opus 4.6 V1,aws
+anthropic.claude-opus-4-6-v1,us,rpm,L-11DFF789,Cross-region model inference requests per minute for Anthropic Claude Opus 4.6 V1,aws
+anthropic.claude-opus-4-6-v1,us,tpm,L-0AD9BBE8,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.6 V1,aws
+anthropic.claude-opus-4-6-v1,au,rpm,L-11DFF789,Cross-region model inference requests per minute for Anthropic Claude Opus 4.6 V1,aws
+anthropic.claude-opus-4-6-v1,au,tpm,L-0AD9BBE8,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.6 V1,aws
+anthropic.claude-opus-4-6-v1,eu,rpm,L-11DFF789,Cross-region model inference requests per minute for Anthropic Claude Opus 4.6 V1,aws
+anthropic.claude-opus-4-6-v1,eu,tpm,L-0AD9BBE8,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.6 V1,aws
+anthropic.claude-opus-4-6-v1,base,rpm,L-0491E43A,On-demand model inference requests per minute for Anthropic Claude Opus 4.6 V1,aws
+anthropic.claude-opus-4-6-v1,base,tpm,L-98944717,On-demand model inference tokens per minute for Anthropic Claude Opus 4.6 V1,aws
+anthropic.claude-opus-4-7,global,tpm,L-34152C1D,Global cross-region model inference tokens per minute for Anthropic Claude Opus 4.7,aws
+anthropic.claude-opus-4-7,us,tpm,L-5DB28B7B,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.7,aws
+anthropic.claude-opus-4-7,jp,tpm,L-5DB28B7B,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.7,aws
+anthropic.claude-opus-4-7,au,tpm,L-5DB28B7B,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.7,aws
+anthropic.claude-opus-4-7,eu,tpm,L-5DB28B7B,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.7,aws
+anthropic.claude-opus-4-8,global,tpm,L-4FCE27C7,Global cross-region model inference tokens per minute for Anthropic Claude Opus 4.8,aws
+anthropic.claude-opus-4-8,us,tpm,L-DB99DCDB,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.8,aws
+anthropic.claude-opus-4-8,jp,tpm,L-DB99DCDB,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.8,aws
+anthropic.claude-opus-4-8,au,tpm,L-DB99DCDB,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.8,aws
+anthropic.claude-opus-4-8,eu,tpm,L-DB99DCDB,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.8,aws
+anthropic.claude-opus-5,global,tpm,L-D73B1244,Global cross-region model inference tokens per minute for Anthropic Claude Opus 5,aws
+anthropic.claude-opus-5,us,tpm,L-99296DCD,Cross-region model inference tokens per minute for Anthropic Claude Opus 5,aws
+anthropic.claude-opus-5,au,tpm,L-99296DCD,Cross-region model inference tokens per minute for Anthropic Claude Opus 5,aws
+anthropic.claude-opus-5,eu,tpm,L-99296DCD,Cross-region model inference tokens per minute for Anthropic Claude Opus 5,aws
+anthropic.claude-opus-5-5,global,tpm,L-A103A344,Global cross-region model inference tokens per minute for Anthropic Claude Opus 5.5,aws
+anthropic.claude-opus-5-5,us,tpm,L-A4430697,Cross-region model inference tokens per minute for Anthropic Claude Opus 5.5,aws
+anthropic.claude-opus-5-5,jp,tpm,L-A4430697,Cross-region model inference tokens per minute for Anthropic Claude Opus 5.5,aws
+anthropic.claude-opus-5-5,au,tpm,L-A4430697,Cross-region model inference tokens per minute for Anthropic Claude Opus 5.5,aws
+anthropic.claude-opus-5-5,eu,tpm,L-A4430697,Cross-region model inference tokens per minute for Anthropic Claude Opus 5.5,aws
+anthropic.claude-sonnet-4-5-20250929-v1:0,global,rpm,L-DB84CE56,Global cross-region model inference requests per minute for Anthropic Claude Sonnet 4.5 V1,aws
+anthropic.claude-sonnet-4-5-20250929-v1:0,global,tpm,L-27C57EE8,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1,aws
+anthropic.claude-sonnet-4-5-20250929-v1:0,us,rpm,L-4A6BFAB1,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.5 V1,aws
+anthropic.claude-sonnet-4-5-20250929-v1:0,us,tpm,L-F4DDD3EB,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1,aws
+anthropic.claude-sonnet-4-5-20250929-v1:0,jp,rpm,L-4A6BFAB1,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.5 V1,aws
+anthropic.claude-sonnet-4-5-20250929-v1:0,jp,tpm,L-F4DDD3EB,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1,aws
+anthropic.claude-sonnet-4-5-20250929-v1:0,au,rpm,L-4A6BFAB1,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.5 V1,aws
+anthropic.claude-sonnet-4-5-20250929-v1:0,au,tpm,L-F4DDD3EB,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1,aws
+anthropic.claude-sonnet-4-5-20250929-v1:0,eu,rpm,L-4A6BFAB1,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.5 V1,aws
+anthropic.claude-sonnet-4-5-20250929-v1:0,eu,tpm,L-F4DDD3EB,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1,aws
+anthropic.claude-sonnet-4-6,global,rpm,L-F6E116D7,Global cross-region model inference requests per minute for Anthropic Claude Sonnet 4.6,aws
+anthropic.claude-sonnet-4-6,global,tpm,L-7BEE40FB,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6,aws
+anthropic.claude-sonnet-4-6,us,rpm,L-00FF3314,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.6,aws
+anthropic.claude-sonnet-4-6,us,tpm,L-15B8E632,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6,aws
+anthropic.claude-sonnet-4-6,jp,rpm,L-00FF3314,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.6,aws
+anthropic.claude-sonnet-4-6,jp,tpm,L-15B8E632,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6,aws
+anthropic.claude-sonnet-4-6,au,rpm,L-00FF3314,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.6,aws
+anthropic.claude-sonnet-4-6,au,tpm,L-15B8E632,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6,aws
+anthropic.claude-sonnet-4-6,eu,rpm,L-00FF3314,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.6,aws
+anthropic.claude-sonnet-4-6,eu,tpm,L-15B8E632,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6,aws
+anthropic.claude-sonnet-4-6,base,rpm,L-9B878FAE,On-demand model inference requests per minute for Anthropic Claude Sonnet 4.6,aws
+anthropic.claude-sonnet-4-6,base,tpm,L-5F5A169C,On-demand model inference tokens per minute for Anthropic Claude Sonnet 4.6,aws
+anthropic.claude-sonnet-5,global,tpm,L-DD84E5CA,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 5,aws
+anthropic.claude-sonnet-5,us,tpm,L-D4FBCF4E,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 5,aws
+anthropic.claude-sonnet-5,au,tpm,L-D4FBCF4E,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 5,aws
+anthropic.claude-sonnet-5,eu,tpm,L-D4FBCF4E,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 5,aws
+cohere.embed-english-v3,base,rpm,L-FF8E7864,On-demand model inference requests per minute for Cohere Embed English,aws
+cohere.embed-english-v3,base,tpm,L-A2BE277A,On-demand model inference tokens per minute for Cohere Embed English,aws
+cohere.embed-multilingual-v3,base,rpm,L-9E5BD0C6,On-demand model inference requests per minute for Cohere Embed Multilingual,aws
+cohere.embed-multilingual-v3,base,tpm,L-C2F86908,On-demand model inference tokens per minute for Cohere Embed Multilingual,aws
+cohere.embed-v4:0,base,rpm,L-BE5FD99B,On-demand model inference requests per minute for Cohere Embed V4,aws
+cohere.embed-v4:0,base,tpm,L-C47B85D5,On-demand model inference tokens per minute for Cohere Embed V4,aws
+cohere.embed-v4:0,global,rpm,L-7089DC7D,Global cross-region model inference requests per minute for Cohere Embed V4,aws
+cohere.embed-v4:0,global,tpd,L-795ADAB0,Global cross-region model inference tokens per day for Cohere Embed V4,aws
+cohere.embed-v4:0,global,tpm,L-02DFBB76,Global cross-region model inference tokens per minute for Cohere Embed V4,aws
+cohere.embed-v4:0,us,rpm,L-EB8C1F30,Cross-region model inference requests per minute for Cohere Embed V4,aws
+cohere.embed-v4:0,us,tpd,L-F1BB08BB,Model invocation max tokens per day for Cohere Embed V4 (doubled for cross-region calls),aws
+cohere.embed-v4:0,us,tpm,L-4C3F0FE6,Cross-region model inference tokens per minute for Cohere Embed V4,aws
+cohere.embed-v4:0,eu,rpm,L-EB8C1F30,Cross-region model inference requests per minute for Cohere Embed V4,aws
+cohere.embed-v4:0,eu,tpd,L-F1BB08BB,Model invocation max tokens per day for Cohere Embed V4 (doubled for cross-region calls),aws
+cohere.embed-v4:0,eu,tpm,L-4C3F0FE6,Cross-region model inference tokens per minute for Cohere Embed V4,aws
+cohere.rerank-v3-5:0,base,rpm,L-11512E58,On-demand model inference requests per minute for Cohere Rerank 3.5,aws
+deepseek.r1-v1:0,us,rpm,L-F52323AB,Cross-region model inference requests per minute for DeepSeek R1 V1,aws
+deepseek.r1-v1:0,us,tpm,L-06B03968,Cross-region model inference tokens per minute for DeepSeek R1 V1,aws
+deepseek.v3.2,base,rpm,L-3AE31EFC,On-demand model inference requests per minute for DeepSeek V3.2,aws
+deepseek.v3.2,base,tpm,L-C43703DE,On-demand model inference tokens per minute for DeepSeek V3.2,aws
+google.gemma-3-12b-it,base,rpm,L-999037CA,On-demand model inference requests per minute for Gemma 3 12B,aws
+google.gemma-3-12b-it,base,tpm,L-3FD4A73E,On-demand model inference tokens per minute for Gemma 3 12B,aws
+google.gemma-3-27b-it,base,rpm,L-5D46C7AF,On-demand model inference requests per minute for Gemma 3 27B,aws
+google.gemma-3-27b-it,base,tpm,L-F8729E94,On-demand model inference tokens per minute for Gemma 3 27B,aws
+google.gemma-3-4b-it,base,rpm,L-3056DF33,On-demand model inference requests per minute for Gemma 3 4B,aws
+google.gemma-3-4b-it,base,tpm,L-73FB8466,On-demand model inference tokens per minute for Gemma 3 4B,aws
+meta.llama3-1-70b-instruct-v1:0,us,rpm,L-29644EB3,Cross-region model inference requests per minute for Meta Llama 3.1 70B Instruct,aws
+meta.llama3-1-70b-instruct-v1:0,us,tpm,L-92E68994,Cross-region model inference tokens per minute for Meta Llama 3.1 70B Instruct,aws
+meta.llama3-1-70b-instruct-v1:0,base,rpm,L-ECA5B974,On-demand model inference requests per minute for Meta Llama 3.1 70B Instruct,aws
+meta.llama3-1-70b-instruct-v1:0,base,tpm,L-48E55E59,On-demand model inference tokens per minute for Meta Llama 3.1 70B Instruct,aws
+meta.llama3-1-8b-instruct-v1:0,us,rpm,L-396C5302,Cross-region model inference requests per minute for Meta Llama 3.1 8B Instruct,aws
+meta.llama3-1-8b-instruct-v1:0,us,tpm,L-9782749C,Cross-region model inference tokens per minute for Meta Llama 3.1 8B Instruct,aws
+meta.llama3-1-8b-instruct-v1:0,base,rpm,L-19A2ED6C,On-demand model inference requests per minute for Meta Llama 3.1 8B Instruct,aws
+meta.llama3-1-8b-instruct-v1:0,base,tpm,L-9E79C230,On-demand model inference tokens per minute for Meta Llama 3.1 8B Instruct,aws
+meta.llama3-3-70b-instruct-v1:0,us,rpm,L-DEDE703C,Cross-region model inference requests per minute for Meta Llama 3.3 70B Instruct,aws
+meta.llama3-3-70b-instruct-v1:0,us,tpm,L-0E7AA8B7,Cross-region model inference tokens per minute for Meta Llama 3.3 70B Instruct,aws
+meta.llama3-3-70b-instruct-v1:0,base,rpm,L-22EF3256,On-demand model inference requests per minute for Meta Llama 3.3 70B Instruct,aws
+meta.llama3-3-70b-instruct-v1:0,base,tpm,L-372A660C,On-demand model inference tokens per minute for Meta Llama 3.3 70B Instruct,aws
+meta.llama3-70b-instruct-v1:0,base,rpm,L-46D383AF,On-demand model inference requests per minute for Meta Llama 3 70B Instruct,aws
+meta.llama3-70b-instruct-v1:0,base,tpm,L-609E24B0,On-demand model inference tokens per minute for Meta Llama 3 70B Instruct,aws
+meta.llama3-8b-instruct-v1:0,base,rpm,L-320BEFEB,On-demand model inference requests per minute for Meta Llama 3 8B Instruct,aws
+meta.llama3-8b-instruct-v1:0,base,tpm,L-03A9B835,On-demand model inference tokens per minute for Meta Llama 3 8B Instruct,aws
+meta.llama4-maverick-17b-instruct-v1:0,us,rpm,L-4F18EF2F,Cross-region model inference requests per minute for Meta Llama 4 Maverick V1,aws
+meta.llama4-maverick-17b-instruct-v1:0,us,tpm,L-DE3FBBF4,Cross-region model inference tokens per minute for Meta Llama 4 Maverick V1,aws
+meta.llama4-scout-17b-instruct-v1:0,us,rpm,L-751B753A,Cross-region model inference requests per minute for Meta Llama 4 Scout V1,aws
+meta.llama4-scout-17b-instruct-v1:0,us,tpm,L-532E6630,Cross-region model inference tokens per minute for Meta Llama 4 Scout V1,aws
+minimax.minimax-m2,base,rpm,L-828C986E,On-demand model inference requests per minute for Minimax M2,aws
+minimax.minimax-m2,base,tpm,L-A81B7C40,On-demand model inference tokens per minute for Minimax M2,aws
+minimax.minimax-m2.1,base,rpm,L-2DA44933,On-demand model inference requests per minute for Minimax M2.1,aws
+minimax.minimax-m2.1,base,tpm,L-D795937C,On-demand model inference tokens per minute for Minimax M2.1,aws
+minimax.minimax-m2.5,base,rpm,L-6185F03F,On-demand model inference requests per minute for MiniMax M2.5,aws
+minimax.minimax-m2.5,base,tpm,L-359D5670,On-demand model inference tokens per minute for MiniMax M2.5,aws
+mistral.devstral-2-123b,base,rpm,L-0197660A,On-demand model inference requests per minute for Mistral Devstral 2 123b,aws
+mistral.devstral-2-123b,base,tpm,L-904A6762,On-demand model inference tokens per minute for Mistral Devstral 2 123b,aws
+mistral.magistral-small-2509,base,rpm,L-B14A9603,On-demand model inference requests per minute for Magistral Small 1.2,aws
+mistral.magistral-small-2509,base,tpm,L-D18AC5F7,On-demand model inference tokens per minute for Magistral Small 1.2,aws
+mistral.ministral-3-14b-instruct,base,rpm,L-99F7BDBC,On-demand model inference requests per minute for Ministral 14B 3.0,aws
+mistral.ministral-3-14b-instruct,base,tpm,L-334E5409,On-demand model inference tokens per minute for Ministral 14B 3.0,aws
+mistral.ministral-3-3b-instruct,base,rpm,L-DCA37E91,On-demand model inference requests per minute for Ministral 3B 3.0,aws
+mistral.ministral-3-3b-instruct,base,tpm,L-8A4BEE90,On-demand model inference tokens per minute for Ministral 3B 3.0,aws
+mistral.ministral-3-8b-instruct,base,rpm,L-2BDF9A55,On-demand model inference requests per minute for Ministral 8B 3.0,aws
+mistral.ministral-3-8b-instruct,base,tpm,L-3B98F300,On-demand model inference tokens per minute for Ministral 8B 3.0,aws
+mistral.mistral-7b-instruct-v0:2,base,rpm,L-D9A35062,On-demand model inference requests per minute for Mistral 7B Instruct,aws
+mistral.mistral-7b-instruct-v0:2,base,tpm,L-02D831F1,On-demand model inference tokens per minute for Mistral AI Mistral 7B Instruct,aws
+mistral.mistral-large-2402-v1:0,base,rpm,L-3AF844DB,On-demand model inference requests per minute for Mistral Large,aws
+mistral.mistral-large-2402-v1:0,base,tpm,L-01447289,On-demand model inference tokens per minute for Mistral AI Mistral Large,aws
+mistral.mistral-large-3-675b-instruct,base,rpm,L-5B274E24,On-demand model inference requests per minute for Mistral Large 3,aws
+mistral.mistral-large-3-675b-instruct,base,tpm,L-C709F563,On-demand model inference tokens per minute for Mistral Large 3,aws
+mistral.mistral-small-2402-v1:0,base,rpm,L-1CBB0490,On-demand model inference requests per minute for Mistral AI Mistral Small,aws
+mistral.mistral-small-2402-v1:0,base,tpm,L-82C15FA8,On-demand model inference tokens per minute for Mistral AI Mistral Small,aws
+mistral.mixtral-8x7b-instruct-v0:1,base,rpm,L-FD938632,On-demand model inference requests per minute for Mistral Mixtral 8x7b Instruct,aws
+mistral.mixtral-8x7b-instruct-v0:1,base,tpm,L-490F4D1F,On-demand model inference tokens per minute for Mistral AI Mixtral 8X7BB Instruct,aws
+mistral.pixtral-large-2502-v1:0,us,rpm,L-674F42D5,Cross-region model inference requests per minute for Mistral Pixtral Large 25.02 V1,aws
+mistral.pixtral-large-2502-v1:0,us,tpd,L-58280E37,Model invocation max tokens per day for Mistral Pixtral Large 25.02 V1 (doubled for cross-region calls),aws
+mistral.pixtral-large-2502-v1:0,us,tpm,L-4B9F76B0,Cross-region model inference tokens per minute for Mistral Pixtral Large 25.02 V1,aws
+mistral.pixtral-large-2502-v1:0,eu,rpm,L-674F42D5,Cross-region model inference requests per minute for Mistral Pixtral Large 25.02 V1,aws
+mistral.pixtral-large-2502-v1:0,eu,tpd,L-58280E37,Model invocation max tokens per day for Mistral Pixtral Large 25.02 V1 (doubled for cross-region calls),aws
+mistral.pixtral-large-2502-v1:0,eu,tpm,L-4B9F76B0,Cross-region model inference tokens per minute for Mistral Pixtral Large 25.02 V1,aws
+mistral.voxtral-mini-3b-2507,base,rpm,L-17AE85BD,On-demand model inference requests per minute for Voxtral Mini 1.0,aws
+mistral.voxtral-mini-3b-2507,base,tpm,L-0B767044,On-demand model inference tokens per minute for Voxtral Mini 1.0,aws
+mistral.voxtral-small-24b-2507,base,rpm,L-ACB2FB6A,On-demand model inference requests per minute for Voxtral Small 1.0,aws
+mistral.voxtral-small-24b-2507,base,tpm,L-930E2896,On-demand model inference tokens per minute for Voxtral Small 1.0,aws
+moonshot.kimi-k2-thinking,base,rpm,L-02572418,On-demand model inference requests per minute for Kimi K2 Thinking,aws
+moonshot.kimi-k2-thinking,base,tpm,L-03579AC2,On-demand model inference tokens per minute for Kimi K2 Thinking,aws
+moonshotai.kimi-k2.5,base,rpm,L-C1711F26,On-demand model inference requests per minute for Moonshot AI Kimi K2.5,aws
+moonshotai.kimi-k2.5,base,tpm,L-B8D04761,On-demand model inference tokens per minute for Moonshot AI Kimi K2.5,aws
+moonshotai.kimi-k3,global,tpd,L-0EDA3E92,Global cross-region model inference tokens per day for Moonshot AI Kimi K3,aws
+moonshotai.kimi-k3,global,tpm,L-2B5A3FA2,Global cross-region model inference tokens per minute for Moonshot AI Kimi K3,aws
+moonshotai.kimi-k3,us,tpd,L-BA59CBAA,Model invocation max tokens per day for Moonshot AI Kimi K3 (doubled for cross-region calls),aws
+moonshotai.kimi-k3,us,tpm,L-51FF35D5,Cross-region model inference tokens per minute for Moonshot AI Kimi K3,aws
+nvidia.nemotron-nano-12b-v2,base,rpm,L-AC7B3FB9,On-demand model inference requests per minute for NVIDIA Nemotron Nano 2,aws
+nvidia.nemotron-nano-12b-v2,base,tpm,L-33D3627D,On-demand model inference tokens per minute for NVIDIA Nemotron Nano 2,aws
+nvidia.nemotron-nano-3-30b,base,rpm,L-2DA9C9CC,On-demand model inference requests per minute for Nemotron Nano 3 30B,aws
+nvidia.nemotron-nano-3-30b,base,tpm,L-C0663FA3,On-demand model inference tokens per minute for Nemotron Nano 3 30B,aws
+nvidia.nemotron-nano-9b-v2,base,rpm,L-AC7B3FB9,On-demand model inference requests per minute for NVIDIA Nemotron Nano 2,aws
+nvidia.nemotron-nano-9b-v2,base,tpm,L-33D3627D,On-demand model inference tokens per minute for NVIDIA Nemotron Nano 2,aws
+nvidia.nemotron-super-3-120b,base,rpm,L-E722E1BB,On-demand model inference requests per minute for NVIDIA Nemotron 3 Super 120B A12B,aws
+nvidia.nemotron-super-3-120b,base,tpm,L-EB4CADEE,On-demand model inference tokens per minute for NVIDIA Nemotron 3 Super 120B A12B,aws
+openai.gpt-5.6-luna,global,tpm,L-D983F7C0,Global cross-region model inference tokens per minute for GPT-5.6 Luna,aws
+openai.gpt-5.6-luna,us,tpm,L-E3C70889,Cross-region model inference tokens per minute for GPT-5.6 Luna,aws
+openai.gpt-5.6-luna,in,tpm,L-E3C70889,Cross-region model inference tokens per minute for GPT-5.6 Luna,aws
+openai.gpt-5.6-sol,global,tpm,L-4D7537CF,Global cross-region model inference tokens per minute for GPT-5.6 Sol,aws
+openai.gpt-5.6-sol,us,tpm,L-D94ECE3B,Cross-region model inference tokens per minute for GPT-5.6 Sol,aws
+openai.gpt-5.6-terra,global,tpm,L-8E752C84,Global cross-region model inference tokens per minute for GPT-5.6 Terra,aws
+openai.gpt-5.6-terra,us,tpm,L-99936FBF,Cross-region model inference tokens per minute for GPT-5.6 Terra,aws
+openai.gpt-5.6-terra,in,tpm,L-99936FBF,Cross-region model inference tokens per minute for GPT-5.6 Terra,aws
+openai.gpt-6-astra,global,tpm,L-B38B530A,Global cross-region model inference tokens per minute for GPT-6 Astra,aws
+openai.gpt-6-astra,us,tpm,L-53A144CD,Cross-region model inference tokens per minute for GPT-6 Astra,aws
+openai.gpt-6-luna,global,tpd,L-C0FA489B,Global cross-region model inference tokens per day for GPT-6 Luna,aws
+openai.gpt-6-luna,global,tpm,L-CCC92354,Global cross-region model inference tokens per minute for GPT-6 Luna,aws
+openai.gpt-6-luna,us,tpd,L-F3D482FA,Model invocation max tokens per day for GPT-6 Luna (doubled for cross-region calls),aws
+openai.gpt-6-luna,us,tpm,L-AB39D760,Cross-region model inference tokens per minute for GPT-6 Luna,aws
+openai.gpt-6-sol,global,tpd,L-685F85F7,Global cross-region model inference tokens per day for GPT-6 Sol,aws
+openai.gpt-6-sol,global,tpm,L-039AF68B,Global cross-region model inference tokens per minute for GPT-6 Sol,aws
+openai.gpt-6-sol,us,tpd,L-B55D3318,Model invocation max tokens per day for GPT-6 Sol (doubled for cross-region calls),aws
+openai.gpt-6-sol,us,tpm,L-8FD128CF,Cross-region model inference tokens per minute for GPT-6 Sol,aws
+openai.gpt-oss-120b-1:0,base,rpm,L-25B50707,On-demand model inference requests per minute for OpenAI GPT OSS 120B,aws
+openai.gpt-oss-120b-1:0,base,tpm,L-9DC5F595,On-demand model inference tokens per minute for OpenAI GPT OSS 120B,aws
+openai.gpt-oss-20b-1:0,base,rpm,L-AF7F0545,On-demand model inference requests per minute for OpenAI GPT OSS 20B,aws
+openai.gpt-oss-20b-1:0,base,tpm,L-036E14D8,On-demand model inference tokens per minute for OpenAI GPT OSS 20B,aws
+openai.gpt-oss-safeguard-120b,base,rpm,L-C4E013EF,On-demand model inference requests per minute for GPT OSS Safeguard 120B,aws
+openai.gpt-oss-safeguard-120b,base,tpm,L-594C7AC9,On-demand model inference tokens per minute for GPT OSS Safeguard 120B,aws
+openai.gpt-oss-safeguard-20b,base,rpm,L-65833D55,On-demand model inference requests per minute for GPT OSS Safeguard 20B,aws
+openai.gpt-oss-safeguard-20b,base,tpm,L-5D8F2F54,On-demand model inference tokens per minute for GPT OSS Safeguard 20B,aws
+qwen.qwen3-32b-v1:0,base,rpm,L-E880C759,On-demand model inference requests per minute for Qwen3 32B V1,aws
+qwen.qwen3-32b-v1:0,base,tpm,L-B7C52139,On-demand model inference tokens per minute for Qwen3 32B V1,aws
+qwen.qwen3-coder-30b-a3b-v1:0,base,rpm,L-66EE6E0B,On-demand model inference requests per minute for Qwen3 Coder 30B a3b V1,aws
+qwen.qwen3-coder-30b-a3b-v1:0,base,tpm,L-92F81E14,On-demand model inference tokens per minute for Qwen3 Coder 30B a3b V1,aws
+qwen.qwen3-coder-next,base,rpm,L-4153B066,On-demand model inference requests per minute for Qwen3 Coder Next,aws
+qwen.qwen3-coder-next,base,tpm,L-A4C6122D,On-demand model inference tokens per minute for Qwen3 Coder Next,aws
+qwen.qwen3-next-80b-a3b,base,rpm,L-07B3CEEA,On-demand model inference requests per minute for Qwen3 Next 80B A3B,aws
+qwen.qwen3-next-80b-a3b,base,tpm,L-37AB702E,On-demand model inference tokens per minute for Qwen3 Next 80B A3B,aws
+qwen.qwen3-vl-235b-a22b,base,rpm,L-11B56FB0,On-demand model inference requests per minute for Qwen3 VL 235B A22B,aws
+qwen.qwen3-vl-235b-a22b,base,tpm,L-46063925,On-demand model inference tokens per minute for Qwen3 VL 235B A22B,aws
+stability.stable-conservative-upscale-v1:0,us,rpm,L-0C7F3C72,Cross-region model inference requests per minute for Stable Image Conservative Upscale,aws
+stability.stable-creative-upscale-v1:0,us,rpm,L-DB8B3F46,Cross-region model inference requests per minute for Stable Image Creative Upscale,aws
+stability.stable-fast-upscale-v1:0,us,rpm,L-D3D76E8D,Cross-region model inference requests per minute for Stable Image Fast Upscale,aws
+stability.stable-image-control-sketch-v1:0,us,rpm,L-F335C1D6,Cross-region model inference requests per minute for Stable Image Control Sketch,aws
+stability.stable-image-control-structure-v1:0,us,rpm,L-9B65945A,Cross-region model inference requests per minute for Stable Image Control Structure,aws
+stability.stable-image-erase-object-v1:0,us,rpm,L-14BB1F8E,Cross-region model inference requests per minute for Stable Image Erase Object,aws
+stability.stable-image-inpaint-v1:0,us,rpm,L-3CD80F9F,Cross-region model inference requests per minute for Stable Image Inpaint,aws
+stability.stable-image-remove-background-v1:0,us,rpm,L-E347CF0D,Cross-region model inference requests per minute for Stable Image Remove Background,aws
+stability.stable-image-search-replace-v1:0,us,rpm,L-AE5771D9,Cross-region model inference requests per minute for Stable Image Search and Replace,aws
+stability.stable-image-style-guide-v1:0,us,rpm,L-D15F5A64,Cross-region model inference requests per minute for Stable Image Style Guide,aws
+twelvelabs.marengo-embed-2-7-v1:0,us,rpm,L-E967C2DE,Cross-region model inference requests per minute for Twelve Labs Marengo,aws
+twelvelabs.marengo-embed-2-7-v1:0,apac,rpm,L-E967C2DE,Cross-region model inference requests per minute for Twelve Labs Marengo,aws
+twelvelabs.marengo-embed-2-7-v1:0,eu,rpm,L-E967C2DE,Cross-region model inference requests per minute for Twelve Labs Marengo,aws
+twelvelabs.marengo-embed-3-0-v1:0,base,concurrent,L-BC3096B9,On-demand InvokeModel async concurrent requests for TwelveLabs Marengo Embed 3.0,aws
+twelvelabs.marengo-embed-3-0-v1:0,base,rpm,L-8CBCC2C0,On-demand model inference requests per minute for TwelveLabs Marengo Embed 3.0,aws
+twelvelabs.marengo-embed-3-0-v1:0,us,rpm,L-E5197E26,Cross-region model inference requests per minute for TwelveLabs Marengo Embed 3.0,aws
+twelvelabs.marengo-embed-3-0-v1:0,eu,rpm,L-E5197E26,Cross-region model inference requests per minute for TwelveLabs Marengo Embed 3.0,aws
+twelvelabs.pegasus-1-2-v1:0,base,concurrent,L-CABD464E,On-demand InvokeModel concurrent requests for Twelve Labs Pegasus,aws
+twelvelabs.pegasus-1-2-v1:0,base,rpm,L-5E8692C5,On-demand model inference requests per minute for Twelve Labs Pegasus,aws
+twelvelabs.pegasus-1-2-v1:0,us,rpm,L-6E046197,Cross-region model inference requests per minute for Twelve Labs Pegasus,aws
+twelvelabs.pegasus-1-2-v1:0,apac,rpm,L-6E046197,Cross-region model inference requests per minute for Twelve Labs Pegasus,aws
+twelvelabs.pegasus-1-2-v1:0,eu,rpm,L-6E046197,Cross-region model inference requests per minute for Twelve Labs Pegasus,aws
+writer.palmyra-vision-7b,base,rpm,L-23BFF4A6,On-demand model inference requests per minute for Writer Palmyra Vision 7B,aws
+writer.palmyra-vision-7b,base,tpm,L-C53E98ED,On-demand model inference tokens per minute for Writer Palmyra Vision 7B,aws
+writer.palmyra-x4-v1:0,us,rpm,L-79AAC482,Cross-region model inference requests per minute for Writer AI Palmyra X4 V1,aws
+writer.palmyra-x4-v1:0,us,tpd,L-B9B77872,Model invocation max tokens per day for Writer AI Palmyra X4 V1 (doubled for cross-region calls),aws
+writer.palmyra-x4-v1:0,us,tpm,L-FF1F238B,Cross-region model inference tokens per minute for Writer AI Palmyra X4 V1,aws
+writer.palmyra-x5-v1:0,us,rpm,L-D655BF6C,Cross-region model inference requests per minute for Writer AI Palmyra X5 V1,aws
+writer.palmyra-x5-v1:0,us,tpd,L-7E80DA80,Model invocation max tokens per day for Writer AI Palmyra X5 V1 (doubled for cross-region calls),aws
+writer.palmyra-x5-v1:0,us,tpm,L-90DFE70F,Cross-region model inference tokens per minute for Writer AI Palmyra X5 V1,aws
+zai.glm-4.7,base,rpm,L-497DDDD7,On-demand model inference requests per minute for Z.ai GLM-4.7,aws
+zai.glm-4.7,base,tpm,L-12454D86,On-demand model inference tokens per minute for Z.ai GLM-4.7,aws
+zai.glm-4.7-flash,base,rpm,L-5E856AD9,On-demand model inference requests per minute for Z.ai GLM-4.7 Flash,aws
+zai.glm-4.7-flash,base,tpm,L-B40F2E56,On-demand model inference tokens per minute for Z.ai GLM-4.7 Flash,aws
+zai.glm-5,base,rpm,L-7BF266A9,On-demand model inference requests per minute for Z.ai GLM 5,aws
+zai.glm-5,base,tpm,L-99316427,On-demand model inference tokens per minute for Z.ai GLM 5,aws
+xai.grok-4.6,global,tpm,L-2AD735F5,Global cross-region model inference tokens per minute for Grok 4.6,aws
+xai.grok-4.6,us,tpm,L-0F2ECB41,Cross-region model inference tokens per minute for Grok 4.6,aws
+amazon.rerank-v1:0,base,rpm,L-AAB0080F,On-demand model inference requests per minute for Amazon Rerank 1.0,aws
+deepseek.v3-v1:0,base,rpm,L-7A5451CB,On-demand model inference requests per minute for DeepSeek V3 V1,aws
+deepseek.v3-v1:0,base,tpm,L-30A6895A,On-demand model inference tokens per minute for DeepSeek V3 V1,aws
+qwen.qwen3-235b-a22b-2507-v1:0,base,rpm,L-548A1A32,On-demand model inference requests per minute for Qwen3 235B a22b 2507 V1,aws
+qwen.qwen3-235b-a22b-2507-v1:0,base,tpm,L-3875BCCF,On-demand model inference tokens per minute for Qwen3 235B a22b 2507 V1,aws
+qwen.qwen3-coder-480b-a35b-v1:0,base,rpm,L-CBE7E3CD,On-demand model inference requests per minute for Qwen3 Coder 480B a35b V1,aws
+qwen.qwen3-coder-480b-a35b-v1:0,base,tpm,L-4D0E44C8,On-demand model inference tokens per minute for Qwen3 Coder 480B a35b V1,aws
+anthropic.claude-3-5-sonnet-20240620-v1:0,apac,rpm,L-F457545D,Cross-region model inference requests per minute for Anthropic Claude 3.5 Sonnet,aws
+anthropic.claude-3-5-sonnet-20240620-v1:0,apac,tpd,L-E7D41161,Model invocation max tokens per day for Anthropic Claude 3.5 Sonnet V1 (doubled for cross-region calls),aws
+anthropic.claude-3-5-sonnet-20240620-v1:0,apac,tpm,L-479B647F,Cross-region model inference tokens per minute for Anthropic Claude 3.5 Sonnet,aws
+anthropic.claude-3-5-sonnet-20240620-v1:0,base,rpm,L-254CACF4,On-demand model inference requests per minute for Anthropic Claude 3.5 Sonnet,aws
+anthropic.claude-3-5-sonnet-20240620-v1:0,base,tpm,L-A50569E5,On-demand model inference tokens per minute for Anthropic Claude 3.5 Sonnet,aws
+anthropic.claude-3-5-sonnet-20241022-v2:0,apac,rpm,L-1D3E59A3,Cross-Region model inference requests per minute for Anthropic Claude 3.5 Sonnet V2,aws
+anthropic.claude-3-5-sonnet-20241022-v2:0,apac,tpm,L-FF8B4E28,Cross-Region model inference tokens per minute for Anthropic Claude 3.5 Sonnet V2,aws
+anthropic.claude-3-haiku-20240307-v1:0,apac,rpm,L-616A3F5B,Cross-region model inference requests per minute for Anthropic Claude 3 Haiku,aws
+anthropic.claude-3-haiku-20240307-v1:0,apac,tpd,L-A60EE1AF,Model invocation max tokens per day for Anthropic Claude 3 Haiku (doubled for cross-region calls),aws
+anthropic.claude-3-haiku-20240307-v1:0,apac,tpm,L-DCADBC78,Cross-region model inference tokens per minute for Anthropic Claude 3 Haiku,aws
+anthropic.claude-3-haiku-20240307-v1:0,base,rpm,L-2DC80978,On-demand model inference requests per minute for Anthropic Claude 3 Haiku,aws
+anthropic.claude-3-haiku-20240307-v1:0,base,tpm,L-8CE99163,On-demand model inference tokens per minute for Anthropic Claude 3 Haiku,aws
+anthropic.claude-3-7-sonnet-20250219-v1:0,apac,rpm,L-3D8CC480,Cross-region model inference requests per minute for Anthropic Claude 3.7 Sonnet V1,aws
+anthropic.claude-3-7-sonnet-20250219-v1:0,apac,tpd,L-9EB71894,Model invocation max tokens per day for Anthropic Claude 3.7 Sonnet V1 (doubled for cross-region calls),aws
+anthropic.claude-3-7-sonnet-20250219-v1:0,apac,tpm,L-6E888CC2,Cross-region model inference tokens per minute for Anthropic Claude 3.7 Sonnet V1,aws
+anthropic.claude-3-7-sonnet-20250219-v1:0,base,rpm,L-0651A8FB,On-demand model inference requests per minute for Anthropic Claude 3.7 Sonnet V1,aws
+anthropic.claude-3-7-sonnet-20250219-v1:0,base,tpm,L-8F2EEEA3,On-demand model inference tokens per minute for Anthropic Claude 3.7 Sonnet V1,aws
+anthropic.claude-3-sonnet-20240229-v1:0,apac,rpm,L-46591118,Cross-region model inference requests per minute for Anthropic Claude 3 Sonnet,aws
+anthropic.claude-3-sonnet-20240229-v1:0,apac,tpm,L-5DF13F64,Cross-region model inference tokens per minute for Anthropic Claude 3 Sonnet,aws
+anthropic.claude-3-sonnet-20240229-v1:0,base,rpm,L-F406804E,On-demand model inference requests per minute for Anthropic Claude 3 Sonnet,aws
+anthropic.claude-3-sonnet-20240229-v1:0,base,tpm,L-4C35BB2A,On-demand model inference tokens per minute for Anthropic Claude 3 Sonnet,aws
+luma.ray-v2:0,base,concurrent,L-3447D96F,On-demand model inference concurrent requests for Luma Ray V2,aws
+mistral.mistral-large-2407-v1:0,base,rpm,L-1402869F,On-demand model inference requests per minute for Mistral Large 2407,aws
+mistral.mistral-large-2407-v1:0,base,tpm,L-1C28E1AB,On-demand model inference tokens per minute for Mistral Large 2407,aws
+stability.stable-image-core-v1:1,base,rpm,L-5D30A162,On-demand model inference requests per minute for Stability.ai Stable Image Core,aws
+stability.stable-image-ultra-v1:1,base,rpm,L-F192B1D7,On-demand model inference requests per minute for Stability.ai Stable Image Ultra,aws
