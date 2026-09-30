@@ -9,7 +9,7 @@ import sys
 import logging
 from typing import Dict, List, Optional, Sequence, Union
 
-from ..aws.bedrock import split_profile_id
+from ..aws.bedrock import region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
 from ..core.errors import troubleshooting_hint
 from ..core.profile_fetcher import InferenceProfileFetcher
@@ -71,6 +71,12 @@ def group_application_profiles(profiles: Sequence[Dict]) -> List[Dict]:
         if app['id'] not in config['application_profile_ids']:
             config['application_profile_ids'].append(app['id'])
     return list(groups.values())
+
+
+def _is_token_rejection(error: Exception) -> bool:
+    """True when STS rejected the credentials themselves (not a network or permission error)."""
+    text = f"{type(error).__name__} {error}"
+    return any(code in text for code in ('InvalidClientTokenId', 'UnrecognizedClient', 'SignatureDoesNotMatch'))
 
 
 def merge_application_configs(configs: Sequence[Dict]) -> List[Dict]:
@@ -195,7 +201,8 @@ class UserInputs:
         try:
             identity = get_caller_identity(region)
         except Exception as e:
-            self._explain_partition_mismatch(region)
+            if _is_token_rejection(e):
+                self._explain_partition_mismatch(region or region_hint())
             logger.error(f"Failed to get AWS account ID: {e}")
             hint = troubleshooting_hint(e, region or region_hint())
             logger.error(hint or "Please configure AWS credentials in your current machine.")
@@ -219,9 +226,9 @@ class UserInputs:
         if not region:
             return
         requested = get_partition_for_region(region)
-        # Configured region first, then one region per other partition (the global
-        # commercial STS endpoint rejects GovCloud credentials, so try GovCloud STS too)
-        probes = [None] + [r for r in PARTITION_PROBE_REGIONS if get_partition_for_region(r) != requested]
+        # One STS region per other partition (the commercial STS endpoint rejects
+        # GovCloud credentials and vice versa)
+        probes = [r for r in PARTITION_PROBE_REGIONS if get_partition_for_region(r) != requested]
         for probe in probes:
             try:
                 identity = get_caller_identity(probe)
@@ -299,7 +306,7 @@ class UserInputs:
         if value.startswith('arn:'):
             resource = value.split(':', 5)[-1] if value.count(':') >= 5 else ''
             kind, _, ident = resource.partition('/')
-            arn_region = value.split(':')[3] if value.count(':') >= 3 else ''
+            arn_region = region_from_arn(value)
             if arn_region and self.region and arn_region != self.region:
                 logger.error(f"ARN region {arn_region} does not match the analysis region {self.region}")
                 sys.exit(1)
@@ -313,6 +320,11 @@ class UserInputs:
         elif '.' not in value and ':' not in value:
             # No provider prefix: an application inference profile ID (or name)
             return self._application_profile_config(value)
+        else:
+            # Application profile names may contain '.' and ':'; an exact name match wins
+            profile = self._find_application_profile(value)
+            if profile is not None:
+                return self._application_profile_config(value, profile)
 
         base_model_id, prefix = split_profile_id(value)
         return {
@@ -320,8 +332,16 @@ class UserInputs:
             'profile_prefix': prefix
         }
 
-    def _application_profile_config(self, identifier):
-        profile = self._get_profile_fetcher().resolve_application_profile(identifier)
+    def _find_application_profile(self, identifier):
+        """Look up an application profile, or None if absent or the list cannot be read."""
+        try:
+            return self._get_profile_fetcher().resolve_application_profile(identifier)
+        except Exception as e:
+            logger.debug(f"Could not list application inference profiles: {e}")
+            return None
+
+    def _application_profile_config(self, identifier, profile=None):
+        profile = profile or self._get_profile_fetcher().resolve_application_profile(identifier)
         if profile is None:
             logger.error(f"Application inference profile not found in {self.region}: {identifier}")
             sys.exit(1)

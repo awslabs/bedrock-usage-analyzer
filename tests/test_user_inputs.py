@@ -283,3 +283,36 @@ def test_govcloud_credentials_with_commercial_region_explain_mismatch(monkeypatc
     with pytest.raises(SystemExit):
         UserInputs()._get_current_account('us-west-2')
     assert 'but the credentials are for AWS GovCloud (US)' in caplog.text
+
+
+def test_network_errors_do_not_trigger_partition_probes(monkeypatch):
+    calls = []
+
+    def identity(region=None):
+        calls.append(region)
+        raise RuntimeError('Could not connect to the endpoint URL')
+    monkeypatch.setattr(ui_module, 'get_caller_identity', identity)
+    with pytest.raises(SystemExit):
+        UserInputs()._get_current_account('us-west-2')
+    assert calls == ['us-west-2']
+
+
+def test_mismatch_uses_configured_region_when_no_flag(monkeypatch, caplog):
+    monkeypatch.setenv('AWS_REGION', 'us-west-2')
+
+    def identity(region=None):
+        if region == 'us-gov-west-1':
+            return {'Account': '1', 'Arn': 'arn:aws-us-gov:iam::1:user/a', 'Partition': 'aws-us-gov'}
+        raise RuntimeError('InvalidClientTokenId')
+    monkeypatch.setattr(ui_module, 'get_caller_identity', identity)
+    with pytest.raises(SystemExit):
+        UserInputs()._get_current_account(None)
+    assert 'but the credentials are for AWS GovCloud (US)' in caplog.text
+
+
+def test_application_profile_name_with_dots(inputs):
+    from conftest import AU_ARNS, app_profile
+    inputs.profile_fetcher.bedrock_client.application.append(app_profile('dotted00001', 'team.prod:haiku', AU_ARNS))
+    inputs.profile_fetcher._app_profiles = None
+    assert inputs._parse_model_id('team.prod:haiku') == {
+        'model_id': HAIKU, 'profile_prefix': 'au', 'application_profile_ids': ['dotted00001']}

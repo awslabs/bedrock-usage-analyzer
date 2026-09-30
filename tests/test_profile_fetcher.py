@@ -189,3 +189,15 @@ def test_user_prefix_file_from_older_version_keeps_new_prefixes(tmp_path):
     bedrock._prefix_mapping_cache = None
     assert {'us-gov', 'in', 'au', 'us'} <= set(bedrock.get_regional_profile_prefixes())
     assert bedrock.get_endpoint_descriptions()['us'] == 'custom'   # user entry wins
+
+
+@pytest.mark.parametrize('regions,prefix', [
+    (['ap-northeast-1', 'ap-northeast-3'], 'jp'),
+    (['ap-southeast-2', 'ap-southeast-4'], 'au'),
+    (['ap-south-1', 'ap-south-2'], 'in'),
+    (['ap-southeast-1', 'ap-northeast-2'], 'apac'),
+])
+def test_fallback_tells_country_profiles_from_apac(regions, prefix):
+    apps = [app_profile('x0000000001', 'x', [arn(rg, NOVA) for rg in regions])]
+    fetcher = InferenceProfileFetcher(FakeBedrock(application=apps))
+    assert fetcher.list_application_profiles()[0]['source'] == f"{prefix}.{NOVA}"

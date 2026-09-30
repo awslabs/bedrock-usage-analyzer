@@ -11,7 +11,7 @@ from botocore.exceptions import ClientError
 from bedrock_usage_analyzer.aws.client_factory import create_client
 
 
-def fetch_service_quotas(region: str, service_code: str = 'bedrock') -> List[Dict]:
+def fetch_service_quotas(region: str, service_code: str = 'bedrock') -> Optional[List[Dict]]:
     """Fetch all service quotas for Bedrock
 
     Args:
@@ -19,7 +19,8 @@ def fetch_service_quotas(region: str, service_code: str = 'bedrock') -> List[Dic
         service_code: AWS service code (default: bedrock)
 
     Returns:
-        List of quota dictionaries
+        List of quota dictionaries, or None if the list could not be fetched
+        (callers must not treat a failure as "no quotas")
     """
     try:
         client = create_client('service-quotas', region)
@@ -32,7 +33,7 @@ def fetch_service_quotas(region: str, service_code: str = 'bedrock') -> List[Dic
         return quotas
     except Exception as e:
         print(f"Error fetching quotas for {region}: {e}", file=sys.stderr)
-        return []
+        return None
 
 
 def get_quota_details(quota_code: str, region: str, service_code: str = 'bedrock') -> Optional[Dict]:

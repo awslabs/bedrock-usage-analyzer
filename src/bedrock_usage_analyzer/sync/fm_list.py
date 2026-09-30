@@ -56,15 +56,20 @@ def refresh_region(region: str, update_bundle: bool = False):
     Also refreshes prefix mapping, merging with existing prefixes.
     
     Args:
-        region: AWS region name (string) or region object (dict)
+        region: AWS region name
         update_bundle: Also update bundled metadata (for maintainers)
     """
     region_name = region
     logger.info(f"\nProcessing region: {region_name}")
 
+    # List the system inference profiles once; both the prefix discovery and the
+    # model -> profile map below are built from it
+    logger.info("  Fetching inference profiles...")
+    all_profiles = fetch_all_inference_profiles(region_name)
+
     # Refresh prefix mapping - merge with existing
     logger.info("  Refreshing prefix mapping...")
-    discovered = discover_prefix_mapping(region_name)
+    discovered = discover_prefix_mapping(region_name, all_profiles)
 
     # Bundled + user prefixes: keeps prefixes of other partitions (e.g. us-gov)
     prefix_file = get_writable_path('prefix-mapping.yml')
@@ -123,9 +128,6 @@ def refresh_region(region: str, update_bundle: bool = False):
     # User copy if present, else the bundled list, so refreshing never drops quota mappings
     existing_models = load_existing_models(get_data_path(f'fm-list-{region_name}.yml'))
     
-    # Fetch ALL inference profiles once
-    logger.info(f"  Fetching inference profiles...")
-    all_profiles = fetch_all_inference_profiles(region_name)
     # Build mapping from model to inference profiles
     profile_map = build_profile_map(all_profiles)
     logger.info(f"  Found {len(profile_map)} models with inference profiles")

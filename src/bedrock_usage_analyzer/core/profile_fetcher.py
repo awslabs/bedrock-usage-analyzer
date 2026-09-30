@@ -17,6 +17,14 @@ from bedrock_usage_analyzer.aws.bedrock import (
 
 logger = logging.getLogger(__name__)
 
+# Regions behind the country-level Asia Pacific system profiles (used only when no
+# system profile in the region matches an application profile's routing set)
+COUNTRY_PROFILE_REGIONS = {
+    'jp': {'ap-northeast-1', 'ap-northeast-3'},
+    'au': {'ap-southeast-2', 'ap-southeast-4', 'ap-southeast-6'},
+    'in': {'ap-south-1', 'ap-south-2'},
+}
+
 
 class InferenceProfileFetcher:
     """Discovers the endpoints (base model, system profile, application profiles) to analyze.
@@ -124,6 +132,12 @@ class InferenceProfileFetcher:
         regions = [region_from_arn(a) for a in model_arns]
         if any(not r for r in regions):
             return f"global.{model_id}"  # global profiles include a region-less ARN
+        region_set = set(regions)
+        # Country-level Asia Pacific profiles route to a small set of ap-* regions; tell them
+        # apart from apac.* instead of lumping every ap-* set into apac (issue #7)
+        for prefix, members in COUNTRY_PROFILE_REGIONS.items():
+            if region_set <= members and prefix in self.prefix_map:
+                return f"{prefix}.{model_id}"
         groups = {region_group(r) for r in regions}
         if len(groups) == 1:
             group = groups.pop()

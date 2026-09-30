@@ -56,10 +56,11 @@ def test_bundled_regions_include_both_partitions():
     assert not set(names) & r.SKIP_REGIONS
 
 
-def test_user_regions_file_overrides_bundle(tmp_path):
+def test_user_regions_file_overrides_bundle_per_partition(tmp_path):
     (tmp_path / 'data').mkdir()
-    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': [{'name': 'eu-west-1'}]})
-    assert r.load_region_names() == ['eu-west-1']
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': [{'name': 'eu-west-1'}, 'us-gov-west-1']})
+    # The user's list wins for every partition it covers (no bundled us-gov-east-1 added back)
+    assert r.load_region_names() == ['eu-west-1', 'us-gov-west-1']
 
 
 def test_regions_for_credentials_filters_by_partition(monkeypatch):
@@ -143,3 +144,9 @@ def test_update_bundle_replaces_only_credentials_partition(monkeypatch, tmp_path
     cli.main()
     assert load_yaml(str(bundle / 'regions.yml'))['regions'] == ['eu-west-1', 'us-east-1', 'us-gov-east-1', 'us-gov-west-1']
     assert load_yaml(str(tmp_path / 'data' / 'regions.yml'))['regions'] == ['eu-west-1', 'us-east-1', 'us-gov-west-1']
+
+
+def test_old_user_regions_file_still_gets_bundled_govcloud(tmp_path):
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1', 'eu-west-1']})
+    assert r.load_region_names() == ['eu-west-1', 'us-east-1', 'us-gov-east-1', 'us-gov-west-1']

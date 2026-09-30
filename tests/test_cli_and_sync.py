@@ -138,7 +138,7 @@ def test_fm_list_refresh_keeps_bundled_quota_mappings_and_prefixes(monkeypatch, 
     bundled = load_yaml(get_data_path('fm-list-us-east-1.yml'))['models']
     mapped = next(m for m in bundled
                   if any(q for e in m.get('endpoints', {}).values() for q in (e.get('quotas') or {}).values()))
-    monkeypatch.setattr(fm_list, 'discover_prefix_mapping', lambda region: [])
+    monkeypatch.setattr(fm_list, 'discover_prefix_mapping', lambda region, profiles=None: [])
     monkeypatch.setattr(fm_list, 'fetch_foundation_models', lambda region: [
         {'model_id': mapped['model_id'], 'provider': mapped['provider'],
          'inference_types': mapped.get('inference_types', [])}])
@@ -159,17 +159,53 @@ def test_quota_mapping_picker_exits_without_regions(monkeypatch):
         ui.select_quota_mapping_params()
 
 
-def test_quota_mapper_clears_stale_mapping(monkeypatch, tmp_path):
+def _mapper_fixture(monkeypatch, tmp_path, endpoints):
     (tmp_path / 'data').mkdir()
     save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1']})
     save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [
-        {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon',
-         'endpoints': {'us': {'quotas': {'tpm': {'code': 'L-OLD', 'name': 'wrong'}}}}}]})
-    monkeypatch.setattr(qm, 'fetch_service_quotas', lambda region: [])
-    monkeypatch.setattr(qm, 'extract_common_name', lambda *a: 'nova')
+        {'model_id': 'openai.gpt-oss-safeguard-20b', 'provider': 'OpenAI', 'endpoints': endpoints}]})
+    monkeypatch.setattr(qm, 'extract_common_name', lambda *a: 'gpt-oss')
     monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws')
-    mapper = qm.QuotaMapper('us-east-1', 'model', 'us-east-1')
+    return qm.QuotaMapper('us-east-1', 'model', 'us-east-1')
+
+
+def _saved_endpoints(tmp_path):
+    return load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]['endpoints']
+
+
+def test_quota_mapper_keeps_saved_codes_when_no_new_match(monkeypatch, tmp_path):
+    """A keyword miss or failed LLM call must not wipe correct codes (seen with GPT OSS Safeguard)."""
+    saved = {'base': {'quotas': {'tpm': {'code': 'L-5D8F2F54', 'name': 'TPM'}}}}
+    mapper = _mapper_fixture(monkeypatch, tmp_path, saved)
+    monkeypatch.setattr(qm, 'fetch_service_quotas', lambda region: [])
     monkeypatch.setattr(mapper, '_get_quota_mapping', lambda *a: None)
     mapper.run()
-    quotas = load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]['endpoints']['us']['quotas']
-    assert quotas == {'concurrent': None, 'rpm': None, 'tpd': None, 'tpm': None}
+    assert _saved_endpoints(tmp_path) == saved
+
+
+def test_quota_mapper_skips_region_when_listing_fails(monkeypatch, tmp_path):
+    saved = {'base': {'quotas': {'tpm': {'code': 'L-5D8F2F54', 'name': 'TPM'}}}}
+    mapper = _mapper_fixture(monkeypatch, tmp_path, saved)
+    monkeypatch.setattr(qm, 'fetch_service_quotas', lambda region: None)
+    calls = []
+    monkeypatch.setattr(mapper, '_get_quota_mapping', lambda *a: calls.append(a))
+    mapper.run()
+    assert calls == [] and _saved_endpoints(tmp_path) == saved
+
+
+def test_keyword_match_treats_hyphens_as_spaces(monkeypatch, tmp_path):
+    mapper = _mapper_fixture(monkeypatch, tmp_path, {'base': {'quotas': {}}})
+    quotas = [{'QuotaName': 'On-demand model inference tokens per minute for GPT OSS Safeguard 20B', 'QuotaCode': 'L-5D8F2F54'},
+              {'QuotaName': 'On-demand model inference tokens per minute for Nova Lite', 'QuotaCode': 'L-X'}]
+    assert [q['code'] for q in mapper._find_matching_quotas(quotas, 'gpt-oss', 'base')] == ['L-5D8F2F54']
+
+
+def test_fetch_service_quotas_returns_none_on_error(monkeypatch):
+    from bedrock_usage_analyzer.aws import servicequotas
+
+    class Client:
+        def get_paginator(self, _):
+            raise RuntimeError('InvalidPaginationTokenException')
+
+    monkeypatch.setattr(servicequotas, 'create_client', lambda *a, **k: Client())
+    assert servicequotas.fetch_service_quotas('sa-east-1') is None

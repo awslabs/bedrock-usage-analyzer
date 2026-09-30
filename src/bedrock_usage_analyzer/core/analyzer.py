@@ -198,7 +198,7 @@ class BedrockAnalyzer:
         app_ids = tuple(sorted(model_config.get('application_profile_ids') or ()))
         return (model_config['model_id'], model_config.get('profile_prefix'), app_ids)
 
-    def _warn_other_sources(self, model_id, profile_prefix, final_model_ids, profile_names):
+    def _warn_other_sources(self, model_id, profile_prefix, final_model_ids):
         """Tell the user when their application profiles sit under a different endpoint."""
         if len(final_model_ids) > 1:
             return
@@ -239,7 +239,7 @@ class BedrockAnalyzer:
             profile_list = [profile_names.get(pid, pid) for pid in final_model_ids]
             logger.info(f"  {model_id} ({profile_prefix or 'base'}): {len(final_model_ids)} profile(s) - {', '.join(profile_list)}")
             if not app_ids:
-                self._warn_other_sources(model_id, profile_prefix, final_model_ids, profile_names)
+                self._warn_other_sources(model_id, profile_prefix, final_model_ids)
 
         logger.info(f"Profile discovery complete.\n")
 

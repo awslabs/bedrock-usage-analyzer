@@ -16,7 +16,9 @@ from bedrock_usage_analyzer.aws.bedrock import get_endpoint_quota_keywords
 
 logger = logging.getLogger(__name__)
 
-EMPTY_QUOTA_KEYS = ('concurrent', 'rpm', 'tpd', 'tpm')
+def _normalize(text: str) -> str:
+    """Lower-case and collapse '-', '_' and spaces so model IDs match quota names."""
+    return ' '.join(text.lower().replace('-', ' ').replace('_', ' ').split())
 
 
 class QuotaMapper:
@@ -74,6 +76,11 @@ class QuotaMapper:
         logger.info(f"Region: {region}")
         
         quotas = fetch_service_quotas(region)
+        if quotas is None:
+            # Listing failed (throttling, pagination error, service not in region):
+            # leave this region's saved mappings untouched
+            logger.info("  ⊘ Could not list service quotas, skipping region\n")
+            return
         logger.info(f"  Found {len(quotas)} quotas")
         
         fm_list = self._load_fm_list(region)
@@ -110,13 +117,11 @@ class QuotaMapper:
                 if quota_mapping:
                     endpoints_data[endpoint_type] = {'quotas': quota_mapping}
             
-            # Re-mapping is authoritative: endpoints without a match keep their key (so they stay
-            # selectable) but lose any stale quota codes from an earlier run
-            endpoints = fm.setdefault('endpoints', {})
-            for endpoint_type in endpoints_to_process:
-                if endpoint_type not in endpoints_data:
-                    endpoints[endpoint_type] = {'quotas': dict.fromkeys(EMPTY_QUOTA_KEYS)}
-            endpoints.update(endpoints_data)
+            # Update mapped endpoints only. An endpoint without a new match keeps its saved codes:
+            # "no match" cannot be told apart from a failed LLM call or a keyword miss, and
+            # wiping correct codes is worse than keeping a stale one. Stale codes are removed by
+            # `bua refresh quota-index`, which clears codes that Service Quotas rejects.
+            fm.setdefault('endpoints', {}).update(endpoints_data)
 
             if endpoints_data:
                 updated_count += 1
@@ -167,12 +172,14 @@ class QuotaMapper:
         if not required_keyword:
             return matching
         
-        # Perform keyword search to find the potential quotas for a given base/common name of an FM
+        # Perform keyword search to find the potential quotas for a given base/common name of an FM.
+        # Hyphens and spaces are treated alike: 'gpt-oss' must match "GPT OSS Safeguard 20B".
+        name_key = _normalize(common_name)
         for quota in quotas:
             quota_name = quota.get('QuotaName', '').lower()
-            
+
             # The first term below performs keyword matching "Does the quota name contain this FM common/base name?" operation
-            if common_name in quota_name and required_keyword in quota_name:
+            if name_key in _normalize(quota_name) and required_keyword in quota_name:
                 matching.append({
                     'name': quota['QuotaName'],
                     'code': quota['QuotaCode'],

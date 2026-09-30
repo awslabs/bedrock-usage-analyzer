@@ -182,7 +182,7 @@ def list_inference_profiles(bedrock_client, type_equals: str) -> List[Dict]:
     return profiles
 
 
-def discover_prefix_mapping(region: str) -> List[Dict]:
+def discover_prefix_mapping(region: str, profiles: Optional[List[Dict]] = None) -> List[Dict]:
     """Discover system profile prefixes from Bedrock API
     
     Discovers regional inference profile prefixes (us, eu, jp, au, apac, ca, etc.)
@@ -191,7 +191,8 @@ def discover_prefix_mapping(region: str) -> List[Dict]:
     
     Args:
         region: AWS region to use for API calls
-        
+        profiles: SYSTEM_DEFINED profiles already listed for the region (skips the API call)
+
     Returns:
         List of discovered prefix mappings with structure:
         [
@@ -206,8 +207,9 @@ def discover_prefix_mapping(region: str) -> List[Dict]:
         ]
     """
     try:
-        bedrock = create_client('bedrock', region)
-        all_profiles = list_inference_profiles(bedrock, 'SYSTEM_DEFINED')
+        if profiles is None:
+            profiles = list_inference_profiles(create_client('bedrock', region), 'SYSTEM_DEFINED')
+        all_profiles = profiles
 
         # Extract system profile prefixes
         discovered = []
@@ -351,23 +353,9 @@ def get_inference_profile_arn(bedrock_client, model_id: str, profile_prefix: str
     """
     try:
         target_profile_id = f"{profile_prefix}.{model_id}"
-        next_token = None
-        
-        while True:
-            params = {'maxResults': 1000}
-            if next_token:
-                params['nextToken'] = next_token
-            
-            response = bedrock_client.list_inference_profiles(**params)
-            
-            for profile in response.get('inferenceProfileSummaries', []):
-                if profile.get('inferenceProfileId') == target_profile_id:
-                    return profile.get('inferenceProfileArn')
-            
-            next_token = response.get('nextToken')
-            if not next_token:
-                break
-        
+        for profile in list_inference_profiles(bedrock_client, 'SYSTEM_DEFINED'):
+            if profile.get('inferenceProfileId') == target_profile_id:
+                return profile.get('inferenceProfileArn')
         return None
     except Exception as e:
         print(f"Error fetching inference profile: {e}", file=sys.stderr)

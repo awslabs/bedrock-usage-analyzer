@@ -42,9 +42,19 @@ def normalize_region_names(entries: Iterable) -> List[str]:
 
 
 def load_region_names() -> List[str]:
-    """Load all region names from regions.yml (user copy first, then bundled)."""
-    data = load_yaml(get_data_path('regions.yml')) or {}
-    return normalize_region_names(data.get('regions', []))
+    """Load region names: the user's regions.yml, plus bundled regions of partitions it lacks.
+
+    A user file written before GovCloud was bundled lists only commercial
+    regions; it still wins for commercial, but GovCloud comes from the bundle.
+    """
+    from bedrock_usage_analyzer.utils.paths import get_bundled_file
+    names = normalize_region_names((load_yaml(get_data_path('regions.yml')) or {}).get('regions', []))
+    bundled_path = get_bundled_file('regions.yml')
+    if bundled_path:
+        bundled = normalize_region_names((load_yaml(bundled_path) or {}).get('regions', []))
+        present = {get_partition_for_region(r) for r in names}
+        names = sorted(set(names) | {r for r in bundled if get_partition_for_region(r) not in present})
+    return names
 
 
 def regions_for_credentials(regions: Iterable[str], region: Optional[str] = None):
@@ -100,7 +110,7 @@ def fetch_enabled_regions(partition: Optional[str] = None, region: Optional[str]
         # Without working credentials the static fallback below would silently
         # replace the list with every region, including ones never enabled.
         logger.error("Could not read the caller identity; check your AWS credentials "
-                     "(aws sts get-caller-identity), and pass --region/AWS_REGION for GovCloud.")
+                     "(aws sts get-caller-identity); for GovCloud set AWS_REGION, e.g. AWS_REGION=us-gov-west-1.")
         sys.exit(1)
     home = _home_region(partition, hint)
 
@@ -144,7 +154,7 @@ def discover_regions():
     partition = detect_credentials_partition(hint)
     if partition is None:
         logger.error("Could not read the caller identity; check your AWS credentials "
-                     "(aws sts get-caller-identity), and pass --region/AWS_REGION for GovCloud.")
+                     "(aws sts get-caller-identity); for GovCloud set AWS_REGION, e.g. AWS_REGION=us-gov-west-1.")
         sys.exit(1)
     logger.info(f"Fetching enabled regions ({get_partition_display_name(partition)})...")
 
