@@ -203,9 +203,18 @@ models:
     eu:
       quotas:
         concurrent: null
-        rpm: null
-        tpd: null
-        tpm: null
+        rpm:
+          code: L-27989F42
+          name: Cross-region model inference requests per minute for Anthropic Claude
+            Opus 4.5
+        tpd:
+          code: L-F397ECBF
+          name: Model invocation max tokens per day for Anthropic Claude Opus 4.5
+            (doubled for cross-region calls)
+        tpm:
+          code: L-7007E9C9
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            Opus 4.5
     global:
       quotas:
         concurrent: null
@@ -319,9 +328,9 @@ models:
         rpm: null
         tpd: null
         tpm:
-          code: L-D73B1244
-          name: Global cross-region model inference tokens per minute for Anthropic
-            Claude Opus 5
+          code: L-99296DCD
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            Opus 5
     global:
       quotas:
         concurrent: null
@@ -368,27 +377,15 @@ models:
     eu:
       quotas:
         concurrent: null
-        rpm:
-          code: L-F6E116D7
-          name: Global cross-region model inference requests per minute for Anthropic
-            Claude Sonnet 4.6
+        rpm: null
         tpd: null
-        tpm:
-          code: L-7BEE40FB
-          name: Global cross-region model inference tokens per minute for Anthropic
-            Claude Sonnet 4.6
+        tpm: null
     global:
       quotas:
         concurrent: null
-        rpm:
-          code: L-F6E116D7
-          name: Global cross-region model inference requests per minute for Anthropic
-            Claude Sonnet 4.6
+        rpm: null
         tpd: null
-        tpm:
-          code: L-7BEE40FB
-          name: Global cross-region model inference tokens per minute for Anthropic
-            Claude Sonnet 4.6
+        tpm: null
   inference_profiles:
   - eu
   - global
@@ -400,15 +397,30 @@ models:
     eu:
       quotas:
         concurrent: null
-        rpm: null
-        tpd: null
-        tpm: null
+        rpm:
+          code: L-4A6BFAB1
+          name: Cross-region model inference requests per minute for Anthropic Claude
+            Sonnet 4.5 V1
+        tpd:
+          code: L-E107194C
+          name: Model invocation max tokens per day for Anthropic Claude Sonnet 4.5
+            V1 1M Context Length (doubled for cross-region calls)
+        tpm:
+          code: L-F4DDD3EB
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            Sonnet 4.5 V1
     global:
       quotas:
         concurrent: null
-        rpm: null
+        rpm:
+          code: L-DB84CE56
+          name: Global cross-region model inference requests per minute for Anthropic
+            Claude Sonnet 4.5 V1
         tpd: null
-        tpm: null
+        tpm:
+          code: L-27C57EE8
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Sonnet 4.5 V1
   inference_profiles:
   - eu
   - global
@@ -455,9 +467,9 @@ models:
         rpm: null
         tpd: null
         tpm:
-          code: L-DD84E5CA
-          name: Global cross-region model inference tokens per minute for Anthropic
-            Claude Sonnet 5
+          code: L-D4FBCF4E
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            Sonnet 5
     global:
       quotas:
         concurrent: null
@@ -536,9 +548,9 @@ models:
           name: Cross-region model inference requests per minute for Cohere Embed
             V4
         tpd:
-          code: L-795ADAB0
-          name: Global cross-region model inference tokens per day for Cohere Embed
-            V4
+          code: L-F1BB08BB
+          name: Model invocation max tokens per day for Cohere Embed V4 (doubled for
+            cross-region calls)
         tpm:
           code: L-4C3F0FE6
           name: Cross-region model inference tokens per minute for Cohere Embed V4
@@ -967,9 +979,7 @@ models:
       quotas:
         concurrent: null
         rpm: null
-        tpd:
-          code: L-685F85F7
-          name: Global cross-region model inference tokens per day for GPT-6 Sol
+        tpd: null
         tpm:
           code: L-4D7537CF
           name: Global cross-region model inference tokens per minute for GPT-5.6
@@ -1050,12 +1060,8 @@ models:
       quotas:
         concurrent: null
         rpm: null
-        tpd:
-          code: L-685F85F7
-          name: Global cross-region model inference tokens per day for GPT-6 Sol
-        tpm:
-          code: L-039AF68B
-          name: Global cross-region model inference tokens per minute for GPT-6 Sol
+        tpd: null
+        tpm: null
   inference_profiles:
   - global
   inference_types:

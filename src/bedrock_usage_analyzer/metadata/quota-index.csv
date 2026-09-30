@@ -1,8 +1,8 @@
 model_id,endpoint,quota_type,quota_code,quota_name
 anthropic.claude-fable-5,global,tpm,L-D06938E7,Global cross-region model inference tokens per minute for Anthropic Claude Fable 5
-anthropic.claude-fable-5,us,tpm,L-E8940935,Cross-region model inference tokens per minute for Anthropic Claude Fable 5.1
+anthropic.claude-fable-5,us,tpm,L-9B258944,Cross-region model inference tokens per minute for Anthropic Claude Fable 5
 anthropic.claude-fable-5-1,global,tpm,L-50CC5674,Global cross-region model inference tokens per minute for Anthropic Claude Fable 5.1
-anthropic.claude-fable-5-1,us,tpm,L-50CC5674,Global cross-region model inference tokens per minute for Anthropic Claude Fable 5.1
+anthropic.claude-fable-5-1,us,tpm,L-E8940935,Cross-region model inference tokens per minute for Anthropic Claude Fable 5.1
 anthropic.claude-haiku-4-5-20251001-v1:0,global,rpm,L-E5084BBA,Global cross-region model inference requests per minute for Anthropic Claude Haiku 4.5
 anthropic.claude-haiku-4-5-20251001-v1:0,global,tpm,L-9A11C666,Global cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5
 anthropic.claude-haiku-4-5-20251001-v1:0,jp,rpm,L-CCA5DF70,Cross-region model inference requests per minute for Anthropic Claude Haiku 4.5
@@ -16,6 +16,12 @@ anthropic.claude-haiku-4-5-20251001-v1:0,eu,tpm,L-58BE175A,Cross-region model in
 anthropic.claude-opus-4-5-20251101-v1:0,global,rpm,L-58424D95,Global cross-region model inference requests per minute for Anthropic Claude Opus 4.5
 anthropic.claude-opus-4-5-20251101-v1:0,global,tpd,L-E2985A8E,Global cross-region model inference tokens per day for Anthropic Claude Opus 4.5
 anthropic.claude-opus-4-5-20251101-v1:0,global,tpm,L-3ABF6ACC,Global cross-region model inference tokens per minute for Anthropic Claude Opus 4.5
+anthropic.claude-opus-4-5-20251101-v1:0,us,rpm,L-27989F42,Cross-region model inference requests per minute for Anthropic Claude Opus 4.5
+anthropic.claude-opus-4-5-20251101-v1:0,us,tpd,L-F397ECBF,Model invocation max tokens per day for Anthropic Claude Opus 4.5 (doubled for cross-region calls)
+anthropic.claude-opus-4-5-20251101-v1:0,us,tpm,L-7007E9C9,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.5
+anthropic.claude-opus-4-5-20251101-v1:0,eu,rpm,L-27989F42,Cross-region model inference requests per minute for Anthropic Claude Opus 4.5
+anthropic.claude-opus-4-5-20251101-v1:0,eu,tpd,L-F397ECBF,Model invocation max tokens per day for Anthropic Claude Opus 4.5 (doubled for cross-region calls)
+anthropic.claude-opus-4-5-20251101-v1:0,eu,tpm,L-7007E9C9,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.5
 anthropic.claude-opus-4-6-v1,global,rpm,L-3DD46812,Global cross-region model inference requests per minute for Anthropic Claude Opus 4.6 V1
 anthropic.claude-opus-4-6-v1,global,tpm,L-3DCCFAA4,Global cross-region model inference tokens per minute for Anthropic Claude Opus 4.6 V1
 anthropic.claude-opus-4-6-v1,au,rpm,L-11DFF789,Cross-region model inference requests per minute for Anthropic Claude Opus 4.6 V1
@@ -37,15 +43,28 @@ anthropic.claude-opus-4-8,au,tpm,L-DB99DCDB,Cross-region model inference tokens 
 anthropic.claude-opus-4-8,us,tpm,L-DB99DCDB,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.8
 anthropic.claude-opus-4-8,eu,tpm,L-DB99DCDB,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.8
 anthropic.claude-opus-5,global,tpm,L-D73B1244,Global cross-region model inference tokens per minute for Anthropic Claude Opus 5
-anthropic.claude-opus-5,in,tpm,L-D73B1244,Global cross-region model inference tokens per minute for Anthropic Claude Opus 5
-anthropic.claude-opus-5,au,tpm,L-D73B1244,Global cross-region model inference tokens per minute for Anthropic Claude Opus 5
-anthropic.claude-opus-5,us,tpm,L-D73B1244,Global cross-region model inference tokens per minute for Anthropic Claude Opus 5
-anthropic.claude-opus-5,eu,tpm,L-D73B1244,Global cross-region model inference tokens per minute for Anthropic Claude Opus 5
+anthropic.claude-opus-5,au,tpm,L-99296DCD,Cross-region model inference tokens per minute for Anthropic Claude Opus 5
+anthropic.claude-opus-5,us,tpm,L-99296DCD,Cross-region model inference tokens per minute for Anthropic Claude Opus 5
+anthropic.claude-opus-5,eu,tpm,L-99296DCD,Cross-region model inference tokens per minute for Anthropic Claude Opus 5
 anthropic.claude-opus-5-5,global,tpm,L-A103A344,Global cross-region model inference tokens per minute for Anthropic Claude Opus 5.5
 anthropic.claude-opus-5-5,jp,tpm,L-A4430697,Cross-region model inference tokens per minute for Anthropic Claude Opus 5.5
 anthropic.claude-opus-5-5,au,tpm,L-A4430697,Cross-region model inference tokens per minute for Anthropic Claude Opus 5.5
 anthropic.claude-opus-5-5,us,tpm,L-A4430697,Cross-region model inference tokens per minute for Anthropic Claude Opus 5.5
 anthropic.claude-opus-5-5,eu,tpm,L-A4430697,Cross-region model inference tokens per minute for Anthropic Claude Opus 5.5
+anthropic.claude-sonnet-4-5-20250929-v1:0,global,rpm,L-DB84CE56,Global cross-region model inference requests per minute for Anthropic Claude Sonnet 4.5 V1
+anthropic.claude-sonnet-4-5-20250929-v1:0,global,tpm,L-27C57EE8,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1
+anthropic.claude-sonnet-4-5-20250929-v1:0,jp,rpm,L-4A6BFAB1,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.5 V1
+anthropic.claude-sonnet-4-5-20250929-v1:0,jp,tpd,L-E107194C,Model invocation max tokens per day for Anthropic Claude Sonnet 4.5 V1 1M Context Length (doubled for cross-region calls)
+anthropic.claude-sonnet-4-5-20250929-v1:0,jp,tpm,L-F4DDD3EB,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1
+anthropic.claude-sonnet-4-5-20250929-v1:0,au,rpm,L-4A6BFAB1,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.5 V1
+anthropic.claude-sonnet-4-5-20250929-v1:0,au,tpd,L-E107194C,Model invocation max tokens per day for Anthropic Claude Sonnet 4.5 V1 1M Context Length (doubled for cross-region calls)
+anthropic.claude-sonnet-4-5-20250929-v1:0,au,tpm,L-F4DDD3EB,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1
+anthropic.claude-sonnet-4-5-20250929-v1:0,us,rpm,L-4A6BFAB1,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.5 V1
+anthropic.claude-sonnet-4-5-20250929-v1:0,us,tpd,L-E107194C,Model invocation max tokens per day for Anthropic Claude Sonnet 4.5 V1 1M Context Length (doubled for cross-region calls)
+anthropic.claude-sonnet-4-5-20250929-v1:0,us,tpm,L-F4DDD3EB,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1
+anthropic.claude-sonnet-4-5-20250929-v1:0,eu,rpm,L-4A6BFAB1,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.5 V1
+anthropic.claude-sonnet-4-5-20250929-v1:0,eu,tpd,L-E107194C,Model invocation max tokens per day for Anthropic Claude Sonnet 4.5 V1 1M Context Length (doubled for cross-region calls)
+anthropic.claude-sonnet-4-5-20250929-v1:0,eu,tpm,L-F4DDD3EB,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1
 anthropic.claude-sonnet-4-6,global,rpm,L-F6E116D7,Global cross-region model inference requests per minute for Anthropic Claude Sonnet 4.6
 anthropic.claude-sonnet-4-6,global,tpm,L-7BEE40FB,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6
 anthropic.claude-sonnet-4-6,jp,rpm,L-00FF3314,Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.6
@@ -59,30 +78,22 @@ anthropic.claude-sonnet-4-6,eu,tpm,L-15B8E632,Cross-region model inference token
 anthropic.claude-sonnet-4-6,base,rpm,L-9B878FAE,On-demand model inference requests per minute for Anthropic Claude Sonnet 4.6
 anthropic.claude-sonnet-4-6,base,tpm,L-5F5A169C,On-demand model inference tokens per minute for Anthropic Claude Sonnet 4.6
 anthropic.claude-sonnet-5,global,tpm,L-DD84E5CA,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 5
-anthropic.claude-sonnet-5,base,rpm,L-254CACF4,On-demand model inference requests per minute for Anthropic Claude 3.5 Sonnet
-anthropic.claude-sonnet-5,base,tpm,L-A50569E5,On-demand model inference tokens per minute for Anthropic Claude 3.5 Sonnet
-anthropic.claude-sonnet-5,in,tpm,L-DD84E5CA,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 5
-anthropic.claude-sonnet-5,au,tpm,L-DD84E5CA,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 5
-anthropic.claude-sonnet-5,us,tpm,L-DD84E5CA,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 5
-anthropic.claude-sonnet-5,eu,tpm,L-DD84E5CA,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 5
+anthropic.claude-sonnet-5,au,tpm,L-D4FBCF4E,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 5
+anthropic.claude-sonnet-5,us,tpm,L-D4FBCF4E,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 5
+anthropic.claude-sonnet-5,eu,tpm,L-D4FBCF4E,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 5
 moonshotai.kimi-k3,global,tpd,L-0EDA3E92,Global cross-region model inference tokens per day for Moonshot AI Kimi K3
 moonshotai.kimi-k3,global,tpm,L-2B5A3FA2,Global cross-region model inference tokens per minute for Moonshot AI Kimi K3
-moonshotai.kimi-k3,us,tpd,L-0EDA3E92,Global cross-region model inference tokens per day for Moonshot AI Kimi K3
+moonshotai.kimi-k3,us,tpd,L-BA59CBAA,Model invocation max tokens per day for Moonshot AI Kimi K3 (doubled for cross-region calls)
 moonshotai.kimi-k3,us,tpm,L-51FF35D5,Cross-region model inference tokens per minute for Moonshot AI Kimi K3
 openai.gpt-6-astra,global,tpm,L-B38B530A,Global cross-region model inference tokens per minute for GPT-6 Astra
-openai.gpt-6-astra,us,tpm,L-B38B530A,Global cross-region model inference tokens per minute for GPT-6 Astra
 openai.gpt-6-luna,global,tpd,L-C0FA489B,Global cross-region model inference tokens per day for GPT-6 Luna
 openai.gpt-6-luna,global,tpm,L-CCC92354,Global cross-region model inference tokens per minute for GPT-6 Luna
-openai.gpt-6-luna,us,tpd,L-C0FA489B,Global cross-region model inference tokens per day for GPT-6 Luna
-openai.gpt-6-luna,us,tpm,L-CCC92354,Global cross-region model inference tokens per minute for GPT-6 Luna
+openai.gpt-6-luna,us,tpd,L-F3D482FA,Model invocation max tokens per day for GPT-6 Luna (doubled for cross-region calls)
+openai.gpt-6-luna,us,tpm,L-AB39D760,Cross-region model inference tokens per minute for GPT-6 Luna
 openai.gpt-6-sol,global,tpd,L-685F85F7,Global cross-region model inference tokens per day for GPT-6 Sol
 openai.gpt-6-sol,global,tpm,L-039AF68B,Global cross-region model inference tokens per minute for GPT-6 Sol
 openai.gpt-6-sol,us,tpd,L-B55D3318,Model invocation max tokens per day for GPT-6 Sol (doubled for cross-region calls)
-openai.gpt-6-sol,us,tpm,L-039AF68B,Global cross-region model inference tokens per minute for GPT-6 Sol
-openai.gpt-6.1-sol,global,tpd,L-685F85F7,Global cross-region model inference tokens per day for GPT-6 Sol
-openai.gpt-6.1-sol,global,tpm,L-039AF68B,Global cross-region model inference tokens per minute for GPT-6 Sol
-openai.gpt-6.1-sol,us,tpd,L-685F85F7,Global cross-region model inference tokens per day for GPT-6 Sol
-openai.gpt-6.1-sol,us,tpm,L-039AF68B,Global cross-region model inference tokens per minute for GPT-6 Sol
+openai.gpt-6-sol,us,tpm,L-8FD128CF,Cross-region model inference tokens per minute for GPT-6 Sol
 twelvelabs.pegasus-1-2-v1:0,apac,rpm,L-6E046197,Cross-region model inference requests per minute for Twelve Labs Pegasus
 twelvelabs.pegasus-1-2-v1:0,base,concurrent,L-CABD464E,On-demand InvokeModel concurrent requests for Twelve Labs Pegasus
 twelvelabs.pegasus-1-2-v1:0,base,rpm,L-5E8692C5,On-demand model inference requests per minute for Twelve Labs Pegasus
@@ -136,18 +147,9 @@ amazon.nova-pro-v1:0,eu,tpm,L-C0326783,Cross-region model inference tokens per m
 amazon.nova-pro-v1:0,us,rpm,L-ED46B8C5,Cross-region model inference requests per minute for Amazon Nova Pro
 amazon.nova-pro-v1:0,us,tpd,L-D690997B,Model invocation max tokens per day for Amazon Nova Pro (doubled for cross-region calls)
 amazon.nova-pro-v1:0,us,tpm,L-C0326783,Cross-region model inference tokens per minute for Amazon Nova Pro
-anthropic.claude-sonnet-4-20250514-v1:0,apac,rpm,L-F6E116D7,Global cross-region model inference requests per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-4-20250514-v1:0,apac,tpm,L-7BEE40FB,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-4-20250514-v1:0,global,rpm,L-F6E116D7,Global cross-region model inference requests per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-4-20250514-v1:0,global,tpm,L-7BEE40FB,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-4-20250514-v1:0,eu,rpm,L-F6E116D7,Global cross-region model inference requests per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-4-20250514-v1:0,eu,tpm,L-7BEE40FB,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-4-20250514-v1:0,us,rpm,L-F6E116D7,Global cross-region model inference requests per minute for Anthropic Claude Sonnet 4.6
-anthropic.claude-sonnet-4-20250514-v1:0,us,tpm,L-7BEE40FB,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6
 openai.gpt-5.6-luna,global,tpm,L-D983F7C0,Global cross-region model inference tokens per minute for GPT-5.6 Luna
-openai.gpt-5.6-luna,in,tpm,L-D983F7C0,Global cross-region model inference tokens per minute for GPT-5.6 Luna
-openai.gpt-5.6-luna,us,tpm,L-D983F7C0,Global cross-region model inference tokens per minute for GPT-5.6 Luna
-openai.gpt-5.6-sol,global,tpd,L-685F85F7,Global cross-region model inference tokens per day for GPT-6 Sol
+openai.gpt-5.6-luna,in,tpm,L-E3C70889,Cross-region model inference tokens per minute for GPT-5.6 Luna
+openai.gpt-5.6-luna,us,tpm,L-E3C70889,Cross-region model inference tokens per minute for GPT-5.6 Luna
 openai.gpt-5.6-sol,global,tpm,L-4D7537CF,Global cross-region model inference tokens per minute for GPT-5.6 Sol
 openai.gpt-5.6-sol,us,tpm,L-D94ECE3B,Cross-region model inference tokens per minute for GPT-5.6 Sol
 openai.gpt-5.6-terra,global,tpm,L-8E752C84,Global cross-region model inference tokens per minute for GPT-5.6 Terra
@@ -171,10 +173,10 @@ cohere.embed-v4:0,global,rpm,L-7089DC7D,Global cross-region model inference requ
 cohere.embed-v4:0,global,tpd,L-795ADAB0,Global cross-region model inference tokens per day for Cohere Embed V4
 cohere.embed-v4:0,global,tpm,L-02DFBB76,Global cross-region model inference tokens per minute for Cohere Embed V4
 cohere.embed-v4:0,eu,rpm,L-EB8C1F30,Cross-region model inference requests per minute for Cohere Embed V4
-cohere.embed-v4:0,eu,tpd,L-795ADAB0,Global cross-region model inference tokens per day for Cohere Embed V4
+cohere.embed-v4:0,eu,tpd,L-F1BB08BB,Model invocation max tokens per day for Cohere Embed V4 (doubled for cross-region calls)
 cohere.embed-v4:0,eu,tpm,L-4C3F0FE6,Cross-region model inference tokens per minute for Cohere Embed V4
 cohere.embed-v4:0,us,rpm,L-EB8C1F30,Cross-region model inference requests per minute for Cohere Embed V4
-cohere.embed-v4:0,us,tpd,L-795ADAB0,Global cross-region model inference tokens per day for Cohere Embed V4
+cohere.embed-v4:0,us,tpd,L-F1BB08BB,Model invocation max tokens per day for Cohere Embed V4 (doubled for cross-region calls)
 cohere.embed-v4:0,us,tpm,L-4C3F0FE6,Cross-region model inference tokens per minute for Cohere Embed V4
 cohere.rerank-v3-5:0,base,rpm,L-11512E58,On-demand model inference requests per minute for Cohere Rerank 3.5
 deepseek.v3-v1:0,base,rpm,L-7A5451CB,On-demand model inference requests per minute for DeepSeek V3 V1

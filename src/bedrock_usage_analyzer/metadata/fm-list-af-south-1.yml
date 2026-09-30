@@ -321,12 +321,8 @@ models:
       quotas:
         concurrent: null
         rpm: null
-        tpd:
-          code: L-685F85F7
-          name: Global cross-region model inference tokens per day for GPT-6 Sol
-        tpm:
-          code: L-039AF68B
-          name: Global cross-region model inference tokens per minute for GPT-6 Sol
+        tpd: null
+        tpm: null
   inference_profiles:
   - global
   inference_types:
