@@ -17,13 +17,19 @@ from bedrock_usage_analyzer.aws.bedrock import (
 
 logger = logging.getLogger(__name__)
 
-# Regions behind the country-level Asia Pacific system profiles (used only when no
-# system profile in the region matches an application profile's routing set)
+# Regions behind the country-level Asia Pacific system profiles. Used only as a last
+# resort: normally these sets are built from the system profiles listed in the region.
 COUNTRY_PROFILE_REGIONS = {
     'jp': {'ap-northeast-1', 'ap-northeast-3'},
     'au': {'ap-southeast-2', 'ap-southeast-4', 'ap-southeast-6'},
     'in': {'ap-south-1', 'ap-south-2'},
 }
+
+
+def _specific_first(profile_ids: List[str]) -> List[str]:
+    """Order candidates so geography-specific prefixes (jp, au) come before apac/global."""
+    broad = ('apac.', 'global.')
+    return sorted(dict.fromkeys(profile_ids), key=lambda p: (p.startswith(broad), p))
 
 
 class InferenceProfileFetcher:
@@ -40,7 +46,8 @@ class InferenceProfileFetcher:
         self.bedrock_client = bedrock_client
         self.prefix_map = get_default_region_prefix_map()
         self._system_profiles: Optional[List[Dict]] = None
-        self._system_by_arns: Dict[FrozenSet[str], str] = {}
+        self._system_by_arns: Dict[FrozenSet[str], List[str]] = {}
+        self._prefix_regions: Dict[str, set] = {}
         self._app_profiles: Optional[List[Dict]] = None
         self._listing_error: Optional[Exception] = None
         self._tags_cache: Dict[str, Dict[str, str]] = {}
@@ -53,7 +60,12 @@ class InferenceProfileFetcher:
             for profile in self._system_profiles:
                 arns = frozenset(m.get('modelArn', '') for m in profile.get('models', []))
                 if arns:
-                    self._system_by_arns.setdefault(arns, profile['inferenceProfileId'])
+                    # Several profiles can share one routing set (jp.X and apac.X when a model
+                    # is offered only in Tokyo and Osaka), so keep every candidate
+                    self._system_by_arns.setdefault(arns, []).append(profile['inferenceProfileId'])
+                    prefix = profile['inferenceProfileId'].split('.', 1)[0]
+                    regions = {region_from_arn(a) for a in arns}
+                    self._prefix_regions.setdefault(prefix, set()).update(r for r in regions if r)
         return self._system_profiles
 
     def list_application_profiles(self) -> List[Dict]:
@@ -76,9 +88,10 @@ class InferenceProfileFetcher:
             profiles = []
             for profile in raw:
                 arns = [m.get('modelArn', '') for m in profile.get('models', [])]
-                source = self.resolve_source(arns)
-                if source is None:
+                sources = self.resolve_sources(arns)
+                if not sources:
                     continue
+                source = sources[0]
                 model_id, prefix = split_profile_id(source)
                 profiles.append({
                     'id': profile['inferenceProfileId'],
@@ -88,6 +101,7 @@ class InferenceProfileFetcher:
                     'model_id': model_id,
                     'profile_prefix': prefix,
                     'source': source,
+                    'sources': sources,
                 })
             self._app_profiles = profiles
             logger.info(f"  Found {len(profiles)} application inference profile(s)")
@@ -96,44 +110,54 @@ class InferenceProfileFetcher:
     # --------------------------------------------------------------- resolution
 
     def resolve_source(self, model_arns: Iterable[str]) -> Optional[str]:
-        """Return the endpoint ID an application profile was copied from.
+        """Return the endpoint ID an application profile was copied from (first candidate)."""
+        sources = self.resolve_sources(model_arns)
+        return sources[0] if sources else None
 
-        Order: exact match with a multi-region system profile, then a single
-        model ARN (base model copy), then the closest system profile for the
-        same model, then a region-prefix heuristic.
+    def resolve_sources(self, model_arns: Iterable[str]) -> List[str]:
+        """Return the endpoint IDs an application profile may have been copied from.
+
+        Usually one. Several when system profiles share the exact routing set, in which
+        case the API gives no way to tell them apart and the profile belongs to each.
+        Order: exact match with a multi-region system profile, then a single model ARN
+        (base model copy), then the closest system profile for the same model, then a
+        region-prefix heuristic.
         """
         arns = [a for a in model_arns if a]
         if not arns:
-            return None
+            return []
         model_ids = sorted({m for m in (model_id_from_arn(a) for a in arns) if m})
         if not model_ids:
-            return None
+            return []
         model_id = model_ids[0]
         arn_set = frozenset(arns)
 
         self._load_system_profiles()
         exact = self._system_by_arns.get(arn_set)
         if exact and len(arn_set) > 1:
-            return exact
+            return _specific_first(exact)
 
         if len(arn_set) == 1:
-            return model_id
+            return [model_id]
 
         # Closest system profile for the same model (routing sets change over time)
-        best, best_score = None, 0.0
-        for system_arns, profile_id in self._system_by_arns.items():
-            if len(system_arns) < 2 or profile_id.split('.', 1)[-1] != model_id:
+        best, best_score = [], 0.0
+        for system_arns, profile_ids in self._system_by_arns.items():
+            candidates = [p for p in profile_ids if p.split('.', 1)[-1] == model_id]
+            if len(system_arns) < 2 or not candidates:
                 continue
             overlap = len(arn_set & system_arns)
             if not overlap:
                 continue
             score = overlap / len(arn_set | system_arns)
             if score > best_score:
-                best, best_score = profile_id, score
+                best, best_score = candidates, score
+            elif score == best_score:
+                best = best + candidates
         if best:
-            return best
+            return _specific_first(best)
 
-        return self._infer_from_regions(arns, model_id)
+        return [self._infer_from_regions(arns, model_id)]
 
     def _infer_from_regions(self, model_arns: List[str], model_id: str) -> str:
         """Fallback when no system profile matches: guess from the ARN regions."""
@@ -143,7 +167,9 @@ class InferenceProfileFetcher:
         region_set = set(regions)
         # Country-level Asia Pacific profiles route to a small set of ap-* regions; tell them
         # apart from apac.* instead of lumping every ap-* set into apac (issue #7)
-        for prefix, members in COUNTRY_PROFILE_REGIONS.items():
+        country_regions = {p: r for p, r in self._prefix_regions.items()
+                           if p not in ('apac', 'global') and r and all(region_group(x) == 'ap' for x in r)}
+        for prefix, members in (country_regions or COUNTRY_PROFILE_REGIONS).items():
             if region_set <= members and prefix in self.prefix_map:
                 return f"{prefix}.{model_id}"
         groups = {region_group(r) for r in regions}
@@ -216,7 +242,7 @@ class InferenceProfileFetcher:
             if wanted:
                 if app['id'] not in wanted:
                     continue
-            elif app['source'] != target_endpoint:
+            elif target_endpoint not in app.get('sources', [app['source']]):
                 continue
             matched += 1
             profiles.append(app['id'])
@@ -237,8 +263,9 @@ class InferenceProfileFetcher:
             app_profiles = self.list_application_profiles()
         except Exception:
             return counts
+        target = model_id if profile_prefix is None else f"{profile_prefix}.{model_id}"
         for app in app_profiles:
-            if app['model_id'] == model_id and app['profile_prefix'] != profile_prefix:
+            if app['model_id'] == model_id and target not in app.get('sources', [app['source']]):
                 key = app['profile_prefix'] or 'base'
                 counts[key] = counts.get(key, 0) + 1
         return counts

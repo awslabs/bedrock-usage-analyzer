@@ -107,8 +107,13 @@ def get_regional_profile_prefixes() -> List[str]:
     Returns:
         List of regional prefixes (e.g., ['us', 'eu', 'jp', 'au', 'apac', 'ca'])
     """
-    mapping = _load_prefix_mapping()
-    return [m['prefix'] for m in mapping if m['is_regional']]
+    try:
+        mapping = _load_prefix_mapping()
+    except FileNotFoundError:
+        mapping = []
+    regional = [m['prefix'] for m in mapping if m.get('is_regional')]
+    # Known geographic prefixes stay regional even if the mapping file lacks them
+    return sorted(set(regional) | (KNOWN_PROFILE_PREFIXES - {'global'}))
 
 
 def get_default_region_prefix_map() -> Dict[str, str]:

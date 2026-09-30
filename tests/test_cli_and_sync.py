@@ -208,7 +208,7 @@ def _index_fixture(tmp_path, codes):
                 'rpm': {'code': codes['rpm'], 'name': 'rpm'}}}}}]})
 
 
-def test_quota_index_removes_only_codes_reported_missing(monkeypatch, tmp_path):
+def test_quota_index_removes_only_codes_reported_missing(monkeypatch, tmp_path, no_bundle):
     from bedrock_usage_analyzer.sync import quota_index
     from bedrock_usage_analyzer.aws.servicequotas import QUOTA_MISSING, QUOTA_ERROR
     _index_fixture(tmp_path, {'tpm': 'L-GONE', 'rpm': 'L-FLAKY'})
@@ -221,7 +221,7 @@ def test_quota_index_removes_only_codes_reported_missing(monkeypatch, tmp_path):
         assert quotas['rpm']['code'] == 'L-FLAKY'          # API error: kept
 
 
-def test_quota_index_refreshes_names(monkeypatch, tmp_path):
+def test_quota_index_refreshes_names(monkeypatch, tmp_path, no_bundle):
     from bedrock_usage_analyzer.sync import quota_index
     from bedrock_usage_analyzer.aws.servicequotas import QUOTA_OK
     _index_fixture(tmp_path, {'tpm': 'L-1', 'rpm': 'L-2'})
@@ -265,7 +265,7 @@ def test_load_bundled_yaml_reads_package_resources():
     assert get_bundled_file('missing.yml') is None
 
 
-def test_quota_index_keeps_code_where_it_exists(monkeypatch, tmp_path):
+def test_quota_index_keeps_code_where_it_exists(monkeypatch, tmp_path, no_bundle):
     """Missing in the source region but present in another: removed only where missing."""
     from bedrock_usage_analyzer.sync import quota_index
     from bedrock_usage_analyzer.aws.servicequotas import QUOTA_OK, QUOTA_MISSING
@@ -282,3 +282,19 @@ def test_quota_index_keeps_code_where_it_exists(monkeypatch, tmp_path):
     assert tpm['us-east-1'] is None and tpm['us-west-2']['code'] == 'L-PEGASUS'
     assert gen.error_entries == []
     assert 'L-PEGASUS' in (tmp_path / 'data' / 'quota-index.csv').read_text()
+
+
+def test_list_data_files_merges_user_and_bundled(tmp_path):
+    from bedrock_usage_analyzer.utils.paths import list_data_files
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': []})
+    files = list_data_files('fm-list-*.yml')
+    names = [f.name for f in files]
+    assert len(names) == len(set(names)) and len(names) > 20      # bundled regions still listed
+    assert next(f for f in files if f.name == 'fm-list-us-east-1.yml').parent == tmp_path / 'data'
+
+
+def test_probe_clients_fail_fast():
+    from bedrock_usage_analyzer.aws.client_factory import create_client
+    c = create_client('sts', 'cn-north-1', probe=True)
+    assert c.meta.config.retries['total_max_attempts'] == 1 and c.meta.config.connect_timeout == 3

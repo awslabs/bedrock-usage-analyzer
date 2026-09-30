@@ -179,18 +179,19 @@ def region_hint() -> Optional[str]:
     return _config_region_cache[profile]
 
 
-def get_caller_identity(region: Optional[str] = None) -> Dict[str, str]:
+def get_caller_identity(region: Optional[str] = None, probe: bool = False) -> Dict[str, str]:
     """Return {'Account', 'Arn', 'Partition'} for the current credentials (cached).
 
     ``region`` pins the STS endpoint. It matters for GovCloud and China
-    credentials, which the global commercial STS endpoint rejects.
+    credentials, which the global commercial STS endpoint rejects. ``probe``
+    uses a single attempt with short timeouts.
     """
     from bedrock_usage_analyzer.aws.client_factory import create_client
 
     key = region or region_hint()
     if key in _caller_identity_cache:
         return _caller_identity_cache[key]
-    identity = create_client('sts', key).get_caller_identity()
+    identity = create_client('sts', key, probe=probe).get_caller_identity()
     arn = identity.get('Arn', '')
     parts = arn.split(':')
     result = {

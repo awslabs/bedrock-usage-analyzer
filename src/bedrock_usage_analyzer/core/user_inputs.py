@@ -229,7 +229,7 @@ class UserInputs:
         probes = [r for r in PARTITION_PROBE_REGIONS if get_partition_for_region(r) != requested]
         for probe in probes:
             try:
-                identity = get_caller_identity(probe)
+                identity = get_caller_identity(probe, probe=True)
             except Exception as e:
                 # Expected for every partition the credentials do not belong to
                 logger.debug(f"STS probe in {probe} rejected the credentials: {e}")
@@ -320,8 +320,9 @@ class UserInputs:
         elif '.' not in value and ':' not in value:
             # No provider prefix: an application inference profile ID (or name)
             return self._application_profile_config(value)
-        else:
-            # Application profile names may contain '.' and ':'; an exact name match wins
+        elif not self._is_known_model(value):
+            # Application profile names may contain '.' and ':'. A known model or system
+            # profile ID always wins, so '-m us.<model>' is never narrowed to one profile.
             profile = self._find_application_profile(value)
             if profile is not None:
                 return self._application_profile_config(value, profile)
@@ -331,6 +332,16 @@ class UserInputs:
             'model_id': base_model_id,
             'profile_prefix': prefix
         }
+
+    def _is_known_model(self, value: str) -> bool:
+        """True when ``value`` is a model or system profile ID listed for the region."""
+        model_id, prefix = split_profile_id(value)
+        if not self.region or not os.path.exists(get_data_path(f'fm-list-{self.region}.yml')):
+            return prefix is not None
+        for model in self._load_fm_list(self.region):
+            if model.get('model_id') == model_id:
+                return prefix is None or prefix in (model.get('endpoints') or {})
+        return False
 
     def _find_application_profile(self, identifier):
         """Look up an application profile, or None if absent or the list cannot be read."""

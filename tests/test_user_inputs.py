@@ -172,7 +172,7 @@ def test_invalid_region_exits():
 
 def test_collect_scripted_with_repeated_models(inputs, monkeypatch):
     monkeypatch.setattr(ui_module, 'get_caller_identity',
-                        lambda region=None: {'Account': '111122223333', 'Arn': 'arn:aws:iam::1:user/a',
+                        lambda region=None, **_: {'Account': '111122223333', 'Arn': 'arn:aws:iam::1:user/a',
                                              'Partition': 'aws'})
     ui = inputs
     ui.collect(region='ap-southeast-2', model_id=['auapp000001', 'au.' + HAIKU, 'au.' + HAIKU],
@@ -186,7 +186,7 @@ def test_collect_scripted_with_repeated_models(inputs, monkeypatch):
 
 
 def test_collect_rejects_region_in_other_partition(inputs, monkeypatch):
-    def identity(region=None):
+    def identity(region=None, **_):
         if region == 'us-gov-west-1':
             raise RuntimeError('InvalidClientTokenId')
         return {'Account': '1', 'Arn': 'arn:aws:iam::1:user/a', 'Partition': 'aws'}
@@ -196,7 +196,7 @@ def test_collect_rejects_region_in_other_partition(inputs, monkeypatch):
 
 
 def test_account_failure_exits_with_hint(monkeypatch, caplog):
-    def fail(region=None):
+    def fail(region=None, **_):
         raise RuntimeError('InvalidClientTokenId: The security token included in the request is invalid')
     monkeypatch.setattr(ui_module, 'get_caller_identity', fail)
     with pytest.raises(SystemExit):
@@ -205,7 +205,7 @@ def test_account_failure_exits_with_hint(monkeypatch, caplog):
 
 
 def test_commercial_credentials_with_govcloud_region_explain_mismatch(monkeypatch, caplog):
-    def identity(region=None):
+    def identity(region=None, **_):
         if region == 'us-gov-west-1':
             raise RuntimeError('InvalidClientTokenId: The security token included in the request is invalid')
         return {'Account': '1', 'Arn': 'arn:aws:iam::1:user/a', 'Partition': 'aws'}
@@ -249,7 +249,7 @@ def test_repeated_application_profile_ids_are_aggregated(inputs, monkeypatch):
     inputs.profile_fetcher.bedrock_client.application.append(app_profile('auapp000002', 'team-f-au', AU_ARNS))
     inputs.profile_fetcher._app_profiles = None
     monkeypatch.setattr(ui_module, 'get_caller_identity',
-                        lambda region=None: {'Account': '1', 'Arn': 'arn:aws:iam::1:user/a', 'Partition': 'aws'})
+                        lambda region=None, **_: {'Account': '1', 'Arn': 'arn:aws:iam::1:user/a', 'Partition': 'aws'})
     inputs.collect(region='ap-southeast-2', model_id=['auapp000001', 'auapp000002', 'jpapp000001'],
                    granularity_config={p: 60 for p in ['1hour', '1day', '7days', '14days', '30days']},
                    skip_confirm=True)
@@ -268,7 +268,7 @@ def test_closed_stdin_exits_cleanly(monkeypatch, caplog):
     monkeypatch.setattr(builtins, 'input', eof)
     monkeypatch.setattr(_sys, 'argv', ['bua', 'analyze'])
     monkeypatch.setattr(ui_module, 'get_caller_identity',
-                        lambda region=None: {'Account': '1', 'Arn': 'arn:aws:iam::1:user/a', 'Partition': 'aws'})
+                        lambda region=None, **_: {'Account': '1', 'Arn': 'arn:aws:iam::1:user/a', 'Partition': 'aws'})
     with pytest.raises(SystemExit):
         cli.main()
     assert 'Input ended before all prompts were answered' in caplog.text
@@ -276,7 +276,7 @@ def test_closed_stdin_exits_cleanly(monkeypatch, caplog):
 
 def test_govcloud_credentials_with_commercial_region_explain_mismatch(monkeypatch, caplog):
     """No region configured: commercial STS rejects GovCloud creds, GovCloud STS identifies them."""
-    def identity(region=None):
+    def identity(region=None, **_):
         if region == 'us-gov-west-1':
             return {'Account': '1', 'Arn': 'arn:aws-us-gov:iam::1:user/a', 'Partition': 'aws-us-gov'}
         raise RuntimeError('InvalidClientTokenId')
@@ -289,7 +289,7 @@ def test_govcloud_credentials_with_commercial_region_explain_mismatch(monkeypatc
 def test_network_errors_do_not_trigger_partition_probes(monkeypatch):
     calls = []
 
-    def identity(region=None):
+    def identity(region=None, **_):
         calls.append(region)
         raise RuntimeError('Could not connect to the endpoint URL')
     monkeypatch.setattr(ui_module, 'get_caller_identity', identity)
@@ -301,7 +301,7 @@ def test_network_errors_do_not_trigger_partition_probes(monkeypatch):
 def test_mismatch_uses_configured_region_when_no_flag(monkeypatch, caplog):
     monkeypatch.setenv('AWS_REGION', 'us-west-2')
 
-    def identity(region=None):
+    def identity(region=None, **_):
         if region == 'us-gov-west-1':
             return {'Account': '1', 'Arn': 'arn:aws-us-gov:iam::1:user/a', 'Partition': 'aws-us-gov'}
         raise RuntimeError('InvalidClientTokenId')
@@ -320,7 +320,7 @@ def test_application_profile_name_with_dots(inputs):
 
 
 def test_china_credentials_are_identified(monkeypatch, caplog):
-    def identity(region=None):
+    def identity(region=None, **_):
         if region == 'cn-north-1':
             return {'Account': '1', 'Arn': 'arn:aws-cn:iam::1:user/a', 'Partition': 'aws-cn'}
         raise RuntimeError('InvalidClientTokenId')
@@ -335,3 +335,22 @@ def test_manual_entry_typo_skips_model_instead_of_exiting(inputs, monkeypatch):
                         lambda region: [{'model_id': 'x.y-v1:0', 'provider': 'X', 'endpoints': {}}])
     feed(monkeypatch, ['1', '1', 'claude'])
     assert inputs._select_model('ap-southeast-2') is None
+
+
+def test_system_profile_id_beats_application_profile_with_same_name(inputs, monkeypatch):
+    from conftest import AU_ARNS, app_profile
+    inputs.profile_fetcher.bedrock_client.application.append(app_profile('samename001', 'au.' + HAIKU, AU_ARNS))
+    inputs.profile_fetcher._app_profiles = None
+    assert inputs._parse_model_id('au.' + HAIKU) == {'model_id': HAIKU, 'profile_prefix': 'au'}
+
+
+def test_partition_probes_use_fast_clients(monkeypatch):
+    seen = []
+
+    def identity(region=None, probe=False):
+        seen.append((region, probe))
+        raise RuntimeError('InvalidClientTokenId')
+    monkeypatch.setattr(ui_module, 'get_caller_identity', identity)
+    with pytest.raises(SystemExit):
+        UserInputs()._get_current_account('us-east-1')
+    assert seen[0] == ('us-east-1', False) and all(p for _, p in seen[1:]) and len(seen) == 3

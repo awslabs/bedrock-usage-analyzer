@@ -98,23 +98,24 @@ def get_bundle_path() -> Optional[Path]:
 
 
 def list_data_files(pattern: str = "*.yml") -> List[Path]:
-    """List metadata files matching pattern.
-    
-    Returns files from user data dir if exists, else bundled.
+    """List metadata files matching pattern, one per file name.
+
+    The user's copy of a file wins; bundled files fill in the rest. Refreshing a
+    single region therefore does not hide every other bundled region.
     """
-    user_dir = get_user_data_dir()
-    if user_dir.exists():
-        files_list = list(user_dir.glob(pattern))
-        if files_list:
-            return files_list
-    
-    # Fall back to bundled
+    found = {}
     try:
         bundled = get_bundled_data_dir()
         with as_file(bundled) as bundled_path:
-            return list(bundled_path.glob(pattern))
+            for path in bundled_path.glob(pattern):
+                found[path.name] = path
     except (TypeError, FileNotFoundError, ModuleNotFoundError):
-        return []
+        pass
+    user_dir = get_user_data_dir()
+    if user_dir.exists():
+        for path in user_dir.glob(pattern):
+            found[path.name] = path
+    return [found[name] for name in sorted(found)]
 
 
 def is_using_customized_metadata() -> bool:

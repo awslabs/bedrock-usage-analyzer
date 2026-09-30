@@ -218,3 +218,26 @@ def test_failed_listing_is_not_retried(sydney_bedrock):
     fetcher.find_profiles(HAIKU, 'au')
     fetcher.other_sources_for_model(HAIKU, 'au')
     assert len(calls) == 1
+
+
+def test_shared_routing_set_belongs_to_every_matching_endpoint():
+    """jp.X and apac.X route to the same two regions: a copy of either shows under both."""
+    tokyo_osaka = [arn('ap-northeast-1', NOVA), arn('ap-northeast-3', NOVA)]
+    system = [system_profile(f"apac.{NOVA}", tokyo_osaka), system_profile(f"jp.{NOVA}", tokyo_osaka)]
+    apps = [app_profile('shared00001', 'shared', tokyo_osaka)]
+    fetcher = InferenceProfileFetcher(FakeBedrock(system=system, application=apps))
+    app = fetcher.list_application_profiles()[0]
+    assert app['source'] == f"jp.{NOVA}" and app['sources'] == [f"jp.{NOVA}", f"apac.{NOVA}"]
+    assert fetcher.find_profiles(NOVA, 'jp')[0][1:] == ['shared00001']
+    assert fetcher.find_profiles(NOVA, 'apac')[0][1:] == ['shared00001']
+    assert fetcher.other_sources_for_model(NOVA, 'jp') == {}
+
+
+def test_country_fallback_learns_regions_from_system_profiles():
+    """A new au region (here ap-southeast-9) is learned from the listed au.* profile."""
+    au_new = [arn('ap-southeast-2', HAIKU), arn('ap-southeast-9', HAIKU)]
+    system = [system_profile(f"au.{HAIKU}", au_new)]
+    # Copy of an au profile for another model that has no system profile in this listing
+    apps = [app_profile('newau000001', 'n', [arn('ap-southeast-9', NOVA), arn('ap-southeast-2', NOVA)])]
+    fetcher = InferenceProfileFetcher(FakeBedrock(system=system, application=apps))
+    assert fetcher.list_application_profiles()[0]['source'] == f"au.{NOVA}"

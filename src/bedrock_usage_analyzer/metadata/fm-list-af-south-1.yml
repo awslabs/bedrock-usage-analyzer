@@ -159,9 +159,15 @@ models:
     global:
       quotas:
         concurrent: null
-        rpm: null
+        rpm:
+          code: L-DB84CE56
+          name: Global cross-region model inference requests per minute for Anthropic
+            Claude Sonnet 4.5 V1
         tpd: null
-        tpm: null
+        tpm:
+          code: L-27C57EE8
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Sonnet 4.5 V1
   inference_profiles:
   - global
   inference_types:

@@ -111,3 +111,12 @@ def sydney_bedrock():
     ]
     tags = {application[0]['inferenceProfileArn']: {'team': 'a', 'env': 'prod'}}
     return FakeBedrock(system=system, application=application, tags=tags)
+
+
+@pytest.fixture
+def no_bundle(tmp_path, monkeypatch):
+    """Hide the bundled metadata so a test sees only the files it writes."""
+    empty = tmp_path / 'empty-bundle'
+    empty.mkdir()
+    monkeypatch.setattr('bedrock_usage_analyzer.utils.paths.get_bundled_data_dir', lambda: empty)
+    return empty

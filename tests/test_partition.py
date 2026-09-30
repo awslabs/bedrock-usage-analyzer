@@ -141,7 +141,7 @@ def test_client_factory_resolves_partition_endpoints(service, region, url):
     client = create_client(service, region)
     assert client.meta.endpoint_url == url
     assert client.meta.region_name == region
-    expected_mode = 'standard' if service == 'sts' else 'adaptive'
+    expected_mode = 'adaptive' if service in ('cloudwatch', 'service-quotas', 'bedrock-runtime') else 'standard'
     assert client.meta.config.retries['mode'] == expected_mode
     assert client.meta.config.max_pool_connections >= 16
 

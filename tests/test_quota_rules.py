@@ -110,7 +110,7 @@ def test_cached_codes_are_reused_only_where_they_exist(monkeypatch):
     assert elsewhere['tpm']['code'] == 'L-US-OTHER'
 
 
-def test_quota_index_removes_saved_mismatches_in_every_region(monkeypatch, tmp_path):
+def test_quota_index_removes_saved_mismatches_in_every_region(monkeypatch, tmp_path, no_bundle):
     (tmp_path / 'data').mkdir()
     wrong = {'code': 'L-GL46', 'name': 'Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6'}
     right = {'code': 'L-US', 'name': 'Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4 V1'}
