@@ -118,6 +118,8 @@ def test_resolve_application_profile_by_id_arn_or_name(sydney_bedrock):
 
 def test_other_sources_for_model(sydney_bedrock):
     fetcher = InferenceProfileFetcher(sydney_bedrock)
+    assert fetcher.other_sources_for_model(HAIKU, 'apac') == {}   # never triggers a listing
+    fetcher.list_application_profiles()
     assert fetcher.other_sources_for_model(HAIKU, 'apac') == {'au': 1, 'global': 1, 'jp': 1, 'base': 1}
     assert fetcher.other_sources_for_model(NOVA, 'apac') == {}
 
@@ -275,3 +277,26 @@ def test_listing_failure_is_reported_as_a_warning(sydney_bedrock, caplog):
     sydney_bedrock.list_inference_profiles = lambda **k: (_ for _ in ()).throw(RuntimeError('AccessDenied'))
     InferenceProfileFetcher(sydney_bedrock).find_profiles(HAIKU, 'au')
     assert 'without its application profiles' in caplog.text
+
+
+def test_retired_country_profile_still_recognised():
+    """jp.* retired, au.* still listed: a jp copy must not fall back to apac."""
+    system = [system_profile(f"au.{HAIKU}", AU_ARNS)]
+    apps = [app_profile('oldjp000001', 'old-jp', [arn('ap-northeast-1', NOVA), arn('ap-northeast-3', NOVA)])]
+    fetcher = InferenceProfileFetcher(FakeBedrock(system=system, application=apps))
+    assert fetcher.list_application_profiles()[0]['source'] == f"jp.{NOVA}"
+
+
+def test_transient_listing_failure_gives_up_after_two_attempts(sydney_bedrock):
+    calls = []
+
+    def throttled(**k):
+        calls.append(1)
+        raise RuntimeError('ThrottlingException')
+
+    sydney_bedrock.list_inference_profiles = throttled
+    fetcher = InferenceProfileFetcher(sydney_bedrock)
+    for _ in range(4):
+        with pytest.raises(RuntimeError):
+            fetcher.list_application_profiles()
+    assert len(calls) == 2

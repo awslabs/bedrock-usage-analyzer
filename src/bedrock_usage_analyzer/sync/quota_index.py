@@ -26,7 +26,13 @@ class QuotaIndexGenerator:
         self.entries = []
         self.error_entries = []
         self.mismatch_entries = []
-    
+        self.update_bundle = False
+        # Filled by _cleanup_errors: per-(code, region) lookup results, regional prefixes,
+        # and slots already known to contradict their model/endpoint
+        self._region_checks = {}
+        self._regional = set()
+        self._mismatched = set()
+
     def run(self, update_bundle: bool = False):
         """Execute quota index generation
         
@@ -218,10 +224,6 @@ class QuotaIndexGenerator:
 
     def _cleanup_region_errors(self, region: str, stale):
         """Null out codes missing in this region or contradicting their model/endpoint (user copy, else bundled)"""
-        if not hasattr(self, '_region_checks'):
-            self._region_checks = {}
-            self._regional = set(get_regional_profile_prefixes())
-            self._mismatched = set()
         regional, mismatched = self._regional, self._mismatched
         yaml_file = get_writable_path(f'fm-list-{region}.yml')
         data = load_yaml(get_data_path(f'fm-list-{region}.yml')) or {}

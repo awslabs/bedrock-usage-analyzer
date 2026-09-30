@@ -18,6 +18,7 @@ from ..utils.ui import select_from_list
 from ..utils.paths import get_data_path
 from ..utils.partition import (
     PARTITION_HOME_REGIONS,
+    filter_regions_by_partition,
     get_caller_identity,
     get_partition_display_name,
     get_partition_for_region,
@@ -187,8 +188,11 @@ class UserInputs:
         """Get current AWS account ID (and remember the credentials' partition)"""
 
         logger.info("Getting AWS account ID...")
+        # STS in the partition's home region, not in --region itself: an opt-in region the
+        # account has not enabled rejects the token there, which would look like bad credentials
+        sts_region = PARTITION_HOME_REGIONS.get(get_partition_for_region(region), region) if region else None
         try:
-            identity = get_caller_identity(region)
+            identity = get_caller_identity(sts_region)
         except Exception as e:
             if is_token_rejection(e):
                 self._explain_partition_mismatch(region or region_hint())
@@ -241,7 +245,12 @@ class UserInputs:
 
     def _select_region(self):
         """Select a region, showing only regions in the credentials' partition"""
-        regions, partition = regions_for_credentials(self._load_regions())
+        if self.partition:
+            # Known from the account check; no second STS call
+            partition = self.partition
+            regions = filter_regions_by_partition(self._load_regions(), partition)
+        else:
+            regions, partition = regions_for_credentials(self._load_regions())
         if not regions:
             logger.error("No regions available for these credentials.")
             logger.error("Please run: bua refresh regions")

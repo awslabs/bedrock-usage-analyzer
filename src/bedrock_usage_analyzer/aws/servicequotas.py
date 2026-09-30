@@ -4,6 +4,7 @@
 """AWS Service Quotas operations"""
 
 import sys
+import threading
 from typing import List, Dict, Optional
 
 from botocore.exceptions import ClientError
@@ -37,13 +38,16 @@ def fetch_service_quotas(region: str, service_code: str = 'bedrock') -> Optional
 
 
 _clients: Dict[str, object] = {}
+# boto3's default session is not thread-safe while it builds a client; lookups run in a pool
+_clients_lock = threading.Lock()
 
 
 def _client(region: str):
-    """One Service Quotas client per region, reused across quota lookups."""
-    if region not in _clients:
-        _clients[region] = create_client('service-quotas', region)
-    return _clients[region]
+    """One Service Quotas client per region, reused across quota lookups (thread-safe)."""
+    with _clients_lock:
+        if region not in _clients:
+            _clients[region] = create_client('service-quotas', region)
+        return _clients[region]
 
 
 QUOTA_OK = 'ok'
@@ -51,7 +55,7 @@ QUOTA_MISSING = 'missing'
 QUOTA_ERROR = 'error'
 
 
-def check_quota(quota_code: str, region: str, service_code: str = 'bedrock'):
+def check_quota(quota_code: str, region: str, service_code: str = 'bedrock', client=None):
     """Look up one quota and say whether it exists.
 
     Returns:
@@ -60,7 +64,7 @@ def check_quota(quota_code: str, region: str, service_code: str = 'bedrock'):
         network, permissions), which callers must not treat as "missing".
     """
     try:
-        response = _client(region).get_service_quota(ServiceCode=service_code, QuotaCode=quota_code)
+        response = (client or _client(region)).get_service_quota(ServiceCode=service_code, QuotaCode=quota_code)
         return QUOTA_OK, response.get('Quota', {})
     except ClientError as e:
         if e.response.get('Error', {}).get('Code') == 'NoSuchResourceException':

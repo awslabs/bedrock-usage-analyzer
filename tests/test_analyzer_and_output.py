@@ -220,3 +220,21 @@ def test_report_drops_non_https_quota_links(tmp_path):
     html = (tmp_path / next(f for f in os.listdir(tmp_path) if f.endswith('.html'))).read_text()
     # No link is rendered; the value only survives as inert JSON data for the charts
     assert 'href="javascript:' not in html and '[L-9]' in html
+
+
+def test_concurrent_quota_is_fetched_and_missing_codes_explained(analyzer, caplog):
+    import logging
+    caplog.set_level(logging.INFO)
+
+    class Quotas:
+        def get_service_quota(self, ServiceCode, QuotaCode):
+            if QuotaCode == 'L-GONE':
+                from botocore.exceptions import ClientError
+                raise ClientError({'Error': {'Code': 'NoSuchResourceException', 'Message': 'x'}}, 'GetServiceQuota')
+            return {'Quota': {'Value': 7.0}}
+
+    analyzer.sq_client = Quotas()
+    quotas = analyzer._fetch_quotas(HAIKU, {'concurrent': {'code': 'L-C', 'name': 'c'},
+                                            'tpm': {'code': 'L-GONE', 'name': 't'}}, None)
+    assert quotas['concurrent']['value'] == 7.0 and quotas['tpm'] is None
+    assert "run 'bua refresh quota-index'" in caplog.text

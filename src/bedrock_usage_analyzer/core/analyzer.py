@@ -14,6 +14,7 @@ from bedrock_usage_analyzer.core.metrics_fetcher import CloudWatchMetricsFetcher
 from bedrock_usage_analyzer.core.output_generator import OutputGenerator
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
 from bedrock_usage_analyzer.aws.client_factory import create_client
+from bedrock_usage_analyzer.aws.servicequotas import QUOTA_MISSING, QUOTA_OK, check_quota
 from bedrock_usage_analyzer.utils.paths import get_data_path
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
 
@@ -94,38 +95,29 @@ class BedrockAnalyzer:
         Returns:
             dict: Quota metadata (tpm, rpm, tpd) - each containing {value, code, name, url}
         """
-        quotas = {'tpm': None, 'rpm': None, 'tpd': None}
-        
+        quotas = {'tpm': None, 'rpm': None, 'tpd': None, 'concurrent': None}
+
         if not quota_codes:
             return quotas
-        
+
         logger.info(f"  Fetching quotas from Service Quotas API...")
         for quota_type, quota_data in quota_codes.items():
             # Handle new structure: {code: L-xxx, name: "..."} or null
-            if quota_data and isinstance(quota_data, dict):
-                code = quota_data.get('code')
-                name = quota_data.get('name')
-                
-                if code:
-                    try:
-                        response = self.sq_client.get_service_quota(
-                            ServiceCode='bedrock',
-                            QuotaCode=code
-                        )
-                        value = response['Quota']['Value']
-                        url = get_service_quota_url(self.region, 'bedrock', code)
-
-                        quota_info = {'value': value, 'code': code, 'name': name, 'url': url}
-                        
-                        if 'tpm' in quota_type.lower():
-                            quotas['tpm'] = quota_info
-                        elif 'rpm' in quota_type.lower():
-                            quotas['rpm'] = quota_info
-                        elif 'tpd' in quota_type.lower():
-                            quotas['tpd'] = quota_info
-                    
-                    except Exception as e:
-                        logger.info(f"  Warning: Could not fetch {quota_type} quota for {model_id}: {e}")
+            if not (quota_data and isinstance(quota_data, dict) and quota_data.get('code')):
+                continue
+            key = next((k for k in quotas if k in quota_type.lower()), None)
+            if key is None:
+                continue
+            code = quota_data['code']
+            status, quota = check_quota(code, self.region, client=self.sq_client)
+            if status == QUOTA_OK:
+                quotas[key] = {'value': quota.get('Value'), 'code': code, 'name': quota_data.get('name'),
+                               'url': get_service_quota_url(self.region, 'bedrock', code)}
+            elif status == QUOTA_MISSING:
+                logger.info(f"  Warning: {quota_type} quota {code} does not exist in {self.region}; "
+                            f"run 'bua refresh quota-index' to clean up the mapping")
+            else:
+                logger.info(f"  Warning: Could not fetch {quota_type} quota {code} for {model_id}")
         
         # Apply 2x multiplier for TPD on regional cross-region profiles
         regional_profile_prefixes = get_regional_profile_prefixes()

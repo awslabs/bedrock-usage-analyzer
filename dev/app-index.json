@@ -251,6 +251,7 @@
       "imports_libraries": [
         "botocore",
         "sys",
+        "threading",
         "typing"
       ],
       "imports_files": [
@@ -336,6 +337,7 @@
       "imports_files": [
         "bedrock_usage_analyzer.aws.bedrock",
         "bedrock_usage_analyzer.aws.client_factory",
+        "bedrock_usage_analyzer.aws.servicequotas",
         "bedrock_usage_analyzer.core.metrics_fetcher",
         "bedrock_usage_analyzer.core.output_generator",
         "bedrock_usage_analyzer.core.profile_fetcher",
@@ -347,6 +349,18 @@
       "path": "src/bedrock_usage_analyzer/core/errors.py",
       "summary": "Troubleshooting hints for common AWS errors, aware of the partition in use.",
       "methods": [
+        {
+          "name": "_error_text",
+          "description": ""
+        },
+        {
+          "name": "is_token_rejection",
+          "description": "True when STS rejected the credentials themselves (not a network or permission error)."
+        },
+        {
+          "name": "is_access_denied",
+          "description": "True for permission errors, which do not go away when the call is retried."
+        },
         {
           "name": "troubleshooting_hint",
           "description": "Return a short hint for ``error``, or None when there is nothing useful to add."
@@ -532,6 +546,10 @@
       ],
       "methods": [
         {
+          "name": "_specific_first",
+          "description": "Order candidates so geography-specific prefixes (jp, au) come before apac/global."
+        },
+        {
           "name": "__init__",
           "description": "Initialize with Bedrock client and prefix map"
         },
@@ -544,8 +562,8 @@
           "description": "All application inference profiles in the region, with their resolved source."
         },
         {
-          "name": "resolve_source",
-          "description": "Return the endpoint ID an application profile was copied from."
+          "name": "resolve_sources",
+          "description": "Return the endpoint IDs an application profile may have been copied from."
         },
         {
           "name": "_infer_from_regions",
@@ -573,7 +591,8 @@
         "typing"
       ],
       "imports_files": [
-        "bedrock_usage_analyzer.aws.bedrock"
+        "bedrock_usage_analyzer.aws.bedrock",
+        "bedrock_usage_analyzer.core.errors"
       ]
     },
     {
@@ -593,10 +612,6 @@
         {
           "name": "group_application_profiles",
           "description": "Turn selected application profiles into one model config per source endpoint."
-        },
-        {
-          "name": "_is_token_rejection",
-          "description": "True when STS rejected the credentials themselves (not a network or permission error)."
         },
         {
           "name": "merge_application_configs",
@@ -645,6 +660,10 @@
         {
           "name": "_parse_model_id",
           "description": "Parse model ID from CLI argument."
+        },
+        {
+          "name": "_is_known_model",
+          "description": "True when ``value`` is a model or system profile ID listed for the region."
         },
         {
           "name": "_find_application_profile",
@@ -820,6 +839,7 @@
         }
       ],
       "imports_libraries": [
+        "concurrent",
         "logging",
         "sys",
         "typing"
@@ -1247,6 +1267,7 @@
       "path": "tests/test_analyzer_and_output.py",
       "summary": "Analyzer pipeline with fake AWS clients, and report generation.",
       "imports_libraries": [
+        "botocore",
         "conftest",
         "datetime",
         "json",
@@ -1272,6 +1293,7 @@
       "imports_files": [
         "bedrock_usage_analyzer.__main__",
         "bedrock_usage_analyzer.aws",
+        "bedrock_usage_analyzer.aws.client_factory",
         "bedrock_usage_analyzer.aws.servicequotas",
         "bedrock_usage_analyzer.core.errors",
         "bedrock_usage_analyzer.sync",
@@ -1296,6 +1318,7 @@
       "summary": "Application inference profile source resolution (issue #7) and discovery.",
       "imports_libraries": [
         "conftest",
+        "logging",
         "pytest"
       ],
       "imports_files": [
@@ -1312,6 +1335,7 @@
         "pytest"
       ],
       "imports_files": [
+        "bedrock_usage_analyzer.aws",
         "bedrock_usage_analyzer.sync",
         "bedrock_usage_analyzer.sync.quota_rules",
         "bedrock_usage_analyzer.utils.yaml_handler"

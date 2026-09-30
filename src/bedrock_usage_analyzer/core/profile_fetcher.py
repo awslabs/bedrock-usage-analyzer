@@ -18,8 +18,11 @@ from bedrock_usage_analyzer.aws.bedrock import (
 
 logger = logging.getLogger(__name__)
 
-# Regions behind the country-level Asia Pacific system profiles. Used only as a last
-# resort: normally these sets are built from the system profiles listed in the region.
+# Attempts at listing application profiles per run before giving up on transient errors
+MAX_LISTING_ATTEMPTS = 2
+
+# Regions behind the country-level Asia Pacific system profiles. Extended at run time
+# with the regions of the system profiles listed in the region.
 COUNTRY_PROFILE_REGIONS = {
     'jp': {'ap-northeast-1', 'ap-northeast-3'},
     'au': {'ap-southeast-2', 'ap-southeast-4', 'ap-southeast-6'},
@@ -51,6 +54,7 @@ class InferenceProfileFetcher:
         self._prefix_regions: Dict[str, set] = {}
         self._app_profiles: Optional[List[Dict]] = None
         self._listing_error: Optional[Exception] = None
+        self._listing_failures = 0
         self._tags_cache: Dict[str, Dict[str, str]] = {}
 
     # ------------------------------------------------------------------ listing
@@ -76,7 +80,7 @@ class InferenceProfileFetcher:
         base-model copy) and source (the endpoint ID it was copied from).
         """
         if self._listing_error is not None:
-            # A failed listing (no permission, throttled out) is not retried by every caller
+            # Given up for this run: not retried by every caller
             raise self._listing_error
         if self._app_profiles is None:
             logger.info("  Listing application inference profiles...")
@@ -84,9 +88,11 @@ class InferenceProfileFetcher:
                 raw = list_inference_profiles(self.bedrock_client, 'APPLICATION')
                 self._load_system_profiles()
             except Exception as e:
-                # Only a permission error is permanent for this run; throttling or a network
-                # blip is retried by the next caller instead of dropping profiles for good
-                if is_access_denied(e):
+                # A permission error is permanent. A throttle or network blip gets one more
+                # try from the next caller, then the run stops retrying (each try can take
+                # a while with retries and timeouts)
+                self._listing_failures += 1
+                if is_access_denied(e) or self._listing_failures >= MAX_LISTING_ATTEMPTS:
                     self._listing_error = e
                 raise
             profiles = []
@@ -166,9 +172,14 @@ class InferenceProfileFetcher:
         region_set = set(regions)
         # Country-level Asia Pacific profiles route to a small set of ap-* regions; tell them
         # apart from apac.* instead of lumping every ap-* set into apac (issue #7)
-        country_regions = {p: r for p, r in self._prefix_regions.items()
-                           if p not in ('apac', 'global') and r and all(region_group(x) == 'ap' for x in r)}
-        for prefix, members in (country_regions or COUNTRY_PROFILE_REGIONS).items():
+        # Defaults merged with what the listed system profiles show, per prefix, so a
+        # retired jp.* profile still leaves jp recognisable when au.* is listed
+        country_regions = {p: set(r) for p, r in COUNTRY_PROFILE_REGIONS.items()}
+        for p, regions_of_prefix in self._prefix_regions.items():
+            if p not in ('apac', 'global') and regions_of_prefix and \
+                    all(region_group(x) == 'ap' for x in regions_of_prefix):
+                country_regions.setdefault(p, set()).update(regions_of_prefix)
+        for prefix, members in sorted(country_regions.items()):
             if region_set <= members and prefix in self.prefix_map:
                 return f"{prefix}.{model_id}"
         groups = {region_group(r) for r in regions}
@@ -260,10 +271,8 @@ class InferenceProfileFetcher:
         account does have some for the same model under a different endpoint.
         """
         counts: Dict[str, int] = {}
-        try:
-            app_profiles = self.list_application_profiles()
-        except Exception:
-            return counts
+        # Only a hint: use a listing that already succeeded, never trigger a new one
+        app_profiles = self._app_profiles or []
         target = model_id if profile_prefix is None else f"{profile_prefix}.{model_id}"
         for app in app_profiles:
             if app['model_id'] == model_id and target not in app['sources']:

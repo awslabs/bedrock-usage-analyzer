@@ -42,7 +42,7 @@ def is_access_denied(error: Exception) -> bool:
 
 def troubleshooting_hint(error: Exception, region: Optional[str] = None) -> Optional[str]:
     """Return a short hint for ``error``, or None when there is nothing useful to add."""
-    text = f"{type(error).__name__} {error}".lower()
+    text = _error_text(error).lower()
     partition = get_partition_for_region(region) if region else None
     partition_name = get_partition_display_name(partition) if partition else None
 
@@ -54,7 +54,7 @@ def troubleshooting_hint(error: Exception, region: Optional[str] = None) -> Opti
                      f" commercial AWS; use a profile for that partition (AWS_PROFILE=...)"
                      f" and pass --region {region}.")
         return hint
-    if any(m in text for m in _ACCESS_MARKERS):
+    if is_access_denied(error):
         return ("The credentials lack a required permission. See the IAM permissions"
                 " section of the README for the actions this tool needs.")
     if any(m in text for m in _NETWORK_MARKERS):
