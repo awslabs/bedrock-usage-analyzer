@@ -217,9 +217,9 @@ class OutputGenerator:
 
         # JSON blobs are passed as Python objects and serialised in the template with
         # |tojson, which escapes <, > and & so data cannot close the <script> element.
-        template = self._env.get_template('report.html')  # nosemgrep: python.flask.security.xss.audit.direct-use-of-jinja2.direct-use-of-jinja2
+        template = self._env.get_template('report.html')
         with open(html_file, 'w', encoding='utf-8') as f:
-            f.write(template.render(
+            f.write(template.render(  # nosemgrep: python.flask.security.xss.audit.direct-use-of-jinja2.direct-use-of-jinja2
                 model_id=model_id,
                 endpoint=data.get('endpoint', model_id),
                 application_profile_scope=data.get('application_profile_scope', []),
