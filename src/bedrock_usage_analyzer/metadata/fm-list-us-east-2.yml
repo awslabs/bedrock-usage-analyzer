@@ -425,10 +425,7 @@ models:
           code: L-4A6BFAB1
           name: Cross-region model inference requests per minute for Anthropic Claude
             Sonnet 4.5 V1
-        tpd:
-          code: L-E107194C
-          name: Model invocation max tokens per day for Anthropic Claude Sonnet 4.5
-            V1 1M Context Length (doubled for cross-region calls)
+        tpd: null
         tpm:
           code: L-F4DDD3EB
           name: Cross-region model inference tokens per minute for Anthropic Claude
