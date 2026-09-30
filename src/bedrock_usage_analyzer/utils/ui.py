@@ -53,6 +53,7 @@ def select_from_list(
 def _claude_endpoints_in(region: str) -> list:
     """Invokable Claude endpoint IDs listed in the region's fm-list, newest first."""
     import os
+    from bedrock_usage_analyzer.sync.quota_rules import model_version
     from bedrock_usage_analyzer.utils.paths import get_data_path
     from bedrock_usage_analyzer.utils.yaml_handler import load_yaml
     path = get_data_path(f'fm-list-{region}.yml')
@@ -69,7 +70,14 @@ def _claude_endpoints_in(region: str) -> list:
                 options.append(f"{prefix}.{model_id}")
         if 'base' in endpoints:
             options.append(model_id)
-    return sorted(options, reverse=True)
+
+    def newest_first(option):
+        # Model generation (e.g. 4.5 > 3.7 > 3.5), then profile endpoints before base models
+        version = model_version(option.split('.', 1)[1] if option.startswith(('us-gov.', 'global.')) else option)
+        numbers = tuple(int(x) for x in version.split('.')) if version else ()
+        return (numbers, option.startswith(('us-gov.', 'global.')))
+
+    return sorted(options, key=newest_first, reverse=True)
 
 
 def select_quota_mapping_params(target_region: str = None, bedrock_region: str = None, model_id: str = None) -> Tuple[str, str, str]:
@@ -100,7 +108,7 @@ def select_quota_mapping_params(target_region: str = None, bedrock_region: str =
     from bedrock_usage_analyzer.sync.regions import load_region_names, regions_for_credentials
     from bedrock_usage_analyzer.utils.partition import GOVCLOUD, get_partition_for_region
     # Any region the user already named pins STS to the right partition (GovCloud without AWS_REGION)
-    all_regions, _ = regions_for_credentials(load_region_names(), bedrock_region or target_region)
+    all_regions, _ = regions_for_credentials(load_region_names(), target_region or bedrock_region)
     if not all_regions:
         print("\nNo regions in regions.yml for these credentials. Run: bua refresh regions", file=sys.stderr)
         sys.exit(1)

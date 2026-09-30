@@ -162,8 +162,10 @@ class InferenceProfileFetcher:
 
         if len(arn_set) == 1:
             # A base-model copy, unless a system profile routes to exactly this one ARN: the
-            # two cannot be told apart, so the profile belongs to both endpoints
-            return [model_id] + _specific_first(exact or [])
+            # two cannot be told apart, so the profile belongs to both endpoints. The system
+            # profile comes first (it decides the quotas): the model may have no on-demand
+            # endpoint at all, and a copy of a real base model still shows under 'base'.
+            return _specific_first(exact or []) + [model_id]
 
         # Closest system profile for the same model (routing sets change over time)
         best, best_score = [], 0.0

@@ -83,8 +83,11 @@ def test_refresh_regions_keeps_other_partitions(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, 'argv', ['bua', 'refresh', 'regions'])
     cli.main()
     saved = load_yaml(str(tmp_path / 'data' / 'regions.yml'))['regions']
-    # Commercial list replaced; bundled GovCloud regions kept
-    assert saved == ['eu-west-1', 'us-east-1', 'us-gov-east-1', 'us-gov-west-1']
+    # The user file gets only the refreshed partition; bundled GovCloud regions are added
+    # at read time (so later releases can update them)
+    assert saved == ['eu-west-1', 'us-east-1']
+    from bedrock_usage_analyzer.sync.regions import load_region_names
+    assert load_region_names() == ['eu-west-1', 'us-east-1', 'us-gov-east-1', 'us-gov-west-1']
 
 
 def test_quota_mapper_keeps_unmapped_endpoints(monkeypatch, tmp_path):
@@ -352,7 +355,8 @@ def test_regions_module_main_saves_like_the_cli(monkeypatch, tmp_path):
     monkeypatch.setattr(r, 'fetch_enabled_regions', lambda partition, hint: ['eu-west-1'])
     monkeypatch.setattr(sys, 'argv', ['regions.py'])
     r.main()
-    assert 'us-gov-west-1' in load_yaml(str(tmp_path / 'data' / 'regions.yml'))['regions']
+    assert load_yaml(str(tmp_path / 'data' / 'regions.yml'))['regions'] == ['eu-west-1']
+    assert 'us-gov-west-1' in r.load_region_names()      # bundled GovCloud still offered
 
 
 def test_quota_mapping_picker_uses_target_region_for_sts(monkeypatch):
@@ -363,3 +367,10 @@ def test_quota_mapping_picker_uses_target_region_for_sts(monkeypatch):
     ui.select_quota_mapping_params(target_region='us-gov-west-1', bedrock_region='us-gov-west-1',
                                    model_id='us-gov.anthropic.claude-sonnet-4-5-20250929-v1:0')
     assert seen == ['us-gov-west-1']
+
+
+def test_gov_quota_mapping_options_newest_first():
+    from bedrock_usage_analyzer.utils.ui import _claude_endpoints_in
+    west = _claude_endpoints_in('us-gov-west-1')
+    assert west.index('anthropic.claude-3-7-sonnet-20250219-v1:0') < west.index('anthropic.claude-3-haiku-20240307-v1:0')
+    assert west[0].startswith('us-gov.anthropic.claude-sonnet-4-5')

@@ -38,6 +38,7 @@ class QuotaMapper:
         self.target_region = target_region
         self.common_name_cache = {}
         self.lcode_cache = {}
+        self._regional = None
         
     def run(self, update_bundle: bool = False):
         """Execute quota mapping for all regions
@@ -61,7 +62,8 @@ class QuotaMapper:
         """Get list of regions to process"""
         from bedrock_usage_analyzer.sync.regions import load_region_names, regions_for_credentials
         # Quota codes are cached across regions, so stay inside the credentials' partition
-        all_regions, _ = regions_for_credentials(load_region_names(), self.bedrock_region)
+        # Same STS region hint as the picker (target first), so the cached identity is reused
+        all_regions, _ = regions_for_credentials(load_region_names(), self.target_region or self.bedrock_region)
 
         if self.target_region:
             if self.target_region not in all_regions:
@@ -92,7 +94,7 @@ class QuotaMapper:
         logger.info(f"  Mapping quotas for {len(fm_list)} models...")
         
         updated_count = 0
-        regional = set(get_regional_profile_prefixes())
+        regional = self._regional_prefixes()
         for i, fm in enumerate(fm_list, 1):
             model_id = fm['model_id']
             logger.info(f"    [{i}/{len(fm_list)}] {model_id}... ", extra={'end': ''})
@@ -181,20 +183,27 @@ class QuotaMapper:
             self.bedrock_region, self.model_id, model_id,
             endpoint_type, matching_quotas
         )
-        quota_mapping = self._drop_invalid_choices(quota_mapping, matching_quotas, model_id, endpoint_type)
+        quota_mapping = self._drop_invalid_choices(quota_mapping, matching_quotas, model_id, endpoint_type,
+                                                   self._regional_prefixes())
 
         if quota_mapping and cache_key not in self.lcode_cache:
             self.lcode_cache[cache_key] = quota_mapping
 
         return quota_mapping
 
+    def _regional_prefixes(self):
+        """Regional (geographic) profile prefixes, computed once per mapper run."""
+        if self._regional is None:
+            self._regional = set(get_regional_profile_prefixes())
+        return self._regional
+
     @staticmethod
-    def _drop_invalid_choices(quota_mapping, candidates, model_id, endpoint_type):
+    def _drop_invalid_choices(quota_mapping, candidates, model_id, endpoint_type, regional=None):
         """Reject LLM picks outside the candidate list or contradicting the model/endpoint."""
         if not quota_mapping:
             return quota_mapping
         by_code = {c['code']: c['name'] for c in candidates}
-        regional = set(get_regional_profile_prefixes())
+        regional = set(get_regional_profile_prefixes()) if regional is None else regional
         cleaned = {}
         for metric, choice in quota_mapping.items():
             if choice and choice.get('code') in by_code and not mapping_conflict(
@@ -215,7 +224,7 @@ class QuotaMapper:
         required_keyword = endpoint_quota_keywords.get(endpoint_type)
         if not required_keyword:
             return matching
-        regional = set(get_regional_profile_prefixes())
+        regional = self._regional_prefixes()
 
         # Perform keyword search to find the potential quotas for a given base/common name of an FM.
         # Hyphens and spaces are treated alike: 'gpt-oss' must match "GPT OSS Safeguard 20B".

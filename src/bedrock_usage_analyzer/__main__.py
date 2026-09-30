@@ -117,8 +117,7 @@ def cmd_analyze(args):
 
 def cmd_refresh_regions(args):
     """Refresh regions list."""
-    from bedrock_usage_analyzer.sync.regions import (
-        discover_regions, load_region_names, read_region_file, refresh_regions)
+    from bedrock_usage_analyzer.sync.regions import discover_regions, read_region_file, refresh_regions
     from bedrock_usage_analyzer.utils.yaml_handler import save_yaml
 
     print(get_refresh_location_message())
@@ -127,8 +126,10 @@ def cmd_refresh_regions(args):
     # Only the credentials' partition is replaced; other partitions are kept
     # (e.g. GovCloud regions when refreshing with commercial credentials)
     discovered = discover_regions()
-    data = refresh_regions(existing=load_region_names(), discovered=discovered)
     output_path = get_writable_path("regions.yml")
+    # Merge into the user's own file only: copying bundled regions of other partitions into it
+    # would freeze them against later releases (load_region_names adds them at read time)
+    data = refresh_regions(existing=read_region_file(output_path), discovered=discovered)
     save_yaml(str(output_path), data)
     logger.info(f"✓ Saved: {output_path}")
 

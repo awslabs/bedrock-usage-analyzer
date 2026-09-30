@@ -320,7 +320,9 @@ class UserInputs:
         elif '.' not in value and ':' not in value:
             # No provider prefix: an application inference profile ID (or name)
             return self._application_profile_config(value)
-        elif not self._is_known_model(value):
+
+        known_model = self._is_known_model(value)
+        if not known_model and not model_id.strip().startswith('arn:'):
             # Application profile names may contain '.' and ':'. A known model or system
             # profile ID always wins, so '-m us.<model>' is never narrowed to one profile.
             profile = self._find_application_profile(value)
@@ -328,8 +330,7 @@ class UserInputs:
                 return self._application_profile_config(value, profile)
 
         base_model_id, prefix = split_profile_id(value)
-        if prefix is None and value.count('.') >= 2 and not self._is_known_model(value) \
-                and self._is_system_profile(value):
+        if prefix is None and value.count('.') >= 2 and not known_model and self._is_system_profile(value):
             # A system profile with a prefix newer than this release (e.g. 'kr.')
             prefix, base_model_id = value.split('.', 1)
         return {

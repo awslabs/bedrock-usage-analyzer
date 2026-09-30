@@ -54,19 +54,22 @@ class QuotaIndexGenerator:
         logger.info("Review quota-index.csv to validate quota mappings")
     
     def _load_all_models(self):
-        """Load the FM lists of the credentials' partition and merge endpoints from all regions"""
+        """Load the FM lists and merge endpoints from all regions of each partition
+
+        Every partition's lists go into the index (so a GovCloud run does not drop the
+        commercial rows, and vice versa), but only the credentials' partition is
+        validated against Service Quotas and cleaned up.
+        """
         from bedrock_usage_analyzer.sync.regions import SKIP_REGIONS, credentials_partition_or_exit
         from bedrock_usage_analyzer.utils.partition import get_partition_for_region
 
-        # Quota codes are validated with these credentials, so only this partition's lists
-        # are loaded (a GovCloud run must not judge commercial lists, and vice versa)
-        partition = credentials_partition_or_exit()
+        self._partition = credentials_partition_or_exit()
         fm_files = []
         for fm_file in list_data_files('fm-list-*.yml'):
             filename = fm_file.name if hasattr(fm_file, 'name') else str(fm_file)
             region = filename.replace('fm-list-', '').replace('.yml', '')
             # Disrupted regions are skipped like in every refresh (their endpoints time out)
-            if get_partition_for_region(region) == partition and region not in SKIP_REGIONS:
+            if region not in SKIP_REGIONS:
                 fm_files.append((region, fm_file))
 
         if not fm_files:
@@ -77,33 +80,36 @@ class QuotaIndexGenerator:
 
         for region, fm_file in fm_files:
             data = load_yaml(str(fm_file)) or {}
-            self._fm_data[region] = data
+            partition = get_partition_for_region(region)
+            if partition == self._partition:
+                self._fm_data[region] = data
 
             for model in data.get('models', []):
-                model_id = model['model_id']
+                key = (partition, model['model_id'])
 
-                if model_id not in self.models:
-                    # First time seeing this model - initialize
-                    self.models[model_id] = {
-                        'model_id': model_id,
+                if key not in self.models:
+                    # First time seeing this model in this partition - initialize
+                    self.models[key] = {
+                        'model_id': model['model_id'],
+                        'partition': partition,
                         'provider': model.get('provider'),
                         'inference_types': model.get('inference_types', []),
                         'inference_profiles': model.get('inference_profiles', []),
                         'endpoints': {}
                     }
 
-                # Merge endpoints from this region, to the dictionary that aggregates all regions
-                self._merge_endpoints(model_id, model, region)
-        
+                # Merge endpoints from this region, to the dictionary that aggregates the partition
+                self._merge_endpoints(key, model, region)
+
         logger.info(f"Loaded {len(self.models)} unique models\n")
-    
-    def _merge_endpoints(self, model_id: str, model: Dict, region: str):
+
+    def _merge_endpoints(self, key, model: Dict, region: str):
         """Merge endpoints from model into existing model entry"""
         new_endpoints = model.get('endpoints', {})
-        
+
         for endpoint_type, endpoint_data in new_endpoints.items():
-            existing_endpoints = self.models[model_id]['endpoints']
-            
+            existing_endpoints = self.models[key]['endpoints']
+
             if endpoint_type not in existing_endpoints:
                 # New endpoint - add it
                 existing_endpoints[endpoint_type] = {
@@ -112,25 +118,26 @@ class QuotaIndexGenerator:
                 }
             else:
                 # Endpoint exists, potentially from other regions - check if new one has quotas
-                existing_quotas = existing_endpoints[endpoint_type].get('quotas', {})
-                new_quotas = endpoint_data.get('quotas', {})
-                
+                existing_quotas = existing_endpoints[endpoint_type].get('quotas', {}) or {}
+                new_quotas = endpoint_data.get('quotas', {}) or {}
+
                 existing_has_quotas = any(v is not None for v in existing_quotas.values())
                 new_has_quotas = any(v is not None for v in new_quotas.values())
-                
+
                 # Replace if new one has quotas and existing doesn't
                 if new_has_quotas and not existing_has_quotas:
                     existing_endpoints[endpoint_type] = {
                         **endpoint_data,
                         '_source_region': region
                     }
-    
+
     def _extract_quota_entries(self):
         """Extract all quota mappings from models"""
         # Avoid duplicate by listing only a unique combination of model ID, profile prefix, and metric/quota
         seen = set()
         
-        for model_id, model in self.models.items():
+        for model in self.models.values():
+            model_id = model['model_id']
             endpoints = model.get('endpoints', {})
             
             for endpoint_type, endpoint_data in endpoints.items():
@@ -144,7 +151,7 @@ class QuotaIndexGenerator:
                         quota_name = quota_data.get('name')
                         
                         if quota_code:
-                            key = (model_id, endpoint_type, quota_type, quota_code)
+                            key = (model['partition'], model_id, endpoint_type, quota_type, quota_code)
                             if key not in seen:
                                 seen.add(key)
                                 self.entries.append({
@@ -153,7 +160,8 @@ class QuotaIndexGenerator:
                                     'quota_type': quota_type,
                                     'quota_code': quota_code,
                                     'quota_name': quota_name,
-                                    'source_region': source_region
+                                    'source_region': source_region,
+                                    'partition': model['partition'],
                                 })
         
         logger.info(f"Found {len(self.entries)} unique quota mappings\n")
@@ -170,13 +178,20 @@ class QuotaIndexGenerator:
 
         logger.info(f"Validating {len(self.entries)} quota mappings against Service Quotas...\n")
         regional = set(get_regional_profile_prefixes())
-        keys = sorted({(e['quota_code'], e['source_region']) for e in self.entries})
+        # Only codes of the credentials' partition can be looked up with these credentials
+        own = [e for e in self.entries if e['partition'] == self._partition]
+        keys = sorted({(e['quota_code'], e['source_region']) for e in own})
         # Independent lookups; a small pool keeps well under Service Quotas rate limits
         with ThreadPoolExecutor(max_workers=8) as pool:
             cache = dict(zip(keys, pool.map(lambda k: check_quota(*k), keys)))
 
         unverified = 0
         for entry in self.entries:
+            if entry['partition'] != self._partition:
+                # Another partition: kept in the index with its stored name, not validated,
+                # and never cleaned up with these credentials
+                entry['quota_name'] = entry.get('quota_name') or 'N/A'
+                continue
             status, quota = cache[(entry['quota_code'], entry['source_region'])]
             if status == QUOTA_OK:
                 entry['quota_name'] = quota.get('QuotaName') or entry.get('quota_name') or 'N/A'

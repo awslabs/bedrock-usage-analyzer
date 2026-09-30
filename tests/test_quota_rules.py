@@ -242,3 +242,19 @@ def test_long_context_variant_quota_is_rejected():
     assert mapping_conflict('anthropic.claude-sonnet-4-5-20250929-v1:0', 'us', name, REGIONAL) == 'long-context variant quota'
     std = 'Model invocation max tokens per day for Anthropic Claude Sonnet 4.5 V1 (doubled for cross-region calls)'
     assert mapping_conflict('anthropic.claude-sonnet-4-5-20250929-v1:0', 'us', std, REGIONAL) is None
+
+
+def test_quota_index_keeps_other_partitions_rows(monkeypatch, tmp_path, no_bundle):
+    """A GovCloud run must not drop the commercial rows from quota-index.csv."""
+    (tmp_path / 'data').mkdir()
+    for region, code in (('us-east-1', 'L-COMM'), ('us-gov-west-1', 'L-GOV')):
+        save_yaml(str(tmp_path / 'data' / f'fm-list-{region}.yml'), {'models': [
+            {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': {
+                'tpm': {'code': code, 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws-us-gov')
+    checked = []
+    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: checked.append(code) or ('ok', {'QuotaName': 'n'}))
+    quota_index.QuotaIndexGenerator().run()
+    csv_text = (tmp_path / 'data' / 'quota-index.csv').read_text()
+    assert 'L-COMM' in csv_text and 'L-GOV' in csv_text
+    assert checked == ['L-GOV']

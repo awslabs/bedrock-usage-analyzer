@@ -331,7 +331,8 @@ def test_single_region_system_profile_and_base_copy_are_both_candidates():
     one = [arn('ap-southeast-2', HAIKU)]
     fetcher = InferenceProfileFetcher(FakeBedrock(system=[system_profile(f"au.{HAIKU}", one)],
                                                   application=[app_profile('single00001', 's', one)]))
-    assert fetcher.list_application_profiles()[0]['sources'] == [HAIKU, f"au.{HAIKU}"]
+    app = fetcher.list_application_profiles()[0]
+    assert app['sources'] == [f"au.{HAIKU}", HAIKU] and app['profile_prefix'] == 'au'
     assert fetcher.find_profiles(HAIKU, 'au')[0][1:] == ['single00001']
     assert fetcher.find_profiles(HAIKU, None)[0][1:] == ['single00001']
 
