@@ -16,3 +16,6 @@ dist/
 build/
 *.pyc
 *.pyo
+
+# Local tool lock files (the package is installed with pip; dependency floors live in pyproject.toml)
+uv.lock
