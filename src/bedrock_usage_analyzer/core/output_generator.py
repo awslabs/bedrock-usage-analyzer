@@ -28,8 +28,10 @@ class OutputGenerator:
     def __init__(self, output_dir: str = 'results'):
         self.output_dir = output_dir
         os.makedirs(self.output_dir, exist_ok=True)
-        # Autoescape protects the report from profile names, tags or model IDs that contain markup
-        self._env = Environment(
+        # Autoescape protects the report from profile names, tags or model IDs that contain markup.
+        # This is a static report writer, not a Flask app; escaping is covered by
+        # tests/test_analyzer_and_output.py::test_report_escapes_markup_and_script_breakout.
+        self._env = Environment(  # nosemgrep: python.flask.security.xss.audit.direct-use-of-jinja2.direct-use-of-jinja2
             loader=FileSystemLoader(TEMPLATES_DIR),
             autoescape=select_autoescape(['html']),
         )
@@ -215,7 +217,7 @@ class OutputGenerator:
 
         # JSON blobs are passed as Python objects and serialised in the template with
         # |tojson, which escapes <, > and & so data cannot close the <script> element.
-        template = self._env.get_template('report.html')
+        template = self._env.get_template('report.html')  # nosemgrep: python.flask.security.xss.audit.direct-use-of-jinja2.direct-use-of-jinja2
         with open(html_file, 'w', encoding='utf-8') as f:
             f.write(template.render(
                 model_id=model_id,

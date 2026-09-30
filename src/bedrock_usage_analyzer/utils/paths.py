@@ -7,10 +7,8 @@ import os
 from pathlib import Path
 from typing import List, Optional
 
-try:
-    from importlib.resources import files, as_file
-except ImportError:
-    from importlib_resources import files, as_file
+# The package requires Python >= 3.9, where importlib.resources.files exists
+from importlib.resources import files, as_file  # nosemgrep: python.lang.compatibility.python37.python37-compatibility-importlib2
 
 from platformdirs import user_data_dir
 
@@ -30,6 +28,17 @@ def get_bundled_data_dir() -> Path:
     return files("bedrock_usage_analyzer.metadata")
 
 
+def get_bundled_file(filename: str) -> Optional[str]:
+    """Path of a bundled metadata file, or None if it is not shipped."""
+    try:
+        with as_file(get_bundled_data_dir() / filename) as path:
+            if path.exists():
+                return str(path)
+    except (TypeError, FileNotFoundError, ModuleNotFoundError):
+        pass
+    return None
+
+
 def get_data_path(filename: str) -> str:
     """Get path for reading a metadata file.
     
@@ -42,14 +51,10 @@ def get_data_path(filename: str) -> str:
         return str(user_file)
     
     # Fall back to bundled
-    try:
-        bundled = get_bundled_data_dir()
-        with as_file(bundled / filename) as path:
-            if path.exists():
-                return str(path)
-    except (TypeError, FileNotFoundError, ModuleNotFoundError):
-        pass
-    
+    bundled = get_bundled_file(filename)
+    if bundled:
+        return bundled
+
     # Return user path even if doesn't exist (for error messages)
     return str(user_file)
 

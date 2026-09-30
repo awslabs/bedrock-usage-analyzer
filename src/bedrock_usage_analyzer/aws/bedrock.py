@@ -52,16 +52,12 @@ def _load_prefix_mapping() -> List[Dict]:
     if _prefix_mapping_cache is not None:
         return _prefix_mapping_cache
 
-    from bedrock_usage_analyzer.utils.paths import get_bundled_data_dir, get_user_data_dir
+    from bedrock_usage_analyzer.utils.paths import get_bundled_file, get_user_data_dir
 
     merged: Dict[str, Dict] = {}
-    try:
-        from importlib.resources import as_file
-        with as_file(get_bundled_data_dir() / 'prefix-mapping.yml') as bundled:
-            for entry in _read_prefixes(bundled):
-                merged[entry['prefix']] = entry
-    except (TypeError, FileNotFoundError, ModuleNotFoundError):
-        pass
+    bundled = get_bundled_file('prefix-mapping.yml')
+    for entry in (_read_prefixes(bundled) if bundled else []):
+        merged[entry['prefix']] = entry
     for entry in _read_prefixes(get_user_data_dir() / 'prefix-mapping.yml'):
         merged[entry['prefix']] = entry
 
