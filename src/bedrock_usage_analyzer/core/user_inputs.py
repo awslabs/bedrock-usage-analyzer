@@ -17,7 +17,6 @@ from ..utils.yaml_handler import load_yaml
 from ..utils.ui import select_from_list
 from ..utils.paths import get_data_path
 from ..utils.partition import (
-    REGION_PATTERN,  # noqa: F401  re-exported for callers of the previous location
     get_caller_identity,
     get_partition_display_name,
     get_partition_for_region,
@@ -445,7 +444,12 @@ class UserInputs:
         if not manual_input:
             logger.info("Skipping this model.")
             return None
-        return self._parse_model_id(manual_input)
+        try:
+            return self._parse_model_id(manual_input)
+        except SystemExit:
+            # A typo here should skip this model, not end the whole session
+            logger.info("Skipping this model.")
+            return None
 
     def _select_profile_prefix(self, endpoints, inference_profiles):
         """Select inference profile prefix based on supported types"""

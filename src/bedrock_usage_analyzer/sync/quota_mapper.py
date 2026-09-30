@@ -12,7 +12,8 @@ from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
 from bedrock_usage_analyzer.utils.paths import get_data_path, get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import fetch_service_quotas
 from bedrock_usage_analyzer.aws.bedrock_llm import extract_common_name, extract_quota_codes
-from bedrock_usage_analyzer.aws.bedrock import get_endpoint_quota_keywords
+from bedrock_usage_analyzer.aws.bedrock import get_endpoint_quota_keywords, get_regional_profile_prefixes
+from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict
 
 logger = logging.getLogger(__name__)
 
@@ -142,14 +143,18 @@ class QuotaMapper:
                           endpoint_type: str, quotas: List[Dict]) -> Optional[Dict]:
         """Get quota mapping for a specific endpoint"""
         cache_key = (model_id, endpoint_type if endpoint_type in ['base', 'cross-region', 'global'] else 'cross-region')
-        if cache_key in self.lcode_cache:
-            return copy.deepcopy(self.lcode_cache[cache_key])
-        
+        region_codes = {q.get('QuotaCode') for q in quotas}
+        cached = self.lcode_cache.get(cache_key)
+        # Codes are shared across regions, but a region may lack a quota: reuse the cached
+        # mapping only when every code in it exists in this region
+        if cached and all(v['code'] in region_codes for v in cached.values() if v):
+            return copy.deepcopy(cached)
+
         # Get the candidates (list) of possible quota names for a given FM, based on the keyword search on the FM's common or base name
-        matching_quotas = self._find_matching_quotas(quotas, common_name, endpoint_type)
+        matching_quotas = self._find_matching_quotas(quotas, common_name, endpoint_type, model_id)
         if not matching_quotas:
             return None
-        
+
         # Call LLM
         # Inputs are the possible matching quota names for the given FM
         # Outputs are the mapped quotas for each metrics (e.g. TPM, TPD, RPM, concurrent)
@@ -157,21 +162,42 @@ class QuotaMapper:
             self.bedrock_region, self.model_id, model_id,
             endpoint_type, matching_quotas
         )
-        
-        if quota_mapping:
+        quota_mapping = self._drop_invalid_choices(quota_mapping, matching_quotas, model_id, endpoint_type)
+
+        if quota_mapping and cache_key not in self.lcode_cache:
             self.lcode_cache[cache_key] = quota_mapping
-        
+
         return quota_mapping
-    
-    def _find_matching_quotas(self, quotas: List[Dict], common_name: str, endpoint_type: str) -> List[Dict]:
+
+    @staticmethod
+    def _drop_invalid_choices(quota_mapping, candidates, model_id, endpoint_type):
+        """Reject LLM picks outside the candidate list or contradicting the model/endpoint."""
+        if not quota_mapping:
+            return quota_mapping
+        by_code = {c['code']: c['name'] for c in candidates}
+        regional = set(get_regional_profile_prefixes())
+        cleaned = {}
+        for metric, choice in quota_mapping.items():
+            if choice and choice.get('code') in by_code and not mapping_conflict(
+                    model_id, endpoint_type, by_code[choice['code']], regional):
+                cleaned[metric] = {'code': choice['code'], 'name': by_code[choice['code']]}
+            else:
+                if choice:
+                    logger.debug(f"Rejected {choice.get('code')} for {model_id} ({endpoint_type})")
+                cleaned[metric] = None
+        return cleaned if any(cleaned.values()) else None
+
+    def _find_matching_quotas(self, quotas: List[Dict], common_name: str, endpoint_type: str,
+                              model_id: Optional[str] = None) -> List[Dict]:
         """Find quotas matching the common name and endpoint type"""
         matching = []
-        
+
         endpoint_quota_keywords = get_endpoint_quota_keywords()
         required_keyword = endpoint_quota_keywords.get(endpoint_type)
         if not required_keyword:
             return matching
-        
+        regional = set(get_regional_profile_prefixes())
+
         # Perform keyword search to find the potential quotas for a given base/common name of an FM.
         # Hyphens and spaces are treated alike: 'gpt-oss' must match "GPT OSS Safeguard 20B".
         name_key = _normalize(common_name)
@@ -179,13 +205,18 @@ class QuotaMapper:
             quota_name = quota.get('QuotaName', '').lower()
 
             # The first term below performs keyword matching "Does the quota name contain this FM common/base name?" operation
-            if name_key in _normalize(quota_name) and required_keyword in quota_name:
-                matching.append({
-                    'name': quota['QuotaName'],
-                    'code': quota['QuotaCode'],
-                    'value': quota.get('Value', 0)
-                })
-        
+            if not (name_key in _normalize(quota_name) and required_keyword in quota_name):
+                continue
+            # 'cross-region' also matches "Global cross-region ..." and a family name matches
+            # every version: drop candidates that contradict this endpoint or model version
+            if model_id and mapping_conflict(model_id, endpoint_type, quota['QuotaName'], regional):
+                continue
+            matching.append({
+                'name': quota['QuotaName'],
+                'code': quota['QuotaCode'],
+                'value': quota.get('Value', 0)
+            })
+
         return matching
     
     def _get_common_name(self, model_id: str) -> Optional[str]:

@@ -11,6 +11,8 @@ from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
 from bedrock_usage_analyzer.utils.csv_handler import write_csv
 from bedrock_usage_analyzer.utils.paths import list_data_files, get_writable_path, get_bundle_path, get_data_path
 from bedrock_usage_analyzer.aws.servicequotas import check_quota, QUOTA_OK, QUOTA_MISSING
+from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
+from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,7 @@ class QuotaIndexGenerator:
         self.models = {}
         self.entries = []
         self.error_entries = []
+        self.mismatch_entries = []
     
     def run(self, update_bundle: bool = False):
         """Execute quota index generation
@@ -148,6 +151,7 @@ class QuotaIndexGenerator:
 
         logger.info(f"Validating {len(self.entries)} quota mappings against Service Quotas...\n")
         cache = {}
+        regional = set(get_regional_profile_prefixes())
         unverified = 0
         for entry in self.entries:
             key = (entry['quota_code'], entry['source_region'])
@@ -156,28 +160,37 @@ class QuotaIndexGenerator:
             status, quota = cache[key]
             if status == QUOTA_OK:
                 entry['quota_name'] = quota.get('QuotaName') or entry.get('quota_name') or 'N/A'
+                reason = mapping_conflict(entry['model_id'], entry['endpoint'], entry['quota_name'], regional)
+                if reason:
+                    # The code exists but belongs to another model or endpoint type
+                    logger.info(f"  Mismatch: {entry['model_id']} {entry['endpoint']} {entry['quota_type']} "
+                                f"-> {entry['quota_code']} ({entry['quota_name']}): {reason}")
+                    entry['quota_name'] = 'MISMATCH'
+                    self.mismatch_entries.append(entry)
             elif status == QUOTA_MISSING:
                 entry['previous_name'] = entry.get('quota_name')
                 entry['quota_name'] = 'ERROR'
                 self.error_entries.append(entry)
             else:
                 unverified += 1
-                entry.setdefault('quota_name', entry.get('quota_name') or 'N/A')
+                entry['quota_name'] = entry.get('quota_name') or 'N/A'
         if unverified:
             logger.info(f"  {unverified} mapping(s) could not be verified (API errors); kept as is")
 
     def _cleanup_errors(self):
-        """Remove quota codes that no longer exist from every fm-list that uses them"""
-        if not self.error_entries:
+        """Remove quota codes that do not exist, or belong to another model/endpoint, from every fm-list"""
+        if not self.error_entries and not self.mismatch_entries:
             logger.info(f"\nThere is no erroneous entry.")
-            return
-
-        logger.info(f"\nCleaning up {len(self.error_entries)} ERROR entries...")
+        else:
+            logger.info(f"\nCleaning up {len(self.error_entries)} missing and "
+                        f"{len(self.mismatch_entries)} mismatched entries...")
         stale = {(e['model_id'], e['endpoint'], e['quota_type'], e['quota_code']) for e in self.error_entries}
         # Quota availability differs by region: a code missing in the entry's source
         # region can exist elsewhere, so re-check it in every region before removing it
         self._region_checks = {
             (e['quota_code'], e['source_region']): QUOTA_MISSING for e in self.error_entries}
+        # Every region file is also checked for mismatches by the quota name stored with each
+        # code, because the index itself samples only one source region per model endpoint
         for fm_file in list_data_files('fm-list-*.yml'):
             filename = fm_file.name if hasattr(fm_file, 'name') else str(fm_file)
             region = filename.replace('fm-list-', '').replace('.yml', '')
@@ -197,9 +210,11 @@ class QuotaIndexGenerator:
         return self._region_checks[key] == QUOTA_MISSING
 
     def _cleanup_region_errors(self, region: str, stale):
-        """Null out codes that Service Quotas reports missing in this region (user copy, else bundled)"""
+        """Null out codes missing in this region or contradicting their model/endpoint (user copy, else bundled)"""
         if not hasattr(self, '_region_checks'):
             self._region_checks = {}
+        regional = set(get_regional_profile_prefixes())
+        mismatched = {(e['model_id'], e['endpoint'], e['quota_type'], e['quota_code']) for e in self.mismatch_entries}
         yaml_file = get_writable_path(f'fm-list-{region}.yml')
         data = load_yaml(get_data_path(f'fm-list-{region}.yml')) or {}
 
@@ -208,9 +223,20 @@ class QuotaIndexGenerator:
             for endpoint, endpoint_data in (model.get('endpoints') or {}).items():
                 quotas = (endpoint_data or {}).get('quotas') or {}
                 for quota_type, quota in quotas.items():
-                    code = quota.get('code') if isinstance(quota, dict) else None
-                    if (model['model_id'], endpoint, quota_type, code) in stale and self._missing_in(code, region):
-                        logger.info(f"  Removing {model['model_id']} -> {endpoint} -> {quota_type} ({code}) in {region}")
+                    if not isinstance(quota, dict):
+                        continue
+                    code = quota.get('code')
+                    slot = (model['model_id'], endpoint, quota_type, code)
+                    reason = None
+                    if slot in mismatched:
+                        reason = 'mismatch'
+                    elif mapping_conflict(model['model_id'], endpoint, quota.get('name'), regional):
+                        reason = 'mismatch'
+                    elif slot in stale and self._missing_in(code, region):
+                        reason = 'missing'
+                    if reason:
+                        logger.info(f"  Removing {model['model_id']} -> {endpoint} -> {quota_type} ({code}) "
+                                    f"in {region}: {reason}")
                         quotas[quota_type] = None
                         modified = True
 
@@ -229,7 +255,7 @@ class QuotaIndexGenerator:
         """Generate CSV file with valid entries"""
         valid_rows = [
             [e['model_id'], e['endpoint'], e['quota_type'], e['quota_code'], e['quota_name']]
-            for e in self.entries if e.get('quota_name') != 'ERROR'
+            for e in self.entries if e.get('quota_name') not in ('ERROR', 'MISMATCH')
         ]
         
         output_file = get_writable_path('quota-index.csv')

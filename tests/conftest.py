@@ -6,6 +6,7 @@
 import pytest
 
 from bedrock_usage_analyzer.aws import bedrock as bedrock_module
+from bedrock_usage_analyzer.aws import servicequotas as servicequotas_module
 from bedrock_usage_analyzer.utils import partition
 
 
@@ -23,6 +24,7 @@ def isolated_env(tmp_path, monkeypatch):
     monkeypatch.setenv('AWS_SHARED_CREDENTIALS_FILE', str(tmp_path / 'aws_credentials'))
     partition.clear_cache()
     bedrock_module._prefix_mapping_cache = None
+    servicequotas_module._clients.clear()
     yield
     partition.clear_cache()
     bedrock_module._prefix_mapping_cache = None

@@ -2,7 +2,17 @@
   "name": "Bedrock Usage Analyzer",
   "version": "0.6.0-beta",
   "description": "CLI tool to calculate token usage statistics (TPM, RPM, TPD, p50, p90) for Amazon Bedrock foundation models, with quota visualization and application inference profile aggregation across CloudWatch metrics",
-  "technologies": ["Python", "Bash", "boto3", "numpy", "jinja2", "pyyaml", "defusedcsv", "platformdirs", "Chart.js"],
+  "technologies": [
+    "Python",
+    "Bash",
+    "boto3",
+    "numpy",
+    "jinja2",
+    "pyyaml",
+    "defusedcsv",
+    "platformdirs",
+    "Chart.js"
+  ],
   "structure": {
     "src/bedrock_usage_analyzer/": "Main Python package containing all source code",
     "src/bedrock_usage_analyzer/core/": "Core analysis logic - orchestrator, metrics fetching, output generation",
@@ -14,14 +24,254 @@
     "bin/": "Bash wrapper scripts that auto-setup venv and invoke Python modules",
     "results/": "Output directory for generated JSON and HTML reports (gitignored)",
     "assets/": "Screenshot images (image1.png, image2.png, image3.png) for README documentation",
-    "dev/": "Development files including app-index.json and temporary files"
+    "dev/": "Development files including app-index.json and temporary files",
+    "tests/": "Offline pytest suite with stubbed AWS clients (no AWS calls)"
   },
   "files": [
     {
       "path": "src/bedrock_usage_analyzer/__init__.py",
       "summary": "Package initialization - exports __version__ via importlib.metadata",
-      "imports_libraries": ["importlib.metadata"],
+      "imports_libraries": [
+        "importlib"
+      ],
       "imports_files": []
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/__main__.py",
+      "summary": "Unified CLI entry point - handles analyze and refresh subcommands with argparse",
+      "methods": [
+        {
+          "name": "_parse_granularity",
+          "description": "Parse granularity argument - single value or JSON."
+        },
+        {
+          "name": "cmd_analyze",
+          "description": "Run usage analysis"
+        },
+        {
+          "name": "cmd_refresh_regions",
+          "description": "Refresh regions list"
+        },
+        {
+          "name": "cmd_refresh_fm_list",
+          "description": "Refresh FM lists"
+        },
+        {
+          "name": "cmd_refresh_fm_quotas",
+          "description": "Refresh quota mappings"
+        },
+        {
+          "name": "cmd_refresh_quota_index",
+          "description": "Generate quota index CSV"
+        },
+        {
+          "name": "_maybe_update_bundle",
+          "description": "Update bundled data if --update-bundle flag is set."
+        },
+        {
+          "name": "main",
+          "description": "Main entry point with argparse subcommands"
+        }
+      ],
+      "imports_libraries": [
+        "argparse",
+        "json",
+        "logging",
+        "sys",
+        "traceback"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.core.analyzer",
+        "bedrock_usage_analyzer.core.errors",
+        "bedrock_usage_analyzer.core.user_inputs",
+        "bedrock_usage_analyzer.sync.fm_list",
+        "bedrock_usage_analyzer.sync.quota_index",
+        "bedrock_usage_analyzer.sync.quota_mapper",
+        "bedrock_usage_analyzer.sync.regions",
+        "bedrock_usage_analyzer.utils.partition",
+        "bedrock_usage_analyzer.utils.paths",
+        "bedrock_usage_analyzer.utils.ui",
+        "bedrock_usage_analyzer.utils.yaml_handler"
+      ]
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/aws/__init__.py",
+      "summary": "Empty package initialization for aws module",
+      "imports_libraries": [],
+      "imports_files": []
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/aws/bedrock.py",
+      "summary": "AWS Bedrock service operations - fetch foundation models, inference profiles, prefix mapping, and profile management",
+      "methods": [
+        {
+          "name": "_read_prefixes",
+          "description": ""
+        },
+        {
+          "name": "_load_prefix_mapping",
+          "description": "Load prefix mapping from metadata file with caching"
+        },
+        {
+          "name": "load_prefix_mapping",
+          "description": "Public accessor for the merged prefix mapping; ``refresh`` re-reads the files."
+        },
+        {
+          "name": "get_endpoint_quota_keywords",
+          "description": "Get mapping of endpoint prefix to quota keyword (on-demand, cross-region, global)"
+        },
+        {
+          "name": "get_endpoint_descriptions",
+          "description": "Get mapping of endpoint prefix to description"
+        },
+        {
+          "name": "get_regional_profile_prefixes",
+          "description": "Get list of regional profile prefixes (us, eu, jp, au, apac, ca)"
+        },
+        {
+          "name": "get_default_region_prefix_map",
+          "description": "Get mapping of region prefix to system profile prefix"
+        },
+        {
+          "name": "get_profile_prefixes",
+          "description": "All system inference profile prefixes (known defaults plus prefix-mapping.yml)."
+        },
+        {
+          "name": "split_profile_id",
+          "description": "Split an endpoint ID into (model_id, prefix)."
+        },
+        {
+          "name": "region_group",
+          "description": "Region family used to guess a profile prefix: 'us-gov-west-1' -> 'us-gov', 'eu-west-1' -> 'eu'."
+        },
+        {
+          "name": "model_id_from_arn",
+          "description": "'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0' -> 'amazon.nova-pro-v1:0'."
+        },
+        {
+          "name": "region_from_arn",
+          "description": "Region field of an ARN ('' for region-less ARNs such as global routing targets)."
+        },
+        {
+          "name": "list_inference_profiles",
+          "description": "List all inference profiles of one type ('SYSTEM_DEFINED' or 'APPLICATION')."
+        },
+        {
+          "name": "discover_prefix_mapping",
+          "description": "Discover system profile prefixes from Bedrock API by analyzing SYSTEM_DEFINED profiles"
+        },
+        {
+          "name": "fetch_foundation_models",
+          "description": "Fetch foundation models for a region via list_foundation_models API"
+        },
+        {
+          "name": "fetch_all_inference_profiles",
+          "description": "Fetch ALL system inference profiles in region"
+        },
+        {
+          "name": "build_profile_map",
+          "description": "Build mapping: model_id \u2192 [profile_prefixes]"
+        },
+        {
+          "name": "get_inference_profile_arn",
+          "description": "Get the ARN of a system-defined inference profile"
+        },
+        {
+          "name": "create_application_inference_profile",
+          "description": "Create an application inference profile"
+        }
+      ],
+      "imports_libraries": [
+        "logging",
+        "sys",
+        "typing"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.aws.client_factory",
+        "bedrock_usage_analyzer.utils.partition",
+        "bedrock_usage_analyzer.utils.paths",
+        "bedrock_usage_analyzer.utils.yaml_handler"
+      ]
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/aws/bedrock_llm.py",
+      "summary": "Bedrock LLM invocation for intelligent quota mapping - uses Claude to extract model common names and map quotas",
+      "methods": [
+        {
+          "name": "extract_common_name",
+          "description": "Extract common model name using LLM with tool call (e.g., 'nova-lite' \u2192 'nova')"
+        },
+        {
+          "name": "extract_quota_codes",
+          "description": "Extract quota codes for TPM/RPM/TPD/concurrent using LLM to match model to quotas"
+        }
+      ],
+      "imports_libraries": [
+        "sys",
+        "typing"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.aws.bedrock",
+        "bedrock_usage_analyzer.aws.client_factory"
+      ]
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/aws/client_factory.py",
+      "summary": "Single place where the tool creates boto3 clients.",
+      "methods": [
+        {
+          "name": "create_client",
+          "description": "Create a boto3 client for ``service`` in ``region``."
+        }
+      ],
+      "imports_libraries": [
+        "boto3",
+        "botocore",
+        "typing"
+      ],
+      "imports_files": []
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/aws/servicequotas.py",
+      "summary": "AWS Service Quotas operations - fetch and query Bedrock service quotas",
+      "methods": [
+        {
+          "name": "fetch_service_quotas",
+          "description": "Fetch all service quotas for Bedrock in a region"
+        },
+        {
+          "name": "_client",
+          "description": "One Service Quotas client per region, reused across quota lookups."
+        },
+        {
+          "name": "check_quota",
+          "description": "Look up one quota and say whether it exists."
+        }
+      ],
+      "imports_libraries": [
+        "botocore",
+        "sys",
+        "typing"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.aws.client_factory"
+      ]
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/aws/sts.py",
+      "summary": "AWS STS (Security Token Service) operations - get current account ID",
+      "methods": [
+        {
+          "name": "get_account_id",
+          "description": "Get current AWS account ID via get_caller_identity"
+        }
+      ],
+      "imports_libraries": [
+        "typing"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.utils.partition"
+      ]
     },
     {
       "path": "src/bedrock_usage_analyzer/core/__init__.py",
@@ -39,16 +289,75 @@
         }
       ],
       "methods": [
-        {"name": "__init__", "description": "Initialize analyzer with region and granularity config, setup AWS clients"},
-        {"name": "_load_quota_codes", "description": "Load quota codes for a model from FM list YAML based on endpoint type"},
-        {"name": "_fetch_quotas", "description": "Fetch quota values from Service Quotas API"},
-        {"name": "_calculate_stats_from_time_series", "description": "Calculate p50, p90, avg statistics from time series data"},
-        {"name": "_calculate_contributions", "description": "Calculate average contributions for each profile per time period"},
-        {"name": "analyze", "description": "Main analysis method - discovers profiles, fetches data, processes metrics, generates output"},
-        {"name": "main", "description": "Entry point function that collects user inputs and runs analysis (standalone)"}
+        {
+          "name": "__init__",
+          "description": "Initialize analyzer with region and granularity config, setup AWS clients"
+        },
+        {
+          "name": "_load_quota_codes",
+          "description": "Load quota codes for a model from FM list YAML based on endpoint type"
+        },
+        {
+          "name": "_fetch_quotas",
+          "description": "Fetch quota values from Service Quotas API"
+        },
+        {
+          "name": "_calculate_stats_from_time_series",
+          "description": "Calculate p50, p90, avg statistics from time series data"
+        },
+        {
+          "name": "_calculate_contributions",
+          "description": "Calculate average contributions for each profile per time period"
+        },
+        {
+          "name": "_scope_key",
+          "description": "Cache key for one analysis target (model, endpoint and optional profile subset)."
+        },
+        {
+          "name": "_warn_other_sources",
+          "description": "Tell the user when their application profiles sit under a different endpoint."
+        },
+        {
+          "name": "analyze",
+          "description": "Main analysis method - discovers profiles, fetches data, processes metrics, generates output"
+        },
+        {
+          "name": "_file_label",
+          "description": "Distinct output name per target, so two endpoints of one model do not overwrite each other."
+        }
       ],
-      "imports_libraries": ["boto3", "numpy", "logging", "traceback", "os", "yaml", "datetime"],
-      "imports_files": ["bedrock_usage_analyzer.core.user_inputs", "bedrock_usage_analyzer.core.profile_fetcher", "bedrock_usage_analyzer.core.metrics_fetcher", "bedrock_usage_analyzer.core.output_generator", "bedrock_usage_analyzer.aws.bedrock"]
+      "imports_libraries": [
+        "datetime",
+        "logging",
+        "numpy",
+        "traceback",
+        "yaml"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.aws.bedrock",
+        "bedrock_usage_analyzer.aws.client_factory",
+        "bedrock_usage_analyzer.core.metrics_fetcher",
+        "bedrock_usage_analyzer.core.output_generator",
+        "bedrock_usage_analyzer.core.profile_fetcher",
+        "bedrock_usage_analyzer.utils.partition",
+        "bedrock_usage_analyzer.utils.paths"
+      ]
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/core/errors.py",
+      "summary": "Troubleshooting hints for common AWS errors, aware of the partition in use.",
+      "methods": [
+        {
+          "name": "troubleshooting_hint",
+          "description": "Return a short hint for ``error``, or None when there is nothing useful to add."
+        }
+      ],
+      "imports_libraries": [
+        "typing"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.utils.partition"
+      ]
     },
     {
       "path": "src/bedrock_usage_analyzer/core/metrics_fetcher.py",
@@ -60,27 +369,92 @@
         }
       ],
       "methods": [
-        {"name": "__init__", "description": "Initialize with CloudWatch client and timezone format"},
-        {"name": "_process_combined_time_series", "description": "Process combined time series data from multiple chunks into TPM/RPM/TPD metrics"},
-        {"name": "_align_to_period_boundary", "description": "Align datetime to period boundary by rounding down"},
-        {"name": "fetch_all_data_mixed_granularity", "description": "Fetch data at configured granularities for all periods using parallel fetching"},
-        {"name": "_fetch_token_metrics", "description": "Fetch token-related metrics (InputTokenCount, OutputTokenCount, Invocations) at 1-min granularity"},
-        {"name": "_fetch_other_metrics", "description": "Fetch non-token metrics (throttles, errors, latency) at configured granularity"},
-        {"name": "_fetch_raw_data", "description": "Fetch raw CloudWatch data for a time range (legacy method)"},
-        {"name": "slice_and_process_data", "description": "Slice fetched data for a specific time period and process into time series"},
-        {"name": "_slice_and_merge_datasets", "description": "Slice and merge token metrics (1-min) with other metrics (configured granularity)"},
-        {"name": "_aggregate_to_peak", "description": "Aggregate fine-grained data to coarser granularity using peak (max) values"},
-        {"name": "_slice_from_dataset", "description": "Slice data from a single dataset by time range"},
-        {"name": "_chunk_time_range", "description": "Split time range into chunks to respect CloudWatch data point limit"},
-        {"name": "_initialize_metrics", "description": "Initialize metrics with empty defaults"},
-        {"name": "_create_query", "description": "Create a CloudWatch metric query"},
-        {"name": "_empty_time_series", "description": "Return empty time series data structure"},
-        {"name": "_fill_missing_timestamps", "description": "Fill missing timestamps with null values to create gaps in charts"},
-        {"name": "_aggregate_tokens_by_day", "description": "Aggregate token values by day using 24-hour backward windows"},
-        {"name": "aggregate_statistics", "description": "Aggregate statistics across multiple profiles"},
-        {"name": "aggregate_time_series", "description": "Aggregate time series across multiple profiles by summing values at each timestamp"}
+        {
+          "name": "__init__",
+          "description": "Initialize with CloudWatch client and timezone format"
+        },
+        {
+          "name": "_process_combined_time_series",
+          "description": "Process combined time series data from multiple chunks into TPM/RPM/TPD metrics"
+        },
+        {
+          "name": "_align_to_period_boundary",
+          "description": "Align datetime to period boundary by rounding down"
+        },
+        {
+          "name": "fetch_all_data_mixed_granularity",
+          "description": "Fetch data at configured granularities for all periods using parallel fetching"
+        },
+        {
+          "name": "_fetch_token_metrics",
+          "description": "Fetch token-related metrics (InputTokenCount, OutputTokenCount, Invocations) at 1-min granularity"
+        },
+        {
+          "name": "_fetch_other_metrics",
+          "description": "Fetch non-token metrics (throttles, errors, latency) at configured granularity"
+        },
+        {
+          "name": "_fetch_raw_data",
+          "description": "Fetch raw CloudWatch data for a time range (legacy method)"
+        },
+        {
+          "name": "slice_and_process_data",
+          "description": "Slice fetched data for a specific time period and process into time series"
+        },
+        {
+          "name": "_slice_and_merge_datasets",
+          "description": "Slice and merge token metrics (1-min) with other metrics (configured granularity)"
+        },
+        {
+          "name": "_aggregate_to_peak",
+          "description": "Aggregate fine-grained data to coarser granularity using peak (max) values"
+        },
+        {
+          "name": "_slice_from_dataset",
+          "description": "Slice data from a single dataset by time range"
+        },
+        {
+          "name": "_chunk_time_range",
+          "description": "Split time range into chunks to respect CloudWatch data point limit"
+        },
+        {
+          "name": "_initialize_metrics",
+          "description": "Initialize metrics with empty defaults"
+        },
+        {
+          "name": "_create_query",
+          "description": "Create a CloudWatch metric query"
+        },
+        {
+          "name": "_empty_time_series",
+          "description": "Return empty time series data structure"
+        },
+        {
+          "name": "_fill_missing_timestamps",
+          "description": "Fill missing timestamps with null values to create gaps in charts"
+        },
+        {
+          "name": "_aggregate_tokens_by_day",
+          "description": "Aggregate token values by day using 24-hour backward windows"
+        },
+        {
+          "name": "aggregate_statistics",
+          "description": "Aggregate statistics across multiple profiles"
+        },
+        {
+          "name": "aggregate_time_series",
+          "description": "Aggregate time series across multiple profiles by summing values at each timestamp"
+        }
       ],
-      "imports_libraries": ["os", "numpy", "datetime", "logging", "concurrent.futures", "threading", "collections"],
+      "imports_libraries": [
+        "collections",
+        "concurrent",
+        "datetime",
+        "logging",
+        "numpy",
+        "os",
+        "threading"
+      ],
       "imports_files": []
     },
     {
@@ -93,15 +467,59 @@
         }
       ],
       "methods": [
-        {"name": "__init__", "description": "Initialize output generator and create results directory"},
-        {"name": "generate", "description": "Generate JSON and HTML output files for analysis results"},
-        {"name": "_generate_json", "description": "Generate JSON output with statistics, time series, quotas, and contributions"},
-        {"name": "_generate_period_names", "description": "Generate friendly period names with local timezone"},
-        {"name": "_generate_html", "description": "Generate HTML output with interactive graphs using Jinja2 template"},
-        {"name": "_get_html_template", "description": "Load HTML template from templates/report.html"}
+        {
+          "name": "safe_filename",
+          "description": "Turn a model/profile label into a file name (no path separators or odd characters)."
+        },
+        {
+          "name": "https_url",
+          "description": "Template filter: keep only https:// links (no javascript: or data: URIs in href)."
+        },
+        {
+          "name": "__init__",
+          "description": "Initialize output generator and create results directory"
+        },
+        {
+          "name": "generate",
+          "description": "Generate JSON and HTML output files for analysis results"
+        },
+        {
+          "name": "_unique_basename",
+          "description": "Append a counter when a report with the same name already exists."
+        },
+        {
+          "name": "_region_info",
+          "description": ""
+        },
+        {
+          "name": "_generate_json",
+          "description": "Generate JSON output with statistics, time series, quotas, and contributions"
+        },
+        {
+          "name": "_add_time_series_metadata",
+          "description": "Add disclaimers and quota info to time series data"
+        },
+        {
+          "name": "_generate_period_names",
+          "description": "Generate friendly period names with local timezone"
+        },
+        {
+          "name": "_generate_html",
+          "description": "Generate HTML output with interactive graphs using Jinja2 template"
+        }
       ],
-      "imports_libraries": ["os", "json", "logging", "datetime", "jinja2"],
-      "imports_files": []
+      "imports_libraries": [
+        "copy",
+        "datetime",
+        "jinja2",
+        "json",
+        "logging",
+        "os",
+        "re"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.utils.partition"
+      ]
     },
     {
       "path": "src/bedrock_usage_analyzer/core/profile_fetcher.py",
@@ -113,12 +531,50 @@
         }
       ],
       "methods": [
-        {"name": "__init__", "description": "Initialize with Bedrock client and prefix map"},
-        {"name": "find_profiles", "description": "Find system-defined profile and all application profiles based on it, returns profiles list, names dict, and metadata dict"},
-        {"name": "_infer_source_profile", "description": "Infer which endpoint an application profile is based on from model ARNs"}
+        {
+          "name": "__init__",
+          "description": "Initialize with Bedrock client and prefix map"
+        },
+        {
+          "name": "_load_system_profiles",
+          "description": ""
+        },
+        {
+          "name": "list_application_profiles",
+          "description": "All application inference profiles in the region, with their resolved source."
+        },
+        {
+          "name": "resolve_source",
+          "description": "Return the endpoint ID an application profile was copied from."
+        },
+        {
+          "name": "_infer_from_regions",
+          "description": "Fallback when no system profile matches: guess from the ARN regions."
+        },
+        {
+          "name": "resolve_application_profile",
+          "description": "Find an application profile by ID, ARN or name."
+        },
+        {
+          "name": "_get_tags",
+          "description": ""
+        },
+        {
+          "name": "find_profiles",
+          "description": "Find system-defined profile and all application profiles based on it, returns profiles list, names dict, and metadata dict"
+        },
+        {
+          "name": "other_sources_for_model",
+          "description": "Count application profiles of ``model_id`` that come from other endpoints."
+        }
       ],
-      "imports_libraries": ["logging"],
-      "imports_files": ["bedrock_usage_analyzer.aws.bedrock"]
+      "imports_libraries": [
+        "logging",
+        "typing"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.aws.bedrock"
+      ]
     },
     {
       "path": "src/bedrock_usage_analyzer/core/user_inputs.py",
@@ -130,74 +586,434 @@
         }
       ],
       "methods": [
-        {"name": "__init__", "description": "Initialize with default granularity config (5-min for all periods)"},
-        {"name": "collect", "description": "Interactive dialog to collect user inputs - account, region, granularity, models"},
-        {"name": "_get_current_account", "description": "Get current AWS account ID via STS"},
-        {"name": "_select_region", "description": "Select region with numbered list"},
-        {"name": "_select_model", "description": "Select model with numbered lists for provider and model"},
-        {"name": "_select_profile_prefix", "description": "Select inference profile prefix based on supported types"},
-        {"name": "_configure_granularity", "description": "Configure data granularity for each time period"},
-        {"name": "_select_granularity", "description": "Select granularity with strikethrough for unavailable options"},
-        {"name": "_get_choice", "description": "Helper to get valid numeric choice from user input"},
-        {"name": "_load_regions", "description": "Load regions from metadata/regions.yml"},
-        {"name": "_ensure_fm_list", "description": "Ensure FM list exists for region"},
-        {"name": "_load_fm_list", "description": "Load foundation models for region from YAML"}
+        {
+          "name": "parse_selection",
+          "description": "Parse '1,3-5' or 'all' into sorted 0-based indices; raises ValueError on bad input."
+        },
+        {
+          "name": "group_application_profiles",
+          "description": "Turn selected application profiles into one model config per source endpoint."
+        },
+        {
+          "name": "_is_token_rejection",
+          "description": "True when STS rejected the credentials themselves (not a network or permission error)."
+        },
+        {
+          "name": "merge_application_configs",
+          "description": "Combine application-profile configs that share a source endpoint."
+        },
+        {
+          "name": "__init__",
+          "description": "Initialize with default granularity config (5-min for all periods)"
+        },
+        {
+          "name": "collect",
+          "description": "Interactive dialog to collect user inputs - account, region, granularity, models"
+        },
+        {
+          "name": "_add_models",
+          "description": ""
+        },
+        {
+          "name": "_validate_region",
+          "description": ""
+        },
+        {
+          "name": "_get_current_account",
+          "description": "Get current AWS account ID via STS"
+        },
+        {
+          "name": "_explain_partition_mismatch",
+          "description": "If STS in ``region`` rejected the credentials, check whether they belong to another partition."
+        },
+        {
+          "name": "_check_region_partition",
+          "description": "Stop early when the region belongs to a different partition than the credentials."
+        },
+        {
+          "name": "_select_region",
+          "description": "Select region with numbered list"
+        },
+        {
+          "name": "_region_label",
+          "description": ""
+        },
+        {
+          "name": "_get_profile_fetcher",
+          "description": ""
+        },
+        {
+          "name": "_parse_model_id",
+          "description": "Parse model ID from CLI argument."
+        },
+        {
+          "name": "_find_application_profile",
+          "description": "Look up an application profile, or None if absent or the list cannot be read."
+        },
+        {
+          "name": "_application_profile_config",
+          "description": ""
+        },
+        {
+          "name": "_select_targets",
+          "description": "Ask whether to analyze a foundation model or specific application profiles."
+        },
+        {
+          "name": "_select_application_profiles",
+          "description": "Pick one or more application inference profiles by number."
+        },
+        {
+          "name": "_select_model",
+          "description": "Select model with numbered lists for provider and model"
+        },
+        {
+          "name": "_manual_model_entry",
+          "description": "Fallback when a model has no endpoints in metadata."
+        },
+        {
+          "name": "_select_profile_prefix",
+          "description": "Select inference profile prefix based on supported types"
+        },
+        {
+          "name": "_configure_granularity",
+          "description": "Configure data granularity for each time period"
+        },
+        {
+          "name": "_select_granularity",
+          "description": "Select granularity with strikethrough for unavailable options"
+        },
+        {
+          "name": "_get_choice",
+          "description": "Helper to get valid numeric choice from user input"
+        },
+        {
+          "name": "_load_regions",
+          "description": "Load regions from metadata/regions.yml"
+        },
+        {
+          "name": "_ensure_fm_list",
+          "description": "Ensure FM list exists for region"
+        },
+        {
+          "name": "_load_fm_list",
+          "description": "Load foundation models for region from YAML"
+        },
+        {
+          "name": "select_output_dir",
+          "description": "Prompt user to select output directory for results."
+        }
       ],
-      "imports_libraries": ["os", "sys", "logging", "boto3"],
-      "imports_files": ["bedrock_usage_analyzer.utils.yaml_handler", "bedrock_usage_analyzer.utils.ui"]
+      "imports_libraries": [
+        "logging",
+        "os",
+        "sys",
+        "typing"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.aws.bedrock",
+        "bedrock_usage_analyzer.aws.client_factory",
+        "bedrock_usage_analyzer.core.errors",
+        "bedrock_usage_analyzer.core.profile_fetcher",
+        "bedrock_usage_analyzer.sync.regions",
+        "bedrock_usage_analyzer.utils.partition",
+        "bedrock_usage_analyzer.utils.paths",
+        "bedrock_usage_analyzer.utils.ui",
+        "bedrock_usage_analyzer.utils.yaml_handler"
+      ]
     },
     {
-      "path": "src/bedrock_usage_analyzer/aws/__init__.py",
-      "summary": "Empty package initialization for aws module",
+      "path": "src/bedrock_usage_analyzer/metadata/__init__.py",
+      "summary": "__init__.py",
       "imports_libraries": [],
       "imports_files": []
     },
     {
-      "path": "src/bedrock_usage_analyzer/aws/bedrock.py",
-      "summary": "AWS Bedrock service operations - fetch foundation models, inference profiles, prefix mapping, and profile management",
-      "methods": [
-        {"name": "_load_prefix_mapping", "description": "Load prefix mapping from metadata file with caching"},
-        {"name": "get_endpoint_quota_keywords", "description": "Get mapping of endpoint prefix to quota keyword (on-demand, cross-region, global)"},
-        {"name": "get_endpoint_descriptions", "description": "Get mapping of endpoint prefix to description"},
-        {"name": "get_regional_profile_prefixes", "description": "Get list of regional profile prefixes (us, eu, jp, au, apac, ca)"},
-        {"name": "get_default_region_prefix_map", "description": "Get mapping of region prefix to system profile prefix"},
-        {"name": "discover_prefix_mapping", "description": "Discover system profile prefixes from Bedrock API by analyzing SYSTEM_DEFINED profiles"},
-        {"name": "fetch_foundation_models", "description": "Fetch foundation models for a region via list_foundation_models API"},
-        {"name": "fetch_all_inference_profiles", "description": "Fetch ALL system inference profiles in region"},
-        {"name": "build_profile_map", "description": "Build mapping: model_id → [profile_prefixes]"},
-        {"name": "get_inference_profile_arn", "description": "Get the ARN of a system-defined inference profile"},
-        {"name": "create_application_inference_profile", "description": "Create an application inference profile"}
-      ],
-      "imports_libraries": ["boto3", "sys", "os", "logging", "typing"],
-      "imports_files": ["bedrock_usage_analyzer.utils.yaml_handler"]
-    },
-    {
-      "path": "src/bedrock_usage_analyzer/aws/bedrock_llm.py",
-      "summary": "Bedrock LLM invocation for intelligent quota mapping - uses Claude to extract model common names and map quotas",
-      "methods": [
-        {"name": "extract_common_name", "description": "Extract common model name using LLM with tool call (e.g., 'nova-lite' → 'nova')"},
-        {"name": "extract_quota_codes", "description": "Extract quota codes for TPM/RPM/TPD/concurrent using LLM to match model to quotas"}
-      ],
-      "imports_libraries": ["boto3", "sys", "typing"],
-      "imports_files": ["bedrock_usage_analyzer.aws.bedrock"]
-    },
-    {
-      "path": "src/bedrock_usage_analyzer/aws/servicequotas.py",
-      "summary": "AWS Service Quotas operations - fetch and query Bedrock service quotas",
-      "methods": [
-        {"name": "fetch_service_quotas", "description": "Fetch all service quotas for Bedrock in a region"},
-        {"name": "get_quota_details", "description": "Get details for a specific quota by code"}
-      ],
-      "imports_libraries": ["boto3", "sys", "typing"],
+      "path": "src/bedrock_usage_analyzer/sync/__init__.py",
+      "summary": "Empty package initialization for sync module",
+      "imports_libraries": [],
       "imports_files": []
     },
     {
-      "path": "src/bedrock_usage_analyzer/aws/sts.py",
-      "summary": "AWS STS (Security Token Service) operations - get current account ID",
+      "path": "src/bedrock_usage_analyzer/sync/fm_list.py",
+      "summary": "Foundation model list management - refresh FM lists per region with inference profile mapping",
       "methods": [
-        {"name": "get_account_id", "description": "Get current AWS account ID via get_caller_identity"}
+        {
+          "name": "load_existing_models",
+          "description": "Load existing models from YAML file to preserve quota mappings"
+        },
+        {
+          "name": "save_models",
+          "description": "Save models to YAML file sorted by provider and model_id"
+        },
+        {
+          "name": "refresh_region",
+          "description": "Refresh foundation models for a region including prefix mapping discovery"
+        },
+        {
+          "name": "refresh_all_regions",
+          "description": "Refresh foundation models for all regions"
+        }
       ],
-      "imports_libraries": ["boto3"],
+      "imports_libraries": [
+        "logging",
+        "typing"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.aws.bedrock",
+        "bedrock_usage_analyzer.utils.paths",
+        "bedrock_usage_analyzer.utils.yaml_handler"
+      ]
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/sync/quota_index.py",
+      "summary": "Generate quota index CSV for validation - merges quota mappings from all regions and validates against AWS",
+      "classes": [
+        {
+          "name": "QuotaIndexGenerator",
+          "description": "Generates CSV index of all quota mappings for validation with error cleanup"
+        }
+      ],
+      "methods": [
+        {
+          "name": "__init__",
+          "description": "Initialize generator with empty models and entries"
+        },
+        {
+          "name": "run",
+          "description": "Execute quota index generation workflow, supports update_bundle flag"
+        },
+        {
+          "name": "_load_all_models",
+          "description": "Load all FM list files and merge endpoints from all regions"
+        },
+        {
+          "name": "_merge_endpoints",
+          "description": "Merge endpoints from model into existing model entry"
+        },
+        {
+          "name": "_extract_quota_entries",
+          "description": "Extract all unique quota mappings from models"
+        },
+        {
+          "name": "_fetch_quota_details",
+          "description": "Fetch quota details from AWS for entries without names"
+        },
+        {
+          "name": "_cleanup_errors",
+          "description": "Remove ERROR entries from YAML files"
+        },
+        {
+          "name": "_missing_in",
+          "description": ""
+        },
+        {
+          "name": "_cleanup_region_errors",
+          "description": "Clean up errors for a specific region"
+        },
+        {
+          "name": "_generate_csv",
+          "description": "Generate CSV file with valid entries"
+        },
+        {
+          "name": "main",
+          "description": "Entry point for standalone execution"
+        }
+      ],
+      "imports_libraries": [
+        "logging",
+        "sys",
+        "typing"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.aws.bedrock",
+        "bedrock_usage_analyzer.aws.servicequotas",
+        "bedrock_usage_analyzer.sync.quota_rules",
+        "bedrock_usage_analyzer.utils.csv_handler",
+        "bedrock_usage_analyzer.utils.paths",
+        "bedrock_usage_analyzer.utils.yaml_handler"
+      ]
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/sync/quota_mapper.py",
+      "summary": "Foundation model quota mapping using Bedrock LLM - intelligently maps FMs to their service quotas",
+      "classes": [
+        {
+          "name": "QuotaMapper",
+          "description": "Maps foundation models to their service quotas using Bedrock LLM with caching for efficiency"
+        }
+      ],
+      "methods": [
+        {
+          "name": "_normalize",
+          "description": "Lower-case and collapse '-', '_' and spaces so model IDs match quota names."
+        },
+        {
+          "name": "__init__",
+          "description": "Initialize quota mapper with Bedrock region, model ID, and optional target region"
+        },
+        {
+          "name": "run",
+          "description": "Execute quota mapping for all regions, supports update_bundle flag"
+        },
+        {
+          "name": "_get_regions_to_process",
+          "description": "Get list of regions to process based on target_region filter"
+        },
+        {
+          "name": "_process_region",
+          "description": "Process quota mapping for a single region"
+        },
+        {
+          "name": "_get_endpoints_to_process",
+          "description": "Determine which endpoints to process for a model"
+        },
+        {
+          "name": "_get_quota_mapping",
+          "description": "Get quota mapping for a specific endpoint using LLM"
+        },
+        {
+          "name": "_drop_invalid_choices",
+          "description": "Reject LLM picks outside the candidate list or contradicting the model/endpoint."
+        },
+        {
+          "name": "_find_matching_quotas",
+          "description": "Find quotas matching the common name and endpoint type via keyword search"
+        },
+        {
+          "name": "_get_common_name",
+          "description": "Get common name for model with caching"
+        },
+        {
+          "name": "_load_fm_list",
+          "description": "Load FM list for region"
+        },
+        {
+          "name": "_save_fm_list",
+          "description": "Save FM list for region, optionally to bundle"
+        }
+      ],
+      "imports_libraries": [
+        "copy",
+        "logging",
+        "sys",
+        "typing"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.aws.bedrock",
+        "bedrock_usage_analyzer.aws.bedrock_llm",
+        "bedrock_usage_analyzer.aws.servicequotas",
+        "bedrock_usage_analyzer.sync.quota_rules",
+        "bedrock_usage_analyzer.sync.regions",
+        "bedrock_usage_analyzer.utils.paths",
+        "bedrock_usage_analyzer.utils.yaml_handler"
+      ]
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/sync/quota_rules.py",
+      "summary": "Deterministic checks that veto wrong quota mappings.",
+      "methods": [
+        {
+          "name": "model_version",
+          "description": "The model generation encoded in a model ID, e.g. '4.6' for claude-sonnet-4-6."
+        },
+        {
+          "name": "_canonical",
+          "description": "'3.0' and '3' are the same generation."
+        },
+        {
+          "name": "quota_versions",
+          "description": "Stand-alone version numbers in a quota name."
+        },
+        {
+          "name": "mapping_conflict",
+          "description": "Return why ``quota_name`` cannot be a quota of this model endpoint, or None."
+        }
+      ],
+      "imports_libraries": [
+        "re",
+        "typing"
+      ],
+      "imports_files": []
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/sync/regions.py",
+      "summary": "AWS regions management - fetch enabled regions",
+      "methods": [
+        {
+          "name": "_region_name",
+          "description": "Accept both plain names and {'name': ...} entries in regions.yml."
+        },
+        {
+          "name": "normalize_region_names",
+          "description": "Return a sorted, de-duplicated list of region names from regions.yml entries."
+        },
+        {
+          "name": "read_region_file",
+          "description": "Region names from one regions.yml file ([] if it does not exist)."
+        },
+        {
+          "name": "load_region_names",
+          "description": "Load region names: the user's regions.yml, plus bundled regions of partitions it lacks."
+        },
+        {
+          "name": "credentials_partition_or_exit",
+          "description": "Partition of the current credentials; exit with advice when it cannot be read."
+        },
+        {
+          "name": "regions_for_credentials",
+          "description": "Filter regions to the partition of the current credentials."
+        },
+        {
+          "name": "_home_region",
+          "description": "A region in ``partition`` to pin regional API calls to."
+        },
+        {
+          "name": "_fetch_via_account_api",
+          "description": ""
+        },
+        {
+          "name": "_fetch_via_ec2",
+          "description": ""
+        },
+        {
+          "name": "fetch_enabled_regions",
+          "description": "Fetch enabled AWS regions for the account via account:ListRegions"
+        },
+        {
+          "name": "merge_regions",
+          "description": "Replace the regions of ``partition`` in ``existing`` with ``fresh``."
+        },
+        {
+          "name": "discover_regions",
+          "description": "Return (partition, regions) enabled for the current credentials, minus SKIP_REGIONS."
+        },
+        {
+          "name": "refresh_regions",
+          "description": "Refresh the regions list and return data dict"
+        },
+        {
+          "name": "main",
+          "description": "Entry point for standalone execution"
+        }
+      ],
+      "imports_libraries": [
+        "boto3",
+        "logging",
+        "os",
+        "sys",
+        "typing"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.aws.client_factory",
+        "bedrock_usage_analyzer.utils.partition",
+        "bedrock_usage_analyzer.utils.paths",
+        "bedrock_usage_analyzer.utils.yaml_handler"
+      ]
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/templates/__init__.py",
+      "summary": "Empty package initialization for templates module",
+      "imports_libraries": [],
       "imports_files": []
     },
     {
@@ -210,128 +1026,333 @@
       "path": "src/bedrock_usage_analyzer/utils/csv_handler.py",
       "summary": "Secure CSV file operations using defusedcsv library",
       "methods": [
-        {"name": "write_csv", "description": "Write data to CSV file securely with headers and rows"},
-        {"name": "read_csv", "description": "Read CSV file securely, returns (headers, rows)"}
+        {
+          "name": "write_csv",
+          "description": "Write data to CSV file securely with headers and rows"
+        },
+        {
+          "name": "read_csv",
+          "description": "Read CSV file securely, returns (headers, rows)"
+        }
       ],
-      "imports_libraries": ["defusedcsv"],
+      "imports_libraries": [
+        "defusedcsv"
+      ],
+      "imports_files": []
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/utils/partition.py",
+      "summary": "AWS partition utilities (commercial, GovCloud, China and other partitions).",
+      "methods": [
+        {
+          "name": "_load_endpoint_data",
+          "description": ""
+        },
+        {
+          "name": "get_partition_for_region",
+          "description": "Return the partition ('aws', 'aws-us-gov', 'aws-cn', ...) of a region."
+        },
+        {
+          "name": "is_govcloud_region",
+          "description": "True for AWS GovCloud (US) regions such as us-gov-west-1."
+        },
+        {
+          "name": "get_partition_display_name",
+          "description": ""
+        },
+        {
+          "name": "get_region_display_name",
+          "description": "Human-readable region name, e.g. 'AWS GovCloud (US-West)'."
+        },
+        {
+          "name": "get_region_info",
+          "description": "Region metadata used by the reports and the region picker."
+        },
+        {
+          "name": "build_arn",
+          "description": "Build an ARN in the partition that owns ``region``."
+        },
+        {
+          "name": "get_console_domain",
+          "description": "Console domain for the region's partition, or None if there is no public console."
+        },
+        {
+          "name": "get_service_quotas_console_url",
+          "description": "Link to the Service Quotas console home for the region's partition."
+        },
+        {
+          "name": "get_service_quota_url",
+          "description": "Console URL of one quota, in the partition that owns ``region``."
+        },
+        {
+          "name": "partition_regions",
+          "description": "All regions botocore knows for a partition (used as an offline fallback)."
+        },
+        {
+          "name": "filter_regions_by_partition",
+          "description": "Keep only the regions that belong to ``partition`` (all regions if None)."
+        },
+        {
+          "name": "is_valid_region_name",
+          "description": "True for names shaped like AWS regions ('us-west-2', 'us-gov-west-1', 'eusc-de-east-1')."
+        },
+        {
+          "name": "region_hint",
+          "description": "Region configured in the environment or AWS config, if any."
+        },
+        {
+          "name": "get_caller_identity",
+          "description": "Return {'Account', 'Arn', 'Partition'} for the current credentials (cached)."
+        },
+        {
+          "name": "detect_credentials_partition",
+          "description": "Partition of the current credentials, or None if it cannot be determined."
+        },
+        {
+          "name": "clear_cache",
+          "description": "Forget cached caller identities and config regions (used by tests)."
+        }
+      ],
+      "imports_libraries": [
+        "boto3",
+        "botocore",
+        "logging",
+        "os",
+        "re",
+        "typing"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.aws.client_factory"
+      ]
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/utils/paths.py",
+      "summary": "Path resolution for metadata files using platformdirs.",
+      "methods": [
+        {
+          "name": "get_user_data_dir",
+          "description": "Get writable user data directory (env var or platformdirs)."
+        },
+        {
+          "name": "get_bundled_data_dir",
+          "description": "Get bundled metadata directory (read-only)."
+        },
+        {
+          "name": "get_bundled_file",
+          "description": "Filesystem path of a bundled metadata file, or None."
+        },
+        {
+          "name": "load_bundled_yaml",
+          "description": "Parse a bundled YAML file straight from package resources (works for zip installs too)."
+        },
+        {
+          "name": "get_data_path",
+          "description": "Get path for reading a metadata file."
+        },
+        {
+          "name": "get_writable_path",
+          "description": "Get path for writing a metadata file."
+        },
+        {
+          "name": "get_bundle_path",
+          "description": "Get bundled data path if in dev environment."
+        },
+        {
+          "name": "list_data_files",
+          "description": "List metadata files matching pattern."
+        },
+        {
+          "name": "is_using_customized_metadata",
+          "description": "Check if using customized (user-refreshed) metadata."
+        },
+        {
+          "name": "get_metadata_location_message",
+          "description": "Get user-friendly message about metadata location for analysis."
+        },
+        {
+          "name": "get_refresh_location_message",
+          "description": "Get user-friendly message about where refresh will save."
+        },
+        {
+          "name": "get_default_results_dir",
+          "description": "Get default results directory (user data dir / results)."
+        }
+      ],
+      "imports_libraries": [
+        "importlib",
+        "os",
+        "pathlib",
+        "platformdirs",
+        "typing",
+        "yaml"
+      ],
       "imports_files": []
     },
     {
       "path": "src/bedrock_usage_analyzer/utils/ui.py",
       "summary": "Interactive UI for parameter selection - numbered list selection and quota mapping parameter prompts",
       "methods": [
-        {"name": "select_from_list", "description": "Generic numbered selection from list with optional display function"},
-        {"name": "select_quota_mapping_params", "description": "Interactive selection for quota mapping parameters (region, model)"},
-        {"name": "main", "description": "Entry point for standalone UI testing"}
+        {
+          "name": "select_from_list",
+          "description": "Generic numbered selection from list with optional display function"
+        },
+        {
+          "name": "select_quota_mapping_params",
+          "description": "Interactive selection for quota mapping parameters (region, model)"
+        },
+        {
+          "name": "main",
+          "description": "Entry point for standalone UI testing"
+        }
       ],
-      "imports_libraries": ["sys", "typing"],
-      "imports_files": ["bedrock_usage_analyzer.utils.yaml_handler"]
+      "imports_libraries": [
+        "sys",
+        "typing"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.sync.regions",
+        "bedrock_usage_analyzer.utils.partition"
+      ]
     },
     {
       "path": "src/bedrock_usage_analyzer/utils/yaml_handler.py",
       "summary": "Centralized YAML file operations with UTF-8 encoding",
       "methods": [
-        {"name": "load_yaml", "description": "Load YAML file with UTF-8 encoding using safe_load"},
-        {"name": "save_yaml", "description": "Save data to YAML file with UTF-8 encoding"}
+        {
+          "name": "load_yaml",
+          "description": "Load YAML file with UTF-8 encoding using safe_load"
+        },
+        {
+          "name": "save_yaml",
+          "description": "Save data to YAML file with UTF-8 encoding"
+        }
       ],
-      "imports_libraries": ["yaml"],
+      "imports_libraries": [
+        "yaml"
+      ],
       "imports_files": []
     },
     {
-      "path": "src/bedrock_usage_analyzer/sync/__init__.py",
-      "summary": "Empty package initialization for sync module",
-      "imports_libraries": [],
-      "imports_files": []
+      "path": "tests/conftest.py",
+      "summary": "Shared fixtures: no test may reach AWS or the user's real metadata directory.",
+      "imports_libraries": [
+        "pytest"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.aws",
+        "bedrock_usage_analyzer.utils"
+      ]
     },
     {
-      "path": "src/bedrock_usage_analyzer/sync/regions.py",
-      "summary": "AWS regions management - fetch enabled regions",
-      "methods": [
-        {"name": "fetch_enabled_regions", "description": "Fetch enabled AWS regions for the account via account:ListRegions"},
-        {"name": "refresh_regions", "description": "Refresh the regions list and return data dict"},
-        {"name": "main", "description": "Entry point for standalone execution"}
+      "path": "tests/test_analyzer_and_output.py",
+      "summary": "Analyzer pipeline with fake AWS clients, and report generation.",
+      "imports_libraries": [
+        "conftest",
+        "datetime",
+        "json",
+        "logging",
+        "os",
+        "pytest"
       ],
-      "imports_libraries": ["boto3", "logging", "typing", "sys"],
-      "imports_files": ["bedrock_usage_analyzer.utils.yaml_handler", "bedrock_usage_analyzer.utils.paths"]
+      "imports_files": [
+        "bedrock_usage_analyzer.core",
+        "bedrock_usage_analyzer.core.analyzer",
+        "bedrock_usage_analyzer.core.output_generator",
+        "bedrock_usage_analyzer.core.profile_fetcher"
+      ]
     },
     {
-      "path": "src/bedrock_usage_analyzer/sync/fm_list.py",
-      "summary": "Foundation model list management - refresh FM lists per region with inference profile mapping",
-      "methods": [
-        {"name": "load_existing_models", "description": "Load existing models from YAML file to preserve quota mappings"},
-        {"name": "save_models", "description": "Save models to YAML file sorted by provider and model_id"},
-        {"name": "refresh_region", "description": "Refresh foundation models for a region including prefix mapping discovery"},
-        {"name": "refresh_all_regions", "description": "Refresh foundation models for all regions"}
+      "path": "tests/test_cli_and_sync.py",
+      "summary": "CLI argument handling, error hints, and metadata sync behaviour.",
+      "imports_libraries": [
+        "botocore",
+        "pytest",
+        "sys"
       ],
-      "imports_libraries": ["os", "logging", "typing"],
-      "imports_files": ["bedrock_usage_analyzer.utils.yaml_handler", "bedrock_usage_analyzer.utils.paths", "bedrock_usage_analyzer.aws.bedrock"]
+      "imports_files": [
+        "bedrock_usage_analyzer.__main__",
+        "bedrock_usage_analyzer.aws",
+        "bedrock_usage_analyzer.aws.servicequotas",
+        "bedrock_usage_analyzer.core.errors",
+        "bedrock_usage_analyzer.sync",
+        "bedrock_usage_analyzer.utils",
+        "bedrock_usage_analyzer.utils.paths",
+        "bedrock_usage_analyzer.utils.yaml_handler"
+      ]
     },
     {
-      "path": "src/bedrock_usage_analyzer/sync/quota_mapper.py",
-      "summary": "Foundation model quota mapping using Bedrock LLM - intelligently maps FMs to their service quotas",
-      "classes": [
-        {
-          "name": "QuotaMapper",
-          "description": "Maps foundation models to their service quotas using Bedrock LLM with caching for efficiency"
-        }
+      "path": "tests/test_partition.py",
+      "summary": "Partition helpers: offline resolution, ARNs, console links, caller identity.",
+      "imports_libraries": [
+        "pytest"
       ],
-      "methods": [
-        {"name": "__init__", "description": "Initialize quota mapper with Bedrock region, model ID, and optional target region"},
-        {"name": "run", "description": "Execute quota mapping for all regions, supports update_bundle flag"},
-        {"name": "_get_regions_to_process", "description": "Get list of regions to process based on target_region filter"},
-        {"name": "_process_region", "description": "Process quota mapping for a single region"},
-        {"name": "_get_endpoints_to_process", "description": "Determine which endpoints to process for a model"},
-        {"name": "_get_quota_mapping", "description": "Get quota mapping for a specific endpoint using LLM"},
-        {"name": "_find_matching_quotas", "description": "Find quotas matching the common name and endpoint type via keyword search"},
-        {"name": "_get_common_name", "description": "Get common name for model with caching"},
-        {"name": "_load_fm_list", "description": "Load FM list for region"},
-        {"name": "_save_fm_list", "description": "Save FM list for region, optionally to bundle"}
-      ],
-      "imports_libraries": ["logging", "copy", "sys", "typing"],
-      "imports_files": ["bedrock_usage_analyzer.utils.yaml_handler", "bedrock_usage_analyzer.utils.paths", "bedrock_usage_analyzer.aws.servicequotas", "bedrock_usage_analyzer.aws.bedrock_llm", "bedrock_usage_analyzer.aws.bedrock"]
+      "imports_files": [
+        "bedrock_usage_analyzer.aws.client_factory",
+        "bedrock_usage_analyzer.utils"
+      ]
     },
     {
-      "path": "src/bedrock_usage_analyzer/sync/quota_index.py",
-      "summary": "Generate quota index CSV for validation - merges quota mappings from all regions and validates against AWS",
-      "classes": [
-        {
-          "name": "QuotaIndexGenerator",
-          "description": "Generates CSV index of all quota mappings for validation with error cleanup"
-        }
+      "path": "tests/test_profile_fetcher.py",
+      "summary": "Application inference profile source resolution (issue #7) and discovery.",
+      "imports_libraries": [
+        "conftest",
+        "pytest"
       ],
-      "methods": [
-        {"name": "__init__", "description": "Initialize generator with empty models and entries"},
-        {"name": "run", "description": "Execute quota index generation workflow, supports update_bundle flag"},
-        {"name": "_load_all_models", "description": "Load all FM list files and merge endpoints from all regions"},
-        {"name": "_merge_endpoints", "description": "Merge endpoints from model into existing model entry"},
-        {"name": "_extract_quota_entries", "description": "Extract all unique quota mappings from models"},
-        {"name": "_fetch_quota_details", "description": "Fetch quota details from AWS for entries without names"},
-        {"name": "_cleanup_errors", "description": "Remove ERROR entries from YAML files"},
-        {"name": "_cleanup_region_errors", "description": "Clean up errors for a specific region"},
-        {"name": "_generate_csv", "description": "Generate CSV file with valid entries"},
-        {"name": "main", "description": "Entry point for standalone execution"}
-      ],
-      "imports_libraries": ["glob", "logging", "typing", "sys"],
-      "imports_files": ["bedrock_usage_analyzer.utils.yaml_handler", "bedrock_usage_analyzer.utils.csv_handler", "bedrock_usage_analyzer.utils.paths", "bedrock_usage_analyzer.aws.servicequotas"]
+      "imports_files": [
+        "bedrock_usage_analyzer.aws",
+        "bedrock_usage_analyzer.aws.bedrock",
+        "bedrock_usage_analyzer.core.profile_fetcher",
+        "bedrock_usage_analyzer.utils.yaml_handler"
+      ]
     },
     {
-      "path": "src/bedrock_usage_analyzer/__main__.py",
-      "summary": "Unified CLI entry point - handles analyze and refresh subcommands with argparse",
-      "methods": [
-        {"name": "cmd_analyze", "description": "Run usage analysis"},
-        {"name": "cmd_refresh_regions", "description": "Refresh regions list"},
-        {"name": "cmd_refresh_fm_list", "description": "Refresh FM lists"},
-        {"name": "cmd_refresh_fm_quotas", "description": "Refresh quota mappings"},
-        {"name": "cmd_refresh_quota_index", "description": "Generate quota index CSV"},
-        {"name": "main", "description": "Main entry point with argparse subcommands"}
+      "path": "tests/test_quota_rules.py",
+      "summary": "Deterministic vetoes for wrong quota mappings, and their use in mapping and validation.",
+      "imports_libraries": [
+        "pytest"
       ],
-      "imports_libraries": ["sys", "logging", "traceback", "argparse"],
-      "imports_files": ["bedrock_usage_analyzer.utils.paths", "bedrock_usage_analyzer.core.user_inputs", "bedrock_usage_analyzer.core.analyzer", "bedrock_usage_analyzer.sync.regions", "bedrock_usage_analyzer.sync.fm_list", "bedrock_usage_analyzer.sync.quota_mapper", "bedrock_usage_analyzer.sync.quota_index"]
+      "imports_files": [
+        "bedrock_usage_analyzer.sync",
+        "bedrock_usage_analyzer.sync.quota_rules",
+        "bedrock_usage_analyzer.utils.yaml_handler"
+      ]
     },
     {
-      "path": "src/bedrock_usage_analyzer/templates/__init__.py",
-      "summary": "Empty package initialization for templates module",
-      "imports_libraries": [],
+      "path": "tests/test_regions.py",
+      "summary": "Region discovery and filtering across partitions.",
+      "imports_libraries": [
+        "pytest",
+        "sys"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.__main__",
+        "bedrock_usage_analyzer.sync",
+        "bedrock_usage_analyzer.utils.yaml_handler"
+      ]
+    },
+    {
+      "path": "tests/test_user_inputs.py",
+      "summary": "CLI model parsing, region checks, and interactive selection flows.",
+      "imports_libraries": [
+        "builtins",
+        "conftest",
+        "pytest",
+        "sys"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.__main__",
+        "bedrock_usage_analyzer.core",
+        "bedrock_usage_analyzer.core.profile_fetcher",
+        "bedrock_usage_analyzer.core.user_inputs",
+        "bedrock_usage_analyzer.utils.partition"
+      ]
+    },
+    {
+      "path": "setup.py",
+      "summary": "Setup script for backward compatibility with older pip versions - delegates to pyproject.toml",
+      "imports_libraries": [
+        "setuptools"
+      ],
       "imports_files": []
     },
     {
@@ -361,10 +1382,6 @@
     {
       "path": "pyproject.toml",
       "summary": "Project configuration - defines package metadata, dependencies (boto3, numpy, jinja2, pyyaml, defusedcsv), and setuptools config"
-    },
-    {
-      "path": "setup.py",
-      "summary": "Setup script for backward compatibility with older pip versions - delegates to pyproject.toml"
     },
     {
       "path": "requirements.txt",
@@ -401,6 +1418,10 @@
     {
       "path": "CONTRIBUTING.md",
       "summary": "Contributing guidelines - describes how to report bugs, request features, contribute code, and licensing requirements"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "summary": "Release notes"
     }
   ]
 }

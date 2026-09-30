@@ -36,6 +36,16 @@ def fetch_service_quotas(region: str, service_code: str = 'bedrock') -> Optional
         return None
 
 
+_clients: Dict[str, object] = {}
+
+
+def _client(region: str):
+    """One Service Quotas client per region, reused across quota lookups."""
+    if region not in _clients:
+        _clients[region] = create_client('service-quotas', region)
+    return _clients[region]
+
+
 QUOTA_OK = 'ok'
 QUOTA_MISSING = 'missing'
 QUOTA_ERROR = 'error'
@@ -50,8 +60,7 @@ def check_quota(quota_code: str, region: str, service_code: str = 'bedrock'):
         network, permissions), which callers must not treat as "missing".
     """
     try:
-        client = create_client('service-quotas', region)
-        response = client.get_service_quota(ServiceCode=service_code, QuotaCode=quota_code)
+        response = _client(region).get_service_quota(ServiceCode=service_code, QuotaCode=quota_code)
         return QUOTA_OK, response.get('Quota', {})
     except ClientError as e:
         if e.response.get('Error', {}).get('Code') == 'NoSuchResourceException':
@@ -62,29 +71,3 @@ def check_quota(quota_code: str, region: str, service_code: str = 'bedrock'):
         print(f"Error fetching quota {quota_code}: {e}", file=sys.stderr)
         return QUOTA_ERROR, None
 
-
-def get_quota_details(quota_code: str, region: str, service_code: str = 'bedrock') -> Optional[Dict]:
-    """Get details for a specific quota
-
-    Args:
-        quota_code: Quota code (L-xxx)
-        region: AWS region
-        service_code: AWS service code (default: bedrock)
-
-    Returns:
-        Quota details dictionary or None if not found
-    """
-    try:
-        client = create_client('service-quotas', region)
-        response = client.get_service_quota(
-            ServiceCode=service_code,
-            QuotaCode=quota_code
-        )
-        return response.get('Quota', {})
-    except ClientError as e:
-        if e.response.get('Error', {}).get('Code') != 'NoSuchResourceException':
-            print(f"Error fetching quota {quota_code}: {e}", file=sys.stderr)
-        return None
-    except Exception as e:
-        print(f"Error fetching quota {quota_code}: {e}", file=sys.stderr)
-        return None

@@ -10,11 +10,12 @@ import pytest
 from bedrock_usage_analyzer.core import user_inputs as ui_module
 from bedrock_usage_analyzer.core.profile_fetcher import InferenceProfileFetcher
 from bedrock_usage_analyzer.core.user_inputs import (
-    REGION_PATTERN,
     UserInputs,
     group_application_profiles,
     parse_selection,
 )
+
+from bedrock_usage_analyzer.utils.partition import REGION_PATTERN
 
 from conftest import HAIKU, NOVA
 
@@ -327,3 +328,10 @@ def test_china_credentials_are_identified(monkeypatch, caplog):
     with pytest.raises(SystemExit):
         UserInputs()._get_current_account('us-east-1')
     assert 'but the credentials are for AWS China' in caplog.text
+
+
+def test_manual_entry_typo_skips_model_instead_of_exiting(inputs, monkeypatch):
+    monkeypatch.setattr(inputs, '_load_fm_list',
+                        lambda region: [{'model_id': 'x.y-v1:0', 'provider': 'X', 'endpoints': {}}])
+    feed(monkeypatch, ['1', '1', 'claude'])
+    assert inputs._select_model('ap-southeast-2') is None

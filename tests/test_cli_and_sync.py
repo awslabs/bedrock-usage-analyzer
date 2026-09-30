@@ -112,18 +112,6 @@ def test_quota_mapper_rejects_region_outside_partition(monkeypatch):
         qm.QuotaMapper('us-east-1', 'model', 'us-gov-west-1')._get_regions_to_process()
 
 
-def test_get_quota_details_handles_missing_quota(monkeypatch):
-    from botocore.exceptions import ClientError
-    from bedrock_usage_analyzer.aws import servicequotas
-
-    class Client:
-        def get_service_quota(self, **_):
-            raise ClientError({'Error': {'Code': 'NoSuchResourceException', 'Message': 'x'}}, 'GetServiceQuota')
-
-    monkeypatch.setattr(servicequotas, 'create_client', lambda *a, **k: Client())
-    assert servicequotas.get_quota_details('L-1', 'us-east-1') is None
-
-
 def test_sts_get_account_id(monkeypatch):
     from bedrock_usage_analyzer.aws import sts
     monkeypatch.setattr(sts, 'get_caller_identity', lambda region=None: {'Account': '42'})
@@ -237,10 +225,11 @@ def test_quota_index_refreshes_names(monkeypatch, tmp_path):
     from bedrock_usage_analyzer.sync import quota_index
     from bedrock_usage_analyzer.aws.servicequotas import QUOTA_OK
     _index_fixture(tmp_path, {'tpm': 'L-1', 'rpm': 'L-2'})
-    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: (QUOTA_OK, {'QuotaName': f'new {code}'}))
+    names = {'L-1': 'On-demand tokens per minute for Model One', 'L-2': 'On-demand requests per minute for Model One'}
+    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: (QUOTA_OK, {'QuotaName': names[code]}))
     gen = quota_index.QuotaIndexGenerator()
     gen.run()
-    assert {e['quota_name'] for e in gen.entries} == {'new L-1', 'new L-2'}
+    assert {e['quota_name'] for e in gen.entries} == set(names.values())
 
 
 def test_check_quota_statuses(monkeypatch):
@@ -258,6 +247,7 @@ def test_check_quota_statuses(monkeypatch):
     for code, expected in ((None, sq.QUOTA_OK), ('NoSuchResourceException', sq.QUOTA_MISSING),
                            ('ThrottlingException', sq.QUOTA_ERROR)):
         monkeypatch.setattr(sq, 'create_client', lambda *a, _c=code, **k: client_for(_c))
+        sq._clients.clear()
         assert sq.check_quota('L-1', 'us-east-1')[0] == expected
 
 
