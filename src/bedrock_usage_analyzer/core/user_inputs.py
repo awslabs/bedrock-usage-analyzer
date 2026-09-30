@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 # AWS region names: 'us-west-2', 'us-gov-west-1', 'cn-north-1', 'eusc-de-east-1'
 REGION_PATTERN = re.compile(r'^[a-z]{2,5}(-[a-z0-9]+){1,3}-\d{1,2}$')
 
+# One STS region per partition, used to tell which partition rejected credentials belong to
+PARTITION_PROBE_REGIONS = ('us-east-1', 'us-gov-west-1')
+
 
 def parse_selection(text: str, count: int) -> List[int]:
     """Parse '1,3-5' or 'all' into sorted 0-based indices; raises ValueError on bad input."""
@@ -68,6 +71,30 @@ def group_application_profiles(profiles: Sequence[Dict]) -> List[Dict]:
         if app['id'] not in config['application_profile_ids']:
             config['application_profile_ids'].append(app['id'])
     return list(groups.values())
+
+
+def merge_application_configs(configs: Sequence[Dict]) -> List[Dict]:
+    """Combine application-profile configs that share a source endpoint.
+
+    `-m id1 -m id2` for two profiles of the same endpoint gives one aggregated
+    report, the same as selecting both interactively.
+    """
+    merged: List[Dict] = []
+    by_source: Dict[tuple, Dict] = {}
+    for config in configs:
+        ids = config.get('application_profile_ids')
+        if not ids:
+            if config not in merged:
+                merged.append(config)
+            continue
+        key = (config['model_id'], config['profile_prefix'])
+        if key in by_source:
+            target = by_source[key]['application_profile_ids']
+            target.extend(i for i in ids if i not in target)
+        else:
+            by_source[key] = {**config, 'application_profile_ids': list(ids)}
+            merged.append(by_source[key])
+    return merged
 
 
 class UserInputs:
@@ -115,7 +142,7 @@ class UserInputs:
 
         # Region selection (skip if provided via CLI)
         if region:
-            self._check_region_partition(region)
+            # A region of another partition was already rejected by the STS call above
             self.region = region
             logger.info(f"\nUsing region: {region}")
         else:
@@ -134,9 +161,11 @@ class UserInputs:
         # Model selection (skip if provided via CLI)
         if model_id:
             values = [model_id] if isinstance(model_id, str) else list(model_id)
+            configs = []
             for value in values:
-                self._add_models([self._parse_model_id(value)])
+                configs.append(self._parse_model_id(value))
                 logger.info(f"\nUsing model: {value}")
+            self._add_models(merge_application_configs(configs))
         else:
             # Model selection loop
             while True:
@@ -189,12 +218,18 @@ class UserInputs:
         """
         if not region:
             return
-        try:
-            identity = get_caller_identity(None)
-        except Exception:
+        requested = get_partition_for_region(region)
+        # Configured region first, then one region per other partition (the global
+        # commercial STS endpoint rejects GovCloud credentials, so try GovCloud STS too)
+        probes = [None] + [r for r in PARTITION_PROBE_REGIONS if get_partition_for_region(r) != requested]
+        for probe in probes:
+            try:
+                identity = get_caller_identity(probe)
+            except Exception:
+                continue
+            self.partition = identity['Partition']
+            self._check_region_partition(region)
             return
-        self.partition = identity['Partition']
-        self._check_region_partition(region)
 
     def _check_region_partition(self, region):
         """Stop early when the region belongs to a different partition than the credentials."""

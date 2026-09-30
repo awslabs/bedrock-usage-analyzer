@@ -18,14 +18,20 @@ from botocore.config import Config
 # the number of workers or urllib3 discards connections ("Connection pool is full").
 DEFAULT_MAX_POOL_CONNECTIONS = 50
 
+# Bulk data calls are throttled under load, so they retry longer with client-side
+# rate adaptation. Interactive and one-off calls (STS, account, EC2) keep
+# botocore's standard policy so a bad network fails in seconds, not minutes.
+_BULK_SERVICES = {'cloudwatch', 'service-quotas', 'bedrock', 'bedrock-runtime'}
+
 
 def create_client(service: str, region: Optional[str] = None,
                   max_pool_connections: int = DEFAULT_MAX_POOL_CONNECTIONS):
-    """Create a boto3 client for ``service`` in ``region`` with adaptive retries."""
-    config = Config(
-        retries={'max_attempts': 10, 'mode': 'adaptive'},
-        max_pool_connections=max_pool_connections,
-    )
+    """Create a boto3 client for ``service`` in ``region``."""
+    if service in _BULK_SERVICES:
+        retries = {'max_attempts': 8, 'mode': 'adaptive'}
+    else:
+        retries = {'max_attempts': 3, 'mode': 'standard'}
+    config = Config(retries=retries, max_pool_connections=max_pool_connections, connect_timeout=10)
     if region:
         return boto3.client(service, region_name=region, config=config)
     return boto3.client(service, config=config)

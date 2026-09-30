@@ -166,6 +166,26 @@ def test_tag_errors_do_not_break_discovery(sydney_bedrock):
     assert metadata['auapp000001']['tags'] == {}
 
 
-def test_legacy_infer_source_profile_alias(sydney_bedrock):
+def test_listing_denied_still_analyzes_the_endpoint(sydney_bedrock):
+    def denied(**_):
+        raise RuntimeError('AccessDeniedException: not authorized to perform bedrock:ListInferenceProfiles')
+
+    sydney_bedrock.list_inference_profiles = denied
     fetcher = InferenceProfileFetcher(sydney_bedrock)
-    assert fetcher._infer_source_profile(AU_ARNS) == f"au.{HAIKU}"
+    ids, _, _ = fetcher.find_profiles(HAIKU, 'au')
+    assert ids == [f"au.{HAIKU}"]
+    assert fetcher.other_sources_for_model(HAIKU, 'au') == {}
+    with pytest.raises(RuntimeError):
+        fetcher.find_profiles(HAIKU, 'au', application_profile_ids=['auapp000001'])
+
+
+def test_user_prefix_file_from_older_version_keeps_new_prefixes(tmp_path):
+    """An old user prefix-mapping.yml must not hide 'us-gov' or 'in' (TPD doubling depends on it)."""
+    from bedrock_usage_analyzer.aws import bedrock
+    from bedrock_usage_analyzer.utils.yaml_handler import save_yaml
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'prefix-mapping.yml'), {'prefixes': [
+        {'prefix': 'us', 'quota_keyword': 'cross-region', 'description': 'custom', 'is_regional': True}]})
+    bedrock._prefix_mapping_cache = None
+    assert {'us-gov', 'in', 'au', 'us'} <= set(bedrock.get_regional_profile_prefixes())
+    assert bedrock.get_endpoint_descriptions()['us'] == 'custom'   # user entry wins

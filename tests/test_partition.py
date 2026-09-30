@@ -31,8 +31,7 @@ def test_partition_for_region(region, expected):
 def test_region_predicates():
     assert p.is_govcloud_region('us-gov-west-1')
     assert not p.is_govcloud_region('us-west-2')
-    assert p.is_china_region('cn-north-1')
-    assert not p.is_china_region('ca-central-1')
+    assert not p.is_govcloud_region('cn-north-1')
 
 
 def test_display_names_come_from_botocore():
@@ -142,5 +141,6 @@ def test_client_factory_resolves_partition_endpoints(service, region, url):
     client = create_client(service, region)
     assert client.meta.endpoint_url == url
     assert client.meta.region_name == region
-    assert client.meta.config.retries['mode'] == 'adaptive'
+    expected_mode = 'standard' if service == 'sts' else 'adaptive'
+    assert client.meta.config.retries['mode'] == expected_mode
     assert client.meta.config.max_pool_connections >= 16

@@ -26,34 +26,64 @@ KNOWN_PROFILE_PREFIXES = frozenset({'us', 'eu', 'apac', 'jp', 'au', 'ca', 'in', 
 _prefix_mapping_cache = None
 
 
+def _read_prefixes(path) -> List[Dict]:
+    from bedrock_usage_analyzer.utils.yaml_handler import load_yaml
+    try:
+        return (load_yaml(str(path)) or {}).get('prefixes', []) or []
+    except (FileNotFoundError, OSError):
+        return []
+
+
 def _load_prefix_mapping() -> List[Dict]:
-    """Load prefix mapping from metadata file or discover if missing
-    
+    """Load the prefix mapping: bundled entries, overridden by the user's copy
+
+    Merging (instead of letting the user file hide the bundled one) keeps
+    prefixes added in newer releases, such as 'us-gov' and 'in', available to
+    users whose prefix-mapping.yml was written by an older version.
+
     Returns:
         List of prefix mapping dictionaries
-        
+
     Raises:
-        FileNotFoundError: If prefix-mapping.yml doesn't exist
+        FileNotFoundError: If no prefix-mapping.yml exists at all
     """
     global _prefix_mapping_cache
-    
+
     if _prefix_mapping_cache is not None:
         return _prefix_mapping_cache
-    
-    from bedrock_usage_analyzer.utils.yaml_handler import load_yaml
-    from bedrock_usage_analyzer.utils.paths import get_data_path
-    
+
+    from bedrock_usage_analyzer.utils.paths import get_bundled_data_dir, get_user_data_dir
+
+    merged: Dict[str, Dict] = {}
     try:
-        metadata_file = get_data_path('prefix-mapping.yml')
-        data = load_yaml(metadata_file)
-        _prefix_mapping_cache = data.get('prefixes', [])
-        return _prefix_mapping_cache
-    except FileNotFoundError:
+        from importlib.resources import as_file
+        with as_file(get_bundled_data_dir() / 'prefix-mapping.yml') as bundled:
+            for entry in _read_prefixes(bundled):
+                merged[entry['prefix']] = entry
+    except (TypeError, FileNotFoundError, ModuleNotFoundError):
+        pass
+    for entry in _read_prefixes(get_user_data_dir() / 'prefix-mapping.yml'):
+        merged[entry['prefix']] = entry
+
+    if not merged:
         raise FileNotFoundError(
             "\nprefix-mapping.yml not found!\n"
-            "Please run: ./bin/refresh-fm-list\n"
+            "Please run: bua refresh fm-list\n"
             "This will refresh both foundation model lists and prefix mapping."
         )
+    _prefix_mapping_cache = sorted(merged.values(), key=lambda m: m['prefix'])
+    return _prefix_mapping_cache
+
+
+def load_prefix_mapping(refresh: bool = False) -> List[Dict]:
+    """Public accessor for the merged prefix mapping; ``refresh`` re-reads the files."""
+    global _prefix_mapping_cache
+    if refresh:
+        _prefix_mapping_cache = None
+    try:
+        return list(_load_prefix_mapping())
+    except FileNotFoundError:
+        return []
 
 
 def get_endpoint_quota_keywords() -> Dict[str, str]:

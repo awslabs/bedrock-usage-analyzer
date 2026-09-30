@@ -149,3 +149,27 @@ def test_fm_list_refresh_keeps_bundled_quota_mappings_and_prefixes(monkeypatch, 
     assert saved['endpoints'] == mapped['endpoints']
     prefixes = {p['prefix'] for p in load_yaml(str(tmp_path / 'data' / 'prefix-mapping.yml'))['prefixes']}
     assert {'us-gov', 'au', 'jp', 'base', 'global'} <= prefixes
+
+
+def test_quota_mapping_picker_exits_without_regions(monkeypatch):
+    from bedrock_usage_analyzer.utils import ui
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.regions_for_credentials',
+                        lambda regions, region=None: ([], 'aws-us-gov'))
+    with pytest.raises(SystemExit):
+        ui.select_quota_mapping_params()
+
+
+def test_quota_mapper_clears_stale_mapping(monkeypatch, tmp_path):
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1']})
+    save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [
+        {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon',
+         'endpoints': {'us': {'quotas': {'tpm': {'code': 'L-OLD', 'name': 'wrong'}}}}}]})
+    monkeypatch.setattr(qm, 'fetch_service_quotas', lambda region: [])
+    monkeypatch.setattr(qm, 'extract_common_name', lambda *a: 'nova')
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws')
+    mapper = qm.QuotaMapper('us-east-1', 'model', 'us-east-1')
+    monkeypatch.setattr(mapper, '_get_quota_mapping', lambda *a: None)
+    mapper.run()
+    quotas = load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]['endpoints']['us']['quotas']
+    assert quotas == {'concurrent': None, 'rpm': None, 'tpd': None, 'tpm': None}

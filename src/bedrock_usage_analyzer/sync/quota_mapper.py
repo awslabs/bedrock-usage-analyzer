@@ -16,6 +16,8 @@ from bedrock_usage_analyzer.aws.bedrock import get_endpoint_quota_keywords
 
 logger = logging.getLogger(__name__)
 
+EMPTY_QUOTA_KEYS = ('concurrent', 'rpm', 'tpd', 'tpm')
+
 
 class QuotaMapper:
     """Maps foundation models to their service quotas using Bedrock LLM"""
@@ -108,9 +110,15 @@ class QuotaMapper:
                 if quota_mapping:
                     endpoints_data[endpoint_type] = {'quotas': quota_mapping}
             
+            # Re-mapping is authoritative: endpoints without a match keep their key (so they stay
+            # selectable) but lose any stale quota codes from an earlier run
+            endpoints = fm.setdefault('endpoints', {})
+            for endpoint_type in endpoints_to_process:
+                if endpoint_type not in endpoints_data:
+                    endpoints[endpoint_type] = {'quotas': dict.fromkeys(EMPTY_QUOTA_KEYS)}
+            endpoints.update(endpoints_data)
+
             if endpoints_data:
-                # Update mapped endpoints only; endpoints without a quota match stay selectable
-                fm.setdefault('endpoints', {}).update(endpoints_data)
                 updated_count += 1
                 endpoint_summary = ', '.join(endpoints_data.keys())
                 logger.info(f"✓ ({endpoint_summary})")

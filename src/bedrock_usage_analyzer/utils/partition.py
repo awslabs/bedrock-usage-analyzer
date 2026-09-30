@@ -82,11 +82,6 @@ def is_govcloud_region(region: Optional[str]) -> bool:
     return get_partition_for_region(region) == GOVCLOUD
 
 
-def is_china_region(region: Optional[str]) -> bool:
-    """True for AWS China regions such as cn-north-1."""
-    return get_partition_for_region(region) == CHINA
-
-
 def get_partition_display_name(partition: str) -> str:
     return _PARTITION_NAMES.get(partition, partition)
 

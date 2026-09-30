@@ -185,8 +185,11 @@ def test_collect_scripted_with_repeated_models(inputs, monkeypatch):
 
 
 def test_collect_rejects_region_in_other_partition(inputs, monkeypatch):
-    monkeypatch.setattr(ui_module, 'get_caller_identity',
-                        lambda region=None: {'Account': '1', 'Arn': 'arn:aws:iam::1:user/a', 'Partition': 'aws'})
+    def identity(region=None):
+        if region == 'us-gov-west-1':
+            raise RuntimeError('InvalidClientTokenId')
+        return {'Account': '1', 'Arn': 'arn:aws:iam::1:user/a', 'Partition': 'aws'}
+    monkeypatch.setattr(ui_module, 'get_caller_identity', identity)
     with pytest.raises(SystemExit):
         inputs.collect(region='us-gov-west-1', model_id='x.y', skip_confirm=True)
 
@@ -237,3 +240,46 @@ def test_output_dir_choice(monkeypatch, tmp_path):
     feed(monkeypatch, ['9', '3', '', '3', '~/reports'])
     path = UserInputs().select_output_dir()
     assert not path.startswith('~') and path.endswith('reports')
+
+
+def test_repeated_application_profile_ids_are_aggregated(inputs, monkeypatch):
+    """-m id1 -m id2 of the same endpoint gives one report, like interactive '1-2'."""
+    from conftest import AU_ARNS, app_profile
+    inputs.profile_fetcher.bedrock_client.application.append(app_profile('auapp000002', 'team-f-au', AU_ARNS))
+    inputs.profile_fetcher._app_profiles = None
+    monkeypatch.setattr(ui_module, 'get_caller_identity',
+                        lambda region=None: {'Account': '1', 'Arn': 'arn:aws:iam::1:user/a', 'Partition': 'aws'})
+    inputs.collect(region='ap-southeast-2', model_id=['auapp000001', 'auapp000002', 'jpapp000001'],
+                   granularity_config={p: 60 for p in ['1hour', '1day', '7days', '14days', '30days']},
+                   skip_confirm=True)
+    assert inputs.models == [
+        {'model_id': HAIKU, 'profile_prefix': 'au', 'application_profile_ids': ['auapp000001', 'auapp000002']},
+        {'model_id': HAIKU, 'profile_prefix': 'jp', 'application_profile_ids': ['jpapp000001']},
+    ]
+
+
+def test_closed_stdin_exits_cleanly(monkeypatch, caplog):
+    import sys as _sys
+    import bedrock_usage_analyzer.__main__ as cli
+
+    def eof(*_):
+        raise EOFError
+    monkeypatch.setattr(builtins, 'input', eof)
+    monkeypatch.setattr(_sys, 'argv', ['bua', 'analyze'])
+    monkeypatch.setattr(ui_module, 'get_caller_identity',
+                        lambda region=None: {'Account': '1', 'Arn': 'arn:aws:iam::1:user/a', 'Partition': 'aws'})
+    with pytest.raises(SystemExit):
+        cli.main()
+    assert 'Input ended before all prompts were answered' in caplog.text
+
+
+def test_govcloud_credentials_with_commercial_region_explain_mismatch(monkeypatch, caplog):
+    """No region configured: commercial STS rejects GovCloud creds, GovCloud STS identifies them."""
+    def identity(region=None):
+        if region == 'us-gov-west-1':
+            return {'Account': '1', 'Arn': 'arn:aws-us-gov:iam::1:user/a', 'Partition': 'aws-us-gov'}
+        raise RuntimeError('InvalidClientTokenId')
+    monkeypatch.setattr(ui_module, 'get_caller_identity', identity)
+    with pytest.raises(SystemExit):
+        UserInputs()._get_current_account('us-west-2')
+    assert 'but the credentials are for AWS GovCloud (US)' in caplog.text

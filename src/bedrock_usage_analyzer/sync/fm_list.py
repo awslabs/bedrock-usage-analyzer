@@ -3,7 +3,6 @@
 
 """Foundation model list management"""
 
-import os
 import logging
 from typing import List, Dict
 
@@ -14,6 +13,7 @@ from bedrock_usage_analyzer.aws.bedrock import (
     fetch_all_inference_profiles,
     build_profile_map,
     discover_prefix_mapping,
+    load_prefix_mapping,
     QUOTA_KEYWORD_ON_DEMAND,
     QUOTA_KEYWORD_GLOBAL
 )
@@ -50,7 +50,7 @@ def save_models(filepath: str, models: List[Dict]):
     save_yaml(filepath, {'models': sorted_models})
 
 
-def refresh_region(region, update_bundle: bool = False):
+def refresh_region(region: str, update_bundle: bool = False):
     """Refresh foundation models for a region
     
     Also refreshes prefix mapping, merging with existing prefixes.
@@ -59,29 +59,16 @@ def refresh_region(region, update_bundle: bool = False):
         region: AWS region name (string) or region object (dict)
         update_bundle: Also update bundled metadata (for maintainers)
     """
-    # Handle both old format (strings) and new format (dicts)
-    if isinstance(region, dict):
-        region_name = region['name']
-        region_display = region.get('display_name', region_name)
-    else:
-        region_name = region
-        region_display = region_name
-    
-    logger.info(f"\nProcessing region: {region_display} ({region_name})")
-    
+    region_name = region
+    logger.info(f"\nProcessing region: {region_name}")
+
     # Refresh prefix mapping - merge with existing
     logger.info("  Refreshing prefix mapping...")
     discovered = discover_prefix_mapping(region_name)
-    
-    # Load existing prefixes if file exists
-    existing_prefixes = {}
+
+    # Bundled + user prefixes: keeps prefixes of other partitions (e.g. us-gov)
     prefix_file = get_writable_path('prefix-mapping.yml')
-    try:
-        # User copy if present, else bundled: keeps prefixes of other partitions (e.g. us-gov)
-        existing_data = load_yaml(get_data_path('prefix-mapping.yml'))
-        existing_prefixes = {p['prefix']: p for p in existing_data.get('prefixes', [])}
-    except (FileNotFoundError, Exception):
-        pass
+    existing_prefixes = {p['prefix']: p for p in load_prefix_mapping(refresh=True)}
     
     # Manual entries (always include)
     manual_entries = [
@@ -195,23 +182,17 @@ def refresh_region(region, update_bundle: bool = False):
     if update_bundle:
         bundle_path = get_bundle_path()
         if bundle_path:
-            bundle_file = bundle_path / f'fm-list-{region}.yml'
+            bundle_file = bundle_path / f'fm-list-{region_name}.yml'
             save_yaml(str(bundle_file), models_data)
             logger.info(f"  ✓ Saved: {bundle_file} (bundled)")
 
 
-def refresh_all_regions(regions: List, update_bundle: bool = False):
+def refresh_all_regions(regions: List[str], update_bundle: bool = False):
     """Refresh foundation models for all regions
-    
+
     Args:
-        regions: List of AWS region names (strings) or region objects (dicts)
+        regions: List of AWS region names
         update_bundle: Also update bundled metadata (for maintainers)
     """
     for region in regions:
-        # Handle both old format (strings) and new format (dicts)
-        if isinstance(region, dict):
-            region_name = region['name']
-        else:
-            region_name = region
-        
-        refresh_region(region_name, update_bundle=update_bundle)
+        refresh_region(region, update_bundle=update_bundle)

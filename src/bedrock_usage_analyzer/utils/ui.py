@@ -13,21 +13,19 @@ def select_from_list(
     options: list, 
     allow_cancel: bool = True,
     display_fn=None,
-    input_prompt: str = None,
-    return_index: bool = False
+    input_prompt: str = None
 ) -> str:
     """Generic numbered selection from list
-    
+
     Args:
         prompt: Prompt message
         options: List of options
         allow_cancel: Allow cancellation with Ctrl+C
         display_fn: Optional function to format each option for display
         input_prompt: Optional custom input prompt (default: "Select (1-N):")
-        return_index: If True, return the index instead of the option
-        
+
     Returns:
-        Selected option or index (if return_index=True)
+        Selected option
     """
     print(f"\n{prompt}")
     for i, option in enumerate(options, 1):
@@ -41,8 +39,6 @@ def select_from_list(
         try:
             choice = int(input(actual_prompt))
             if 1 <= choice <= len(options):
-                if return_index:
-                    return choice - 1  # Return 0-based index
                 return options[choice - 1]
             print(f"Please enter a number between 1 and {len(options)}")
         except ValueError:
@@ -82,6 +78,9 @@ def select_quota_mapping_params(target_region: str = None, bedrock_region: str =
     from bedrock_usage_analyzer.sync.regions import load_region_names, regions_for_credentials
     from bedrock_usage_analyzer.utils.partition import GOVCLOUD, get_partition_for_region
     all_regions, _ = regions_for_credentials(load_region_names(), bedrock_region)
+    if not all_regions:
+        print("\nNo regions in regions.yml for these credentials. Run: bua refresh regions", file=sys.stderr)
+        sys.exit(1)
 
     # Step 1: Select Bedrock API region (skip if provided)
     if not bedrock_region:

@@ -130,10 +130,6 @@ class InferenceProfileFetcher:
             return f"{self.prefix_map.get(group, group)}.{model_id}"
         return f"global.{model_id}"
 
-    # Kept for callers of the previous API
-    def _infer_source_profile(self, model_arns):
-        return self.resolve_source(model_arns)
-
     def resolve_application_profile(self, identifier: str) -> Optional[Dict]:
         """Find an application profile by ID, ARN or name."""
         identifier = identifier.strip()
@@ -185,8 +181,16 @@ class InferenceProfileFetcher:
             return profiles, profile_names, profile_metadata
 
         wanted = set(application_profile_ids or [])
+        try:
+            app_profiles = self.list_application_profiles()
+        except Exception as e:
+            if wanted:
+                raise
+            # e.g. no bedrock:ListInferenceProfiles permission: still analyze the endpoint itself
+            logger.info(f"  Warning: Could not list application inference profiles: {e}")
+            app_profiles = []
         matched = 0
-        for app in self.list_application_profiles():
+        for app in app_profiles:
             if wanted:
                 if app['id'] not in wanted:
                     continue
@@ -207,7 +211,11 @@ class InferenceProfileFetcher:
         account does have some for the same model under a different endpoint.
         """
         counts: Dict[str, int] = {}
-        for app in self.list_application_profiles():
+        try:
+            app_profiles = self.list_application_profiles()
+        except Exception:
+            return counts
+        for app in app_profiles:
             if app['model_id'] == model_id and app['profile_prefix'] != profile_prefix:
                 key = app['profile_prefix'] or 'base'
                 counts[key] = counts.get(key, 0) + 1

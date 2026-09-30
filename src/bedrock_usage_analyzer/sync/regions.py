@@ -94,7 +94,14 @@ def fetch_enabled_regions(partition: Optional[str] = None, region: Optional[str]
     botocore's static region list for Bedrock in that partition.
     """
     hint = region or region_hint()
-    partition = partition or detect_credentials_partition(hint) or get_partition_for_region(hint)
+    if partition is None:
+        partition = detect_credentials_partition(hint)
+    if partition is None:
+        # Without working credentials the static fallback below would silently
+        # replace the list with every region, including ones never enabled.
+        logger.error("Could not read the caller identity; check your AWS credentials "
+                     "(aws sts get-caller-identity), and pass --region/AWS_REGION for GovCloud.")
+        sys.exit(1)
     home = _home_region(partition, hint)
 
     errors = []
@@ -131,17 +138,14 @@ def merge_regions(existing: Iterable, fresh: Iterable[str], partition: str) -> L
     return sorted(set(kept) | set(fresh))
 
 
-def refresh_regions(existing: Optional[Iterable] = None):
-    """Refresh the regions list for the partition of the current credentials.
-
-    Args:
-        existing: Current regions.yml entries; regions of other partitions are kept.
-
-    Returns:
-        dict: Regions data {'regions': [...]}
-    """
+def discover_regions():
+    """Return (partition, regions) enabled for the current credentials, minus SKIP_REGIONS."""
     hint = region_hint()
-    partition = detect_credentials_partition(hint) or get_partition_for_region(hint)
+    partition = detect_credentials_partition(hint)
+    if partition is None:
+        logger.error("Could not read the caller identity; check your AWS credentials "
+                     "(aws sts get-caller-identity), and pass --region/AWS_REGION for GovCloud.")
+        sys.exit(1)
     logger.info(f"Fetching enabled regions ({get_partition_display_name(partition)})...")
 
     regions = fetch_enabled_regions(partition, hint)
@@ -155,6 +159,20 @@ def refresh_regions(existing: Optional[Iterable] = None):
         sys.exit(1)
 
     logger.info(f"Found {len(regions)} enabled regions")
+    return partition, regions
+
+
+def refresh_regions(existing: Optional[Iterable] = None, discovered=None):
+    """Refresh the regions list for the partition of the current credentials.
+
+    Args:
+        existing: Current regions.yml entries; regions of other partitions are kept.
+        discovered: Optional (partition, regions) from discover_regions(), to reuse one lookup.
+
+    Returns:
+        dict: Regions data {'regions': [...]}
+    """
+    partition, regions = discovered or discover_regions()
     merged = merge_regions(existing or [], regions, partition)
     other = len(merged) - len(regions)
     if other:

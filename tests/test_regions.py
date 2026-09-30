@@ -115,3 +115,31 @@ def test_refresh_regions_exits_when_nothing_found(monkeypatch):
     monkeypatch.setattr(r, 'fetch_enabled_regions', lambda partition, hint: ['me-south-1'])
     with pytest.raises(SystemExit):
         r.refresh_regions()
+
+
+def test_fetch_exits_when_credentials_do_not_work(monkeypatch):
+    """No silent fallback to every Bedrock region when the caller identity fails."""
+    monkeypatch.setattr(r, 'detect_credentials_partition', lambda _=None: None)
+    with pytest.raises(SystemExit):
+        r.fetch_enabled_regions(None, None)
+    with pytest.raises(SystemExit):
+        r.discover_regions()
+
+
+def test_update_bundle_replaces_only_credentials_partition(monkeypatch, tmp_path):
+    """A stale GovCloud list in the user file must not overwrite the bundle's GovCloud regions."""
+    import sys
+    import bedrock_usage_analyzer.__main__ as cli
+    from bedrock_usage_analyzer.utils.yaml_handler import load_yaml
+    bundle = tmp_path / 'bundle'
+    bundle.mkdir()
+    save_yaml(str(bundle / 'regions.yml'), {'regions': ['us-east-1', 'us-gov-east-1', 'us-gov-west-1']})
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1', 'us-gov-west-1']})
+    monkeypatch.setattr(cli, 'get_bundle_path', lambda: bundle)
+    monkeypatch.setattr(r, 'detect_credentials_partition', lambda _=None: 'aws')
+    monkeypatch.setattr(r, 'fetch_enabled_regions', lambda partition, hint: ['eu-west-1', 'us-east-1'])
+    monkeypatch.setattr(sys, 'argv', ['bua', 'refresh', 'regions', '--update-bundle'])
+    cli.main()
+    assert load_yaml(str(bundle / 'regions.yml'))['regions'] == ['eu-west-1', 'us-east-1', 'us-gov-east-1', 'us-gov-west-1']
+    assert load_yaml(str(tmp_path / 'data' / 'regions.yml'))['regions'] == ['eu-west-1', 'us-east-1', 'us-gov-west-1']

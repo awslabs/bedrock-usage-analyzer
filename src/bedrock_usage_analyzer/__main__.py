@@ -119,8 +119,7 @@ def cmd_analyze(args):
 def cmd_refresh_regions(args):
     """Refresh regions list."""
     import os
-    from bedrock_usage_analyzer.sync.regions import refresh_regions, merge_regions
-    from bedrock_usage_analyzer.utils.partition import get_partition_for_region
+    from bedrock_usage_analyzer.sync.regions import discover_regions, refresh_regions
     from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
 
     print(get_refresh_location_message())
@@ -131,21 +130,17 @@ def cmd_refresh_regions(args):
             return (load_yaml(str(path)) or {}).get('regions', [])
         return []
 
-    # Keep regions of other partitions (e.g. GovCloud when refreshing with commercial credentials)
-    data = refresh_regions(existing=existing_entries(get_data_path('regions.yml')))
+    # Only the credentials' partition is replaced; other partitions are kept
+    # (e.g. GovCloud regions when refreshing with commercial credentials)
+    discovered = discover_regions()
+    data = refresh_regions(existing=existing_entries(get_data_path('regions.yml')), discovered=discovered)
     output_path = get_writable_path("regions.yml")
     save_yaml(str(output_path), data)
     logger.info(f"✓ Saved: {output_path}")
 
     bundle_path = get_bundle_path() if getattr(args, 'update_bundle', False) else None
     if bundle_path is not None:
-        bundle_file = bundle_path / "regions.yml"
-        refreshed = data['regions']
-        partitions = {get_partition_for_region(r) for r in refreshed}
-        merged = existing_entries(bundle_file)
-        for partition in partitions:
-            merged = merge_regions(merged, [r for r in refreshed if get_partition_for_region(r) == partition], partition)
-        data = {'regions': merged}
+        data = refresh_regions(existing=existing_entries(bundle_path / "regions.yml"), discovered=discovered)
     _maybe_update_bundle(args, "regions.yml", data)
 
 
@@ -312,6 +307,10 @@ def main():
         args.func(args)
     except KeyboardInterrupt:
         logger.info("\nOperation cancelled by user.")
+        sys.exit(1)
+    except EOFError:
+        logger.error("\nInput ended before all prompts were answered. "
+                     "For scripted runs pass --region, --model-id, --granularity, --output-dir and -y.")
         sys.exit(1)
     except Exception as e:
         from bedrock_usage_analyzer.core.errors import troubleshooting_hint
