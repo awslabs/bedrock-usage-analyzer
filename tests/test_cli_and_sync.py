@@ -58,7 +58,7 @@ def test_errors_get_a_partition_hint(monkeypatch, caplog):
 
 @pytest.mark.parametrize('message,region,fragment', [
     ('Unable to locate credentials', None, "run 'aws sts get-caller-identity'."),
-    ('ExpiredToken: expired', 'us-west-2', '--region us-west-2.'),
+    ('ExpiredToken: expired', 'us-west-2', "run 'aws sts get-caller-identity --region us-west-2'."),
     ('AccessDeniedException: not authorized to perform bedrock:ListInferenceProfiles', None, 'IAM permissions'),
     ('Could not connect to the endpoint URL', 'cn-north-1', 'for cn-north-1'),
 ])

@@ -166,6 +166,7 @@ class UserInputs:
         try:
             identity = get_caller_identity(region)
         except Exception as e:
+            self._explain_partition_mismatch(region)
             logger.error(f"Failed to get AWS account ID: {e}")
             hint = troubleshooting_hint(e, region or region_hint())
             logger.error(hint or "Please configure AWS credentials in your current machine.")
@@ -178,6 +179,22 @@ class UserInputs:
         if self.partition != 'aws':
             logger.info(f"  Partition: {get_partition_display_name(self.partition)}")
         return identity['Account']
+
+    def _explain_partition_mismatch(self, region):
+        """If STS in ``region`` rejected the credentials, check whether they belong to another partition.
+
+        STS of one partition rejects credentials of another with a generic
+        'invalid token' error, so ask STS without the region pin and report the
+        mismatch in plain terms.
+        """
+        if not region:
+            return
+        try:
+            identity = get_caller_identity(None)
+        except Exception:
+            return
+        self.partition = identity['Partition']
+        self._check_region_partition(region)
 
     def _check_region_partition(self, region):
         """Stop early when the region belongs to a different partition than the credentials."""

@@ -200,6 +200,17 @@ def test_account_failure_exits_with_hint(monkeypatch, caplog):
     assert 'AWS GovCloud (US) uses separate accounts' in caplog.text
 
 
+def test_commercial_credentials_with_govcloud_region_explain_mismatch(monkeypatch, caplog):
+    def identity(region=None):
+        if region == 'us-gov-west-1':
+            raise RuntimeError('InvalidClientTokenId: The security token included in the request is invalid')
+        return {'Account': '1', 'Arn': 'arn:aws:iam::1:user/a', 'Partition': 'aws'}
+    monkeypatch.setattr(ui_module, 'get_caller_identity', identity)
+    with pytest.raises(SystemExit):
+        UserInputs()._get_current_account('us-gov-west-1')
+    assert 'credentials are for AWS Commercial' in caplog.text
+
+
 def test_select_region_shows_only_credential_partition(monkeypatch):
     ui = UserInputs()
     monkeypatch.setattr(ui_module, 'regions_for_credentials',

@@ -20,7 +20,7 @@ QUOTA_KEYWORD_GLOBAL = 'global'
 
 # System inference profile prefixes known to exist. prefix-mapping.yml adds any
 # prefix discovered later; this set keeps parsing working without the file.
-KNOWN_PROFILE_PREFIXES = frozenset({'us', 'eu', 'apac', 'jp', 'au', 'ca', 'us-gov', 'global'})
+KNOWN_PROFILE_PREFIXES = frozenset({'us', 'eu', 'apac', 'jp', 'au', 'ca', 'in', 'us-gov', 'global'})
 
 # Cache for prefix mapping to avoid repeated file reads
 _prefix_mapping_cache = None

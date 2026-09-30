@@ -26,10 +26,8 @@ def troubleshooting_hint(error: Exception, region: Optional[str] = None) -> Opti
     partition_name = get_partition_display_name(partition) if partition else None
 
     if any(m in text for m in _CREDENTIAL_MARKERS):
-        hint = "Check your AWS credentials: run 'aws sts get-caller-identity'"
-        if region:
-            hint += f" --region {region}"
-        hint += "."
+        command = f"aws sts get-caller-identity --region {region}" if region else "aws sts get-caller-identity"
+        hint = f"Check your AWS credentials: run '{command}'."
         if partition and partition != COMMERCIAL:
             hint += (f" {partition_name} uses separate accounts and credentials from"
                      f" commercial AWS; use a profile for that partition (AWS_PROFILE=...)"
