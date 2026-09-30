@@ -158,9 +158,12 @@ def test_report_escapes_markup_and_script_breakout(tmp_path):
     assert '/' not in html_file and '<' not in html_file
 
 
-def test_report_without_console_for_partition(tmp_path):
+def test_report_without_console_for_partition(tmp_path, monkeypatch):
+    # A partition without a public console: no links rather than wrong ones
+    monkeypatch.setattr('bedrock_usage_analyzer.core.output_generator.get_service_quotas_console_url',
+                        lambda region=None: None)
     quotas = {'tpm': {'value': 5.0, 'code': 'L-9', 'name': 'TPM', 'url': None}, 'rpm': None, 'tpd': None}
-    OutputGenerator(str(tmp_path)).generate({'m': base_data(region='us-iso-east-1', quotas=quotas)})
+    OutputGenerator(str(tmp_path)).generate({'m': base_data(quotas=quotas)})
     html = (tmp_path / next(f for f in os.listdir(tmp_path) if f.endswith('.html'))).read_text()
     assert 'href="None"' not in html and '[L-9]' in html
     data = json.loads((tmp_path / next(f for f in os.listdir(tmp_path) if f.endswith('.json'))).read_text())
