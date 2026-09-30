@@ -325,3 +325,22 @@ def test_new_system_prefix_is_taken_from_the_listed_profile():
                                           ('ap-southeast-2', 'ap'), ('eusc-de-east-1', 'eusc')])
 def test_region_group_keeps_partitions_apart(region, group):
     assert region_group(region) == group
+
+
+def test_single_region_system_profile_and_base_copy_are_both_candidates():
+    one = [arn('ap-southeast-2', HAIKU)]
+    fetcher = InferenceProfileFetcher(FakeBedrock(system=[system_profile(f"au.{HAIKU}", one)],
+                                                  application=[app_profile('single00001', 's', one)]))
+    assert fetcher.list_application_profiles()[0]['sources'] == [HAIKU, f"au.{HAIKU}"]
+    assert fetcher.find_profiles(HAIKU, 'au')[0][1:] == ['single00001']
+    assert fetcher.find_profiles(HAIKU, None)[0][1:] == ['single00001']
+
+
+def test_prefixes_come_from_the_mapping_file(tmp_path, monkeypatch):
+    from bedrock_usage_analyzer.aws import bedrock
+    monkeypatch.setattr(bedrock, '_load_prefix_mapping', lambda: [
+        {'prefix': 'zz', 'is_regional': True}, {'prefix': 'global', 'is_regional': False}])
+    assert bedrock.get_regional_profile_prefixes() == ['zz']
+    assert bedrock.get_profile_prefixes() == frozenset({'zz', 'global'})
+    monkeypatch.setattr(bedrock, '_load_prefix_mapping', lambda: [])
+    assert 'us-gov' in bedrock.get_regional_profile_prefixes() and 'global' not in bedrock.get_regional_profile_prefixes()

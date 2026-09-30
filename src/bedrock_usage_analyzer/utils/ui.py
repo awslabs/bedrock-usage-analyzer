@@ -99,7 +99,8 @@ def select_quota_mapping_params(target_region: str = None, bedrock_region: str =
     # Load regions the current credentials can call (commercial or GovCloud, etc.)
     from bedrock_usage_analyzer.sync.regions import load_region_names, regions_for_credentials
     from bedrock_usage_analyzer.utils.partition import GOVCLOUD, get_partition_for_region
-    all_regions, _ = regions_for_credentials(load_region_names(), bedrock_region)
+    # Any region the user already named pins STS to the right partition (GovCloud without AWS_REGION)
+    all_regions, _ = regions_for_credentials(load_region_names(), bedrock_region or target_region)
     if not all_regions:
         print("\nNo regions in regions.yml for these credentials. Run: bua refresh regions", file=sys.stderr)
         sys.exit(1)

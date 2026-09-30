@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=77", "wheel"]  # 77: SPDX license string (PEP 639); 61: [project] table
 build-backend = "setuptools.build_meta"
 
 [project]

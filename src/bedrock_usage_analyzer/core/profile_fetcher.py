@@ -161,7 +161,9 @@ class InferenceProfileFetcher:
             return _specific_first(exact)
 
         if len(arn_set) == 1:
-            return [model_id]
+            # A base-model copy, unless a system profile routes to exactly this one ARN: the
+            # two cannot be told apart, so the profile belongs to both endpoints
+            return [model_id] + _specific_first(exact or [])
 
         # Closest system profile for the same model (routing sets change over time)
         best, best_score = [], 0.0

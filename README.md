@@ -502,7 +502,7 @@ The analyzer supports various customization options through the interactive prom
 
 ## Available Commands
 
-### CLI Commands (after pip install)
+### CLI Commands (installed package)
 
 ```bash
 # Main analysis

@@ -217,8 +217,7 @@ def test_commercial_credentials_with_govcloud_region_explain_mismatch(monkeypatc
 
 def test_select_region_shows_only_credential_partition(monkeypatch):
     ui = UserInputs()
-    monkeypatch.setattr(ui_module, 'regions_for_credentials',
-                        lambda regions, region=None: (['us-gov-east-1', 'us-gov-west-1'], 'aws-us-gov'))
+    ui.partition = 'aws-us-gov'          # set by the account check, which always runs first
     feed(monkeypatch, ['2'])
     assert ui._select_region() == 'us-gov-west-1'
 
@@ -371,15 +370,6 @@ def test_account_check_falls_back_to_partition_home_region(monkeypatch):
     UserInputs()._get_current_account('ap-east-1')
     UserInputs()._get_current_account('ap-southeast-1')
     assert seen == ['ap-east-1', 'us-east-1', 'ap-southeast-1']
-
-def test_select_region_reuses_known_partition(monkeypatch):
-    ui = UserInputs()
-    ui.partition = 'aws-us-gov'
-    monkeypatch.setattr(ui_module, 'regions_for_credentials',
-                        lambda *a, **k: pytest.fail('must not call STS again'))
-    feed(monkeypatch, ['1'])
-    assert ui._select_region() == 'us-gov-east-1'
-
 
 def test_interactive_rounds_merge_profiles_of_one_endpoint(inputs, monkeypatch):
     from conftest import AU_ARNS, app_profile

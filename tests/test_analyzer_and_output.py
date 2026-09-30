@@ -284,3 +284,11 @@ def test_chart_quota_note_is_built_without_innerhtml():
                                  'templates', 'report.html'), encoding='utf-8').read()
     assert 'quotaInfo.url}' not in template and 'quotaInfo.name}' not in template
     assert "quotaInfo.url.startsWith('https://')" in template
+
+
+def test_quota_without_value_is_skipped(analyzer):
+    class Quotas:
+        def get_service_quota(self, ServiceCode, QuotaCode):
+            return {'Quota': {'QuotaName': 'x'}}
+    analyzer.sq_client = Quotas()
+    assert analyzer._fetch_quotas(HAIKU, {'tpm': {'code': 'L-1', 'name': 'n'}}, None)['tpm'] is None

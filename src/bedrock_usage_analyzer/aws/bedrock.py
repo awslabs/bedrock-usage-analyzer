@@ -18,9 +18,9 @@ QUOTA_KEYWORD_ON_DEMAND = 'on-demand'
 QUOTA_KEYWORD_CROSS_REGION = 'cross-region'
 QUOTA_KEYWORD_GLOBAL = 'global'
 
-# System inference profile prefixes known to exist. prefix-mapping.yml adds any
-# prefix discovered later; this set keeps parsing working without the file.
-KNOWN_PROFILE_PREFIXES = frozenset({'us', 'eu', 'apac', 'jp', 'au', 'ca', 'in', 'us-gov', 'global'})
+# Used only when no prefix-mapping.yml can be read at all (the bundled file is the source
+# of truth and normally always present)
+FALLBACK_PROFILE_PREFIXES = frozenset({'us', 'eu', 'apac', 'jp', 'au', 'ca', 'in', 'us-gov', 'global'})
 
 # Cache for prefix mapping to avoid repeated file reads
 _prefix_mapping_cache = None
@@ -111,12 +111,11 @@ def get_regional_profile_prefixes() -> List[str]:
         mapping = _load_prefix_mapping()
     except FileNotFoundError:
         mapping = []
-    declared = {m['prefix']: bool(m.get('is_regional')) for m in mapping}
-    # prefix-mapping.yml decides for every prefix it lists; known geographic prefixes
-    # fill in only the ones it does not mention
-    regional = {p for p, is_regional in declared.items() if is_regional}
-    regional |= {p for p in KNOWN_PROFILE_PREFIXES - {'global'} if p not in declared}
-    return sorted(regional)
+    if not mapping:
+        # No prefix-mapping.yml at all: fall back to the prefixes this release knows
+        return sorted(FALLBACK_PROFILE_PREFIXES - {'global'})
+    # prefix-mapping.yml is the single source of truth once it exists
+    return sorted(m['prefix'] for m in mapping if m.get('is_regional'))
 
 
 def get_default_region_prefix_map() -> Dict[str, str]:
@@ -132,12 +131,12 @@ def get_default_region_prefix_map() -> Dict[str, str]:
 
 
 def get_profile_prefixes() -> frozenset:
-    """All system inference profile prefixes (known defaults plus prefix-mapping.yml)."""
+    """All system inference profile prefixes, from prefix-mapping.yml (fallback set without it)."""
     try:
         mapped = {m['prefix'] for m in _load_prefix_mapping() if m.get('prefix') != 'base'}
     except FileNotFoundError:
         mapped = set()
-    return KNOWN_PROFILE_PREFIXES | mapped
+    return frozenset(mapped) if mapped else FALLBACK_PROFILE_PREFIXES
 
 
 def split_profile_id(endpoint_id: str) -> Tuple[str, Optional[str]]:

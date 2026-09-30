@@ -353,3 +353,13 @@ def test_regions_module_main_saves_like_the_cli(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, 'argv', ['regions.py'])
     r.main()
     assert 'us-gov-west-1' in load_yaml(str(tmp_path / 'data' / 'regions.yml'))['regions']
+
+
+def test_quota_mapping_picker_uses_target_region_for_sts(monkeypatch):
+    from bedrock_usage_analyzer.utils import ui
+    seen = []
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.regions_for_credentials',
+                        lambda regions, region=None: seen.append(region) or (['us-gov-west-1'], 'aws-us-gov'))
+    ui.select_quota_mapping_params(target_region='us-gov-west-1', bedrock_region='us-gov-west-1',
+                                   model_id='us-gov.anthropic.claude-sonnet-4-5-20250929-v1:0')
+    assert seen == ['us-gov-west-1']

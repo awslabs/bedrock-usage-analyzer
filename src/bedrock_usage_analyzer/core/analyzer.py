@@ -130,8 +130,10 @@ class BedrockAnalyzer:
                 continue
             code = quota_data['code']
             status, quota = check_quota(code, self.region, client=self.sq_client)
-            if status == QUOTA_OK:
-                quotas[key] = {'value': quota.get('Value'), 'code': code, 'name': quota_data.get('name'),
+            if status == QUOTA_OK and quota.get('Value') is None:
+                logger.info(f"  Warning: {quota_type} quota {code} has no value; not shown")
+            elif status == QUOTA_OK:
+                quotas[key] = {'value': quota['Value'], 'code': code, 'name': quota_data.get('name'),
                                'url': get_service_quota_url(self.region, 'bedrock', code)}
             elif status == QUOTA_MISSING:
                 logger.info(f"  Warning: {quota_type} quota {code} does not exist in {self.region}; "

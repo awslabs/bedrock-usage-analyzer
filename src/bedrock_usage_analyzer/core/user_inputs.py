@@ -12,7 +12,7 @@ from ..aws.bedrock import region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
 from ..core.errors import troubleshooting_hint
 from ..core.profile_fetcher import InferenceProfileFetcher
-from ..sync.regions import load_region_names, regions_for_credentials
+from ..sync.regions import load_region_names
 from ..utils.yaml_handler import load_yaml
 from ..utils.ui import select_from_list
 from ..utils.paths import get_data_path
@@ -248,12 +248,9 @@ class UserInputs:
 
     def _select_region(self):
         """Select a region, showing only regions in the credentials' partition"""
-        if self.partition:
-            # Known from the account check; no second STS call
-            partition = self.partition
-            regions = filter_regions_by_partition(self._load_regions(), partition)
-        else:
-            regions, partition = regions_for_credentials(self._load_regions())
+        # Known from the account check, which always runs first (no second STS call)
+        partition = self.partition
+        regions = filter_regions_by_partition(self._load_regions(), partition)
         if not regions:
             logger.error("No regions available for these credentials.")
             logger.error("Please run: bua refresh regions")
@@ -331,7 +328,8 @@ class UserInputs:
                 return self._application_profile_config(value, profile)
 
         base_model_id, prefix = split_profile_id(value)
-        if prefix is None and value.count('.') >= 2 and self._is_system_profile(value):
+        if prefix is None and value.count('.') >= 2 and not self._is_known_model(value) \
+                and self._is_system_profile(value):
             # A system profile with a prefix newer than this release (e.g. 'kr.')
             prefix, base_model_id = value.split('.', 1)
         return {
