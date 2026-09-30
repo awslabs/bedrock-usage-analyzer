@@ -199,8 +199,11 @@ def refresh_regions(existing: Optional[Iterable] = None, discovered=None):
 
 
 def main():
-    """Main entry point"""
-    refresh_regions()
+    """Main entry point: same as `bua refresh regions` (keeps other partitions, saves the file)"""
+    import sys as _sys
+    from bedrock_usage_analyzer.__main__ import main as cli_main
+    _sys.argv = ['bua', 'refresh', 'regions'] + _sys.argv[1:]
+    cli_main()
 
 
 if __name__ == "__main__":

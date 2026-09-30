@@ -50,6 +50,28 @@ def select_from_list(
             raise
 
 
+def _claude_endpoints_in(region: str) -> list:
+    """Invokable Claude endpoint IDs listed in the region's fm-list, newest first."""
+    import os
+    from bedrock_usage_analyzer.utils.paths import get_data_path
+    from bedrock_usage_analyzer.utils.yaml_handler import load_yaml
+    path = get_data_path(f'fm-list-{region}.yml')
+    if not os.path.exists(path):
+        return []
+    options = []
+    for model in (load_yaml(path) or {}).get('models', []) or []:
+        model_id = model.get('model_id', '')
+        if not model_id.startswith('anthropic.claude') or model_id.count(':') > 1:
+            continue  # skip context-window variants such as ...-v1:0:200k
+        endpoints = model.get('endpoints') or {}
+        for prefix in ('us-gov', 'global'):
+            if prefix in endpoints:
+                options.append(f"{prefix}.{model_id}")
+        if 'base' in endpoints:
+            options.append(model_id)
+    return sorted(options, reverse=True)
+
+
 def select_quota_mapping_params(target_region: str = None, bedrock_region: str = None, model_id: str = None) -> Tuple[str, str, str]:
     """Interactive selection for quota mapping parameters
     
@@ -93,9 +115,10 @@ def select_quota_mapping_params(target_region: str = None, bedrock_region: str =
     # Step 2: Select model for mapping (skip if provided)
     if not model_id:
         if get_partition_for_region(bedrock_region) == GOVCLOUD:
-            model_options = [
+            # What each GovCloud region serves differs (base model in one, only a us-gov.
+            # profile in the other), so offer the endpoints its own model list shows
+            model_options = _claude_endpoints_in(bedrock_region) or [
                 "us-gov.anthropic.claude-sonnet-4-5-20250929-v1:0",
-                "anthropic.claude-3-5-sonnet-20240620-v1:0",
             ]
         else:
             model_options = [

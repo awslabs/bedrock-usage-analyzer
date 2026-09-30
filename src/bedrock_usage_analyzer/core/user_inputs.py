@@ -331,10 +331,23 @@ class UserInputs:
                 return self._application_profile_config(value, profile)
 
         base_model_id, prefix = split_profile_id(value)
+        if prefix is None and value.count('.') >= 2 and self._is_system_profile(value):
+            # A system profile with a prefix newer than this release (e.g. 'kr.')
+            prefix, base_model_id = value.split('.', 1)
         return {
             'model_id': base_model_id,
             'profile_prefix': prefix
         }
+
+    def _is_system_profile(self, value: str) -> bool:
+        """True when ``value`` is the ID of a system inference profile in the region."""
+        try:
+            fetcher = self._get_profile_fetcher()
+            fetcher._load_system_profiles()
+            return value in fetcher._system_ids
+        except Exception as e:
+            logger.debug(f"Could not list system inference profiles: {e}")
+            return False
 
     def _is_known_model(self, value: str) -> bool:
         """True when ``value`` is a model or system profile ID listed for the region."""

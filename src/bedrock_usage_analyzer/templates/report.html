@@ -849,7 +849,21 @@
                     disclaimer.style.fontStyle = 'italic';
                     disclaimer.style.color = '#666';
                     disclaimer.style.marginBottom = '10px';
-                    disclaimer.innerHTML = `Note: Quota mapping inferred using AI. Verify with <a href="${quotaInfo.url}" target="_blank">[${quotaInfo.code}] ${quotaInfo.name}</a>`;
+                    // Built with DOM nodes, not innerHTML: quota names come from metadata files
+                    // and must not be interpreted as markup; only https links are rendered
+                    disclaimer.appendChild(document.createTextNode('Note: Quota mapping inferred using AI. Verify with '));
+                    const label = `[${quotaInfo.code}] ${quotaInfo.name || ''}`;
+                    const url = typeof quotaInfo.url === 'string' && quotaInfo.url.startsWith('https://') ? quotaInfo.url : null;
+                    if (url) {
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.target = '_blank';
+                        link.rel = 'noopener noreferrer';
+                        link.textContent = label;
+                        disclaimer.appendChild(link);
+                    } else {
+                        disclaimer.appendChild(document.createTextNode(label));
+                    }
                     canvasElement.parentNode.insertBefore(disclaimer, canvasElement);
                 }
             }
@@ -867,7 +881,8 @@
                     throttleDisclaimer.style.padding = '8px';
                     throttleDisclaimer.style.borderRadius = '4px';
                     throttleDisclaimer.style.marginBottom = '10px';
-                    throttleDisclaimer.innerHTML = `⚠️ Low ${metricType} does not rule out throttling. Bedrock reserves <code>input_tokens + max_tokens</code> at request start. <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/quotas-token-burndown.html" target="_blank">Learn more</a>`;
+                    // Static text only (metricType is one of TPM/TPD); no data is interpolated as HTML
+                    throttleDisclaimer.innerHTML = `⚠️ Low ${metricType === 'TPD' ? 'TPD' : 'TPM'} does not rule out throttling. Bedrock reserves <code>input_tokens + max_tokens</code> at request start. <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/quotas-token-burndown.html" target="_blank" rel="noopener noreferrer">Learn more</a>`;
                     canvasElement.parentNode.insertBefore(throttleDisclaimer, canvasElement);
                 }
             }
@@ -884,7 +899,7 @@
                     note.style.fontStyle = 'italic';
                     note.style.color = '#888';
                     note.style.marginBottom = '5px';
-                    note.innerHTML = `Note: Values show peak ${metricType} within each aggregation period (for quota monitoring)`;
+                    note.textContent = `Note: Values show peak ${metricType} within each aggregation period (for quota monitoring)`;
                     canvasElement.parentNode.insertBefore(note, canvasElement);
                 }
             }

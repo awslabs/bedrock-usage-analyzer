@@ -322,3 +322,34 @@ def test_fm_list_refresh_writes_only_new_prefixes_to_user_file(monkeypatch, tmp_
     fm_list.refresh_region('mx-central-1')
     saved = load_yaml(str(tmp_path / 'data' / 'prefix-mapping.yml'))['prefixes']
     assert [p['prefix'] for p in saved] == ['mx']
+
+
+def test_hint_classification_by_botocore_type_and_code():
+    from botocore.exceptions import ClientError, EndpointConnectionError, NoCredentialsError
+    assert 'network' in troubleshooting_hint(EndpointConnectionError(endpoint_url='https://sts.x'), 'us-east-1')
+    assert 'credentials' in troubleshooting_hint(NoCredentialsError(), None)
+    expired = ClientError({'Error': {'Code': 'ExpiredTokenException', 'Message': 'x'}}, 'GetCallerIdentity')
+    assert 'Check your AWS credentials' in troubleshooting_hint(expired, 'us-east-1')
+    denied = ClientError({'Error': {'Code': 'AccessDeniedException', 'Message': 'x'}}, 'ListInferenceProfiles')
+    assert 'permission' in troubleshooting_hint(denied, 'us-east-1')
+    # A proxy failure whose text mentions credentials is a network problem
+    assert 'network' in troubleshooting_hint(
+        RuntimeError('Could not connect to the endpoint URL while refreshing credentials'), None)
+    assert troubleshooting_hint(RuntimeError('refreshing credentials failed: something odd'), None) is None
+
+
+def test_gov_quota_mapping_options_follow_region_metadata():
+    from bedrock_usage_analyzer.utils.ui import _claude_endpoints_in
+    east = _claude_endpoints_in('us-gov-east-1')
+    assert east and all(o.startswith('us-gov.') for o in east)        # no on-demand there
+    assert 'anthropic.claude-3-5-sonnet-20240620-v1:0' in _claude_endpoints_in('us-gov-west-1')
+    assert not any(o.count(':') > 1 for o in east)
+
+
+def test_regions_module_main_saves_like_the_cli(monkeypatch, tmp_path):
+    from bedrock_usage_analyzer.sync import regions as r
+    monkeypatch.setattr(r, 'detect_credentials_partition', lambda _=None: 'aws')
+    monkeypatch.setattr(r, 'fetch_enabled_regions', lambda partition, hint: ['eu-west-1'])
+    monkeypatch.setattr(sys, 'argv', ['regions.py'])
+    r.main()
+    assert 'us-gov-west-1' in load_yaml(str(tmp_path / 'data' / 'regions.yml'))['regions']

@@ -295,6 +295,10 @@
           "description": "Initialize analyzer with region and granularity config, setup AWS clients"
         },
         {
+          "name": "_regional_prefixes",
+          "description": "Regional (geographic) profile prefixes, computed once per run."
+        },
+        {
           "name": "_load_quota_codes",
           "description": "Load quota codes for a model from FM list YAML based on endpoint type"
         },
@@ -356,8 +360,20 @@
           "description": ""
         },
         {
+          "name": "_error_code",
+          "description": ""
+        },
+        {
           "name": "is_access_denied",
           "description": "True for permission errors, which do not go away when the call is retried."
+        },
+        {
+          "name": "_is_network_error",
+          "description": ""
+        },
+        {
+          "name": "_is_credential_error",
+          "description": ""
         },
         {
           "name": "troubleshooting_hint",
@@ -365,6 +381,7 @@
         }
       ],
       "imports_libraries": [
+        "botocore",
         "typing"
       ],
       "imports_files": [
@@ -658,6 +675,10 @@
         {
           "name": "_parse_model_id",
           "description": "Parse model ID from CLI argument."
+        },
+        {
+          "name": "_is_system_profile",
+          "description": "True when ``value`` is the ID of a system inference profile in the region."
         },
         {
           "name": "_is_known_model",
@@ -1032,6 +1053,7 @@
         "typing"
       ],
       "imports_files": [
+        "bedrock_usage_analyzer.__main__",
         "bedrock_usage_analyzer.aws.client_factory",
         "bedrock_usage_analyzer.utils.partition",
         "bedrock_usage_analyzer.utils.paths",
@@ -1233,6 +1255,10 @@
           "description": "Generic numbered selection from list with optional display function"
         },
         {
+          "name": "_claude_endpoints_in",
+          "description": "Invokable Claude endpoint IDs listed in the region's fm-list, newest first."
+        },
+        {
           "name": "select_quota_mapping_params",
           "description": "Interactive selection for quota mapping parameters (region, model)"
         },
@@ -1242,12 +1268,15 @@
         }
       ],
       "imports_libraries": [
+        "os",
         "sys",
         "typing"
       ],
       "imports_files": [
         "bedrock_usage_analyzer.sync.regions",
-        "bedrock_usage_analyzer.utils.partition"
+        "bedrock_usage_analyzer.utils.partition",
+        "bedrock_usage_analyzer.utils.paths",
+        "bedrock_usage_analyzer.utils.yaml_handler"
       ]
     },
     {
@@ -1318,6 +1347,7 @@
         "bedrock_usage_analyzer.utils",
         "bedrock_usage_analyzer.utils.partition",
         "bedrock_usage_analyzer.utils.paths",
+        "bedrock_usage_analyzer.utils.ui",
         "bedrock_usage_analyzer.utils.yaml_handler"
       ]
     },

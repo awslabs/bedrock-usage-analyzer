@@ -51,7 +51,14 @@ class BedrockAnalyzer:
         self.metrics_fetcher = CloudWatchMetricsFetcher(self.cloudwatch_client, self.tz_api_format)
         self.output_generator = None  # Initialized in analyze() with output_dir
         self._fm_models = None  # Region's fm-list, loaded on first quota lookup
+        self._regional = None
     
+    def _regional_prefixes(self):
+        """Regional (geographic) profile prefixes, computed once per run."""
+        if getattr(self, '_regional', None) is None:
+            self._regional = set(get_regional_profile_prefixes())
+        return self._regional
+
     def _load_quota_codes(self, model_id, profile_prefix=None):
         """Load quota codes for a model from FM list based on endpoint
         
@@ -72,7 +79,6 @@ class BedrockAnalyzer:
                 with open(fm_file, 'r', encoding='utf-8') as f:
                     data = yaml.safe_load(f) or {}
             self._fm_models = data.get('models', []) or []
-            self._regional = set(get_regional_profile_prefixes())
 
         endpoint_key = profile_prefix if profile_prefix else 'base'
         for model in self._fm_models:
@@ -90,7 +96,7 @@ class BedrockAnalyzer:
             # version, before the mapping checks existed) instead of showing another limit
             for metric, quota in list(quotas.items()):
                 if isinstance(quota, dict):
-                    reason = mapping_conflict(model_id, endpoint_key, quota.get('name'), self._regional)
+                    reason = mapping_conflict(model_id, endpoint_key, quota.get('name'), self._regional_prefixes())
                     if reason:
                         logger.info(f"  Ignoring {metric} quota {quota.get('code')}: {reason}")
                         quotas[metric] = None
@@ -134,7 +140,7 @@ class BedrockAnalyzer:
                 logger.info(f"  Warning: Could not fetch {quota_type} quota {code} for {model_id}")
         
         # Apply 2x multiplier for TPD on regional cross-region profiles
-        regional_profile_prefixes = get_regional_profile_prefixes()
+        regional_profile_prefixes = self._regional_prefixes()
         if profile_prefix in regional_profile_prefixes and quotas['tpd'] and quotas['tpd']['value'] is not None:
             quotas['tpd']['value'] = quotas['tpd']['value'] * 2
         

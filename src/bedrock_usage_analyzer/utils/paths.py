@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Optional
 
 # The package requires Python >= 3.9, where importlib.resources.files exists
-from importlib.resources import files, as_file  # nosemgrep: python.lang.compatibility.python37.python37-compatibility-importlib2
+from importlib.resources import files  # nosemgrep: python.lang.compatibility.python37.python37-compatibility-importlib2
 
 from platformdirs import user_data_dir
 
@@ -106,8 +106,10 @@ def list_data_files(pattern: str = "*.yml") -> List[Path]:
     found = {}
     try:
         bundled = get_bundled_data_dir()
-        with as_file(bundled) as bundled_path:
-            for path in bundled_path.glob(pattern):
+        # Only real directories give paths that stay valid after this call (as_file would
+        # extract a zipped package to a temporary directory and delete it on exit)
+        if isinstance(bundled, Path):
+            for path in bundled.glob(pattern):
                 found[path.name] = path
     except (TypeError, FileNotFoundError, ModuleNotFoundError):
         pass

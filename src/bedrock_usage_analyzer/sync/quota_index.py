@@ -55,7 +55,7 @@ class QuotaIndexGenerator:
     
     def _load_all_models(self):
         """Load the FM lists of the credentials' partition and merge endpoints from all regions"""
-        from bedrock_usage_analyzer.sync.regions import credentials_partition_or_exit
+        from bedrock_usage_analyzer.sync.regions import SKIP_REGIONS, credentials_partition_or_exit
         from bedrock_usage_analyzer.utils.partition import get_partition_for_region
 
         # Quota codes are validated with these credentials, so only this partition's lists
@@ -65,7 +65,8 @@ class QuotaIndexGenerator:
         for fm_file in list_data_files('fm-list-*.yml'):
             filename = fm_file.name if hasattr(fm_file, 'name') else str(fm_file)
             region = filename.replace('fm-list-', '').replace('.yml', '')
-            if get_partition_for_region(region) == partition:
+            # Disrupted regions are skipped like in every refresh (their endpoints time out)
+            if get_partition_for_region(region) == partition and region not in SKIP_REGIONS:
                 fm_files.append((region, fm_file))
 
         if not fm_files:

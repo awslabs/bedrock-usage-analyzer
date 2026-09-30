@@ -277,3 +277,10 @@ def test_unknown_source_endpoint_label(analyzer, tmp_path):
     data = json.loads((out / reports(out)[1]).read_text())
     assert data['endpoint'] == f"{HAIKU} (source endpoint unknown)"
     assert not reports(out)[0].startswith('unknown.')
+
+
+def test_chart_quota_note_is_built_without_innerhtml():
+    template = open(os.path.join(os.path.dirname(__file__), '..', 'src', 'bedrock_usage_analyzer',
+                                 'templates', 'report.html'), encoding='utf-8').read()
+    assert 'quotaInfo.url}' not in template and 'quotaInfo.name}' not in template
+    assert "quotaInfo.url.startsWith('https://')" in template
