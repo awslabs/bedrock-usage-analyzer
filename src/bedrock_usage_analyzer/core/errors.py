@@ -19,6 +19,27 @@ _NETWORK_MARKERS = ('could not connect', 'endpoint url', 'connecttimeout', 'read
                     'connection was closed', 'name or service not known')
 
 
+# STS answers these when it does not recognise the credentials at all, which is also
+# what one partition's STS answers for another partition's credentials
+_TOKEN_REJECTION_CODES = ('InvalidClientTokenId', 'UnrecognizedClient', 'SignatureDoesNotMatch')
+
+
+def _error_text(error: Exception) -> str:
+    return f"{type(error).__name__} {error}"
+
+
+def is_token_rejection(error: Exception) -> bool:
+    """True when STS rejected the credentials themselves (not a network or permission error)."""
+    text = _error_text(error)
+    return any(code in text for code in _TOKEN_REJECTION_CODES)
+
+
+def is_access_denied(error: Exception) -> bool:
+    """True for permission errors, which do not go away when the call is retried."""
+    text = _error_text(error).lower()
+    return any(m in text for m in _ACCESS_MARKERS)
+
+
 def troubleshooting_hint(error: Exception, region: Optional[str] = None) -> Optional[str]:
     """Return a short hint for ``error``, or None when there is nothing useful to add."""
     text = f"{type(error).__name__} {error}".lower()

@@ -118,11 +118,18 @@ class QuotaMapper:
                 if quota_mapping:
                     endpoints_data[endpoint_type] = {'quotas': quota_mapping}
             
-            # Update mapped endpoints only. An endpoint without a new match keeps its saved codes:
-            # "no match" cannot be told apart from a failed LLM call or a keyword miss, and
-            # wiping correct codes is worse than keeping a stale one. Stale codes are removed by
-            # `bua refresh quota-index`, which clears codes that Service Quotas rejects.
-            fm.setdefault('endpoints', {}).update(endpoints_data)
+            # Merge per metric. A metric without a new match keeps its saved code: "no match"
+            # cannot be told apart from a failed LLM call or a keyword miss, and wiping a
+            # correct code is worse than keeping a stale one. `bua refresh quota-index` removes
+            # codes that Service Quotas rejects or that contradict their model/endpoint.
+            endpoints = fm.setdefault('endpoints', {})
+            for endpoint_type, new in endpoints_data.items():
+                saved = (endpoints.get(endpoint_type) or {}).get('quotas') or {}
+                merged = dict(saved)
+                merged.update({metric: value for metric, value in new['quotas'].items() if value})
+                for metric in new['quotas']:
+                    merged.setdefault(metric, None)
+                endpoints[endpoint_type] = {**(endpoints.get(endpoint_type) or {}), 'quotas': merged}
 
             if endpoints_data:
                 updated_count += 1

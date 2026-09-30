@@ -10,13 +10,14 @@ from typing import Dict, List, Optional, Sequence, Union
 
 from ..aws.bedrock import region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
-from ..core.errors import troubleshooting_hint
+from ..core.errors import is_token_rejection, troubleshooting_hint
 from ..core.profile_fetcher import InferenceProfileFetcher
 from ..sync.regions import load_region_names, regions_for_credentials
 from ..utils.yaml_handler import load_yaml
 from ..utils.ui import select_from_list
 from ..utils.paths import get_data_path
 from ..utils.partition import (
+    PARTITION_HOME_REGIONS,
     get_caller_identity,
     get_partition_display_name,
     get_partition_for_region,
@@ -27,10 +28,6 @@ from ..utils.partition import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-# One STS region per partition, used to tell which partition rejected credentials belong to
-PARTITION_PROBE_REGIONS = ('us-east-1', 'us-gov-west-1', 'cn-north-1')
 
 
 def parse_selection(text: str, count: int) -> List[int]:
@@ -69,12 +66,6 @@ def group_application_profiles(profiles: Sequence[Dict]) -> List[Dict]:
         if app['id'] not in config['application_profile_ids']:
             config['application_profile_ids'].append(app['id'])
     return list(groups.values())
-
-
-def _is_token_rejection(error: Exception) -> bool:
-    """True when STS rejected the credentials themselves (not a network or permission error)."""
-    text = f"{type(error).__name__} {error}"
-    return any(code in text for code in ('InvalidClientTokenId', 'UnrecognizedClient', 'SignatureDoesNotMatch'))
 
 
 def merge_application_configs(configs: Sequence[Dict]) -> List[Dict]:
@@ -199,7 +190,7 @@ class UserInputs:
         try:
             identity = get_caller_identity(region)
         except Exception as e:
-            if _is_token_rejection(e):
+            if is_token_rejection(e):
                 self._explain_partition_mismatch(region or region_hint())
             logger.error(f"Failed to get AWS account ID: {e}")
             hint = troubleshooting_hint(e, region or region_hint())
@@ -226,7 +217,7 @@ class UserInputs:
         requested = get_partition_for_region(region)
         # One STS region per other partition (the commercial STS endpoint rejects
         # GovCloud credentials and vice versa)
-        probes = [r for r in PARTITION_PROBE_REGIONS if get_partition_for_region(r) != requested]
+        probes = [r for p, r in PARTITION_HOME_REGIONS.items() if p != requested]
         for probe in probes:
             try:
                 identity = get_caller_identity(probe, probe=True)

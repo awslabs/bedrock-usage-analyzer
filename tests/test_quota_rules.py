@@ -129,3 +129,42 @@ def test_quota_index_removes_saved_mismatches_in_every_region(monkeypatch, tmp_p
     assert west['us']['quotas']['tpm'] is None        # never sampled by the index, still cleaned
     csv_text = (tmp_path / 'data' / 'quota-index.csv').read_text()
     assert 'L-US' in csv_text and 'L-GL46' not in csv_text
+
+
+def test_partial_new_mapping_keeps_other_saved_metrics(monkeypatch, tmp_path):
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1']})
+    saved = {'tpm': {'code': 'L-A', 'name': 'a'}, 'rpm': {'code': 'L-B', 'name': 'b'}, 'tpd': None}
+    save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [
+        {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': saved}}}]})
+    monkeypatch.setattr(qm, 'fetch_service_quotas', lambda region: [])
+    monkeypatch.setattr(qm, 'extract_common_name', lambda *a: 'nova')
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws')
+    mapper = qm.QuotaMapper('us-east-1', 'model', 'us-east-1')
+    monkeypatch.setattr(mapper, '_get_quota_mapping', lambda *a: {
+        'tpm': {'code': 'L-NEW', 'name': 'n'}, 'rpm': None, 'tpd': {'code': 'L-TPD', 'name': 't'}, 'concurrent': None})
+    mapper.run()
+    quotas = load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]['endpoints']['base']['quotas']
+    assert quotas == {'tpm': {'code': 'L-NEW', 'name': 'n'}, 'rpm': {'code': 'L-B', 'name': 'b'},
+                      'tpd': {'code': 'L-TPD', 'name': 't'}, 'concurrent': None}
+
+
+def test_unverified_conflicting_entry_is_left_out_of_csv(monkeypatch, tmp_path, no_bundle):
+    (tmp_path / 'data').mkdir()
+    wrong = {'code': 'L-GL46', 'name': 'Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6'}
+    save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [
+        {'model_id': SONNET4, 'provider': 'Anthropic', 'endpoints': {'us': {'quotas': {'tpm': wrong}}}}]})
+    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: ('error', None))   # e.g. throttled
+    quota_index.QuotaIndexGenerator().run()
+    assert 'L-GL46' not in (tmp_path / 'data' / 'quota-index.csv').read_text()
+    assert load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]['endpoints']['us']['quotas']['tpm'] is None
+
+
+def test_prefix_file_can_mark_a_known_prefix_not_regional(tmp_path):
+    from bedrock_usage_analyzer.aws import bedrock
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'prefix-mapping.yml'), {'prefixes': [
+        {'prefix': 'ca', 'quota_keyword': 'cross-region', 'description': 'x', 'is_regional': False}]})
+    bedrock._prefix_mapping_cache = None
+    prefixes = bedrock.get_regional_profile_prefixes()
+    assert 'ca' not in prefixes and {'us', 'us-gov', 'in'} <= set(prefixes)

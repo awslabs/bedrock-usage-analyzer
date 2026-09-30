@@ -111,9 +111,12 @@ def get_regional_profile_prefixes() -> List[str]:
         mapping = _load_prefix_mapping()
     except FileNotFoundError:
         mapping = []
-    regional = [m['prefix'] for m in mapping if m.get('is_regional')]
-    # Known geographic prefixes stay regional even if the mapping file lacks them
-    return sorted(set(regional) | (KNOWN_PROFILE_PREFIXES - {'global'}))
+    declared = {m['prefix']: bool(m.get('is_regional')) for m in mapping}
+    # prefix-mapping.yml decides for every prefix it lists; known geographic prefixes
+    # fill in only the ones it does not mention
+    regional = {p for p, is_regional in declared.items() if is_regional}
+    regional |= {p for p in KNOWN_PROFILE_PREFIXES - {'global'} if p not in declared}
+    return sorted(regional)
 
 
 def get_default_region_prefix_map() -> Dict[str, str]:
@@ -318,19 +321,16 @@ def build_profile_map(profiles: List[Dict]) -> Dict[str, List[str]]:
     for profile in profiles:
         profile_id = profile.get('inferenceProfileId', '')
         
-        # Extract prefix (us, eu, jp, au, apac, global)
+        # A system profile ID always starts with its prefix (us, eu, jp, au, apac, global, ...).
+        # Taken literally rather than via split_profile_id: new prefixes are discovered here.
         if '.' not in profile_id:
             continue
         prefix = profile_id.split('.')[0]
-        
+
         # Add this prefix to all models in this profile
         for model in profile.get('models', []):
-            model_arn = model.get('modelArn', '')
-            
-            # Extract model_id from ARN (format: arn:aws:bedrock:region::foundation-model/model-id)
-            if ':foundation-model/' in model_arn:
-                model_id = model_arn.split(':foundation-model/')[-1]
-                
+            model_id = model_id_from_arn(model.get('modelArn', ''))
+            if model_id:
                 if model_id not in profile_map:
                     profile_map[model_id] = []
                 if prefix not in profile_map[model_id]:

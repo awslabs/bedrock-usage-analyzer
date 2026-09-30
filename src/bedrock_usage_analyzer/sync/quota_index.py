@@ -4,6 +4,7 @@
 """Generate quota index CSV for validation"""
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict
 import sys
 
@@ -150,28 +151,31 @@ class QuotaIndexGenerator:
             return
 
         logger.info(f"Validating {len(self.entries)} quota mappings against Service Quotas...\n")
-        cache = {}
         regional = set(get_regional_profile_prefixes())
+        keys = sorted({(e['quota_code'], e['source_region']) for e in self.entries})
+        # Independent lookups; a small pool keeps well under Service Quotas rate limits
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            cache = dict(zip(keys, pool.map(lambda k: check_quota(*k), keys)))
+
         unverified = 0
         for entry in self.entries:
-            key = (entry['quota_code'], entry['source_region'])
-            if key not in cache:
-                cache[key] = check_quota(entry['quota_code'], entry['source_region'])
-            status, quota = cache[key]
+            status, quota = cache[(entry['quota_code'], entry['source_region'])]
             if status == QUOTA_OK:
                 entry['quota_name'] = quota.get('QuotaName') or entry.get('quota_name') or 'N/A'
-                reason = mapping_conflict(entry['model_id'], entry['endpoint'], entry['quota_name'], regional)
-                if reason:
-                    # The code exists but belongs to another model or endpoint type
-                    logger.info(f"  Mismatch: {entry['model_id']} {entry['endpoint']} {entry['quota_type']} "
-                                f"-> {entry['quota_code']} ({entry['quota_name']}): {reason}")
-                    entry['quota_name'] = 'MISMATCH'
-                    self.mismatch_entries.append(entry)
+            # Checked for every entry, whatever the lookup outcome, with the best name known,
+            # so the CSV and the fm-list cleanup always agree
+            reason = mapping_conflict(entry['model_id'], entry['endpoint'], entry.get('quota_name'), regional)
+            if reason:
+                # The code belongs to another model or endpoint type
+                logger.info(f"  Mismatch: {entry['model_id']} {entry['endpoint']} {entry['quota_type']} "
+                            f"-> {entry['quota_code']} ({entry.get('quota_name')}): {reason}")
+                entry['quota_name'] = 'MISMATCH'
+                self.mismatch_entries.append(entry)
             elif status == QUOTA_MISSING:
                 entry['previous_name'] = entry.get('quota_name')
                 entry['quota_name'] = 'ERROR'
                 self.error_entries.append(entry)
-            else:
+            elif status != QUOTA_OK:
                 unverified += 1
                 entry['quota_name'] = entry.get('quota_name') or 'N/A'
         if unverified:
@@ -189,6 +193,9 @@ class QuotaIndexGenerator:
         # region can exist elsewhere, so re-check it in every region before removing it
         self._region_checks = {
             (e['quota_code'], e['source_region']): QUOTA_MISSING for e in self.error_entries}
+        self._regional = set(get_regional_profile_prefixes())
+        self._mismatched = {(e['model_id'], e['endpoint'], e['quota_type'], e['quota_code'])
+                            for e in self.mismatch_entries}
         # Every region file is also checked for mismatches by the quota name stored with each
         # code, because the index itself samples only one source region per model endpoint
         for fm_file in list_data_files('fm-list-*.yml'):
@@ -213,8 +220,9 @@ class QuotaIndexGenerator:
         """Null out codes missing in this region or contradicting their model/endpoint (user copy, else bundled)"""
         if not hasattr(self, '_region_checks'):
             self._region_checks = {}
-        regional = set(get_regional_profile_prefixes())
-        mismatched = {(e['model_id'], e['endpoint'], e['quota_type'], e['quota_code']) for e in self.mismatch_entries}
+            self._regional = set(get_regional_profile_prefixes())
+            self._mismatched = set()
+        regional, mismatched = self._regional, self._mismatched
         yaml_file = get_writable_path(f'fm-list-{region}.yml')
         data = load_yaml(get_data_path(f'fm-list-{region}.yml')) or {}
 

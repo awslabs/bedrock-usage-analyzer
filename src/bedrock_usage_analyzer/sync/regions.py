@@ -10,7 +10,7 @@ from typing import Iterable, List, Optional
 
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.utils.partition import (
-    COMMERCIAL,
+    PARTITION_HOME_REGIONS,
     detect_credentials_partition,
     filter_regions_by_partition,
     get_partition_display_name,
@@ -94,9 +94,8 @@ def _home_region(partition: str, hint: Optional[str]) -> Optional[str]:
     if hint and get_partition_for_region(hint) == partition:
         return hint
     candidates = partition_regions(partition)
-    preferred = {COMMERCIAL: 'us-east-1', 'aws-us-gov': 'us-gov-west-1', 'aws-cn': 'cn-north-1'}
-    if preferred.get(partition) in candidates:
-        return preferred[partition]
+    if PARTITION_HOME_REGIONS.get(partition) in candidates:
+        return PARTITION_HOME_REGIONS[partition]
     return candidates[0] if candidates else None
 
 

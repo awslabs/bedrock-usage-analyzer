@@ -298,3 +298,11 @@ def test_probe_clients_fail_fast():
     from bedrock_usage_analyzer.aws.client_factory import create_client
     c = create_client('sts', 'cn-north-1', probe=True)
     assert c.meta.config.retries['total_max_attempts'] == 1 and c.meta.config.connect_timeout == 3
+
+
+def test_error_classifiers():
+    from bedrock_usage_analyzer.core.errors import is_access_denied, is_token_rejection
+    assert is_token_rejection(RuntimeError('An error occurred (InvalidClientTokenId) when calling'))
+    assert not is_token_rejection(RuntimeError('Could not connect to the endpoint URL'))
+    assert is_access_denied(RuntimeError('AccessDeniedException: User is not authorized'))
+    assert not is_access_denied(RuntimeError('ThrottlingException'))

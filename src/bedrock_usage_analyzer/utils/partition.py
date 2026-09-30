@@ -44,6 +44,13 @@ _CONSOLE_DOMAINS = {
     CHINA: 'console.amazonaws.cn',
 }
 
+# A region per partition for calls that need one (STS probes, region listing)
+PARTITION_HOME_REGIONS = {
+    COMMERCIAL: 'us-east-1',
+    GOVCLOUD: 'us-gov-west-1',
+    CHINA: 'cn-north-1',
+}
+
 _PARTITION_NAMES = {
     COMMERCIAL: 'AWS Commercial',
     GOVCLOUD: 'AWS GovCloud (US)',

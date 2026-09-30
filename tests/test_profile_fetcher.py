@@ -241,3 +241,37 @@ def test_country_fallback_learns_regions_from_system_profiles():
     apps = [app_profile('newau000001', 'n', [arn('ap-southeast-9', NOVA), arn('ap-southeast-2', NOVA)])]
     fetcher = InferenceProfileFetcher(FakeBedrock(system=system, application=apps))
     assert fetcher.list_application_profiles()[0]['source'] == f"au.{NOVA}"
+
+
+def test_throttled_listing_is_retried_but_denied_is_cached(sydney_bedrock):
+    real = sydney_bedrock.list_inference_profiles
+    state = {'fail': 'ThrottlingException: Rate exceeded', 'calls': 0}
+
+    def flaky(**kwargs):
+        state['calls'] += 1
+        if state['fail']:
+            raise RuntimeError(state['fail'])
+        return real(**kwargs)
+
+    sydney_bedrock.list_inference_profiles = flaky
+    fetcher = InferenceProfileFetcher(sydney_bedrock)
+    with pytest.raises(RuntimeError):
+        fetcher.list_application_profiles()
+    state['fail'] = None
+    assert len(fetcher.list_application_profiles()) == 5          # recovered on the next call
+
+    denied = InferenceProfileFetcher(FakeBedrock())
+    denied.bedrock_client.list_inference_profiles = lambda **k: (_ for _ in ()).throw(
+        RuntimeError('AccessDeniedException: not authorized'))
+    for _ in range(2):
+        with pytest.raises(RuntimeError):
+            denied.list_application_profiles()
+    assert denied._listing_error is not None
+
+
+def test_listing_failure_is_reported_as_a_warning(sydney_bedrock, caplog):
+    import logging
+    caplog.set_level(logging.WARNING)
+    sydney_bedrock.list_inference_profiles = lambda **k: (_ for _ in ()).throw(RuntimeError('AccessDenied'))
+    InferenceProfileFetcher(sydney_bedrock).find_profiles(HAIKU, 'au')
+    assert 'without its application profiles' in caplog.text

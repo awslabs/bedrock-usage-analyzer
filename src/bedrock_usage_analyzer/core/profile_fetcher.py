@@ -6,6 +6,7 @@
 import logging
 from typing import Dict, FrozenSet, Iterable, List, Optional
 
+from bedrock_usage_analyzer.core.errors import is_access_denied
 from bedrock_usage_analyzer.aws.bedrock import (
     get_default_region_prefix_map,
     list_inference_profiles,
@@ -83,7 +84,10 @@ class InferenceProfileFetcher:
                 raw = list_inference_profiles(self.bedrock_client, 'APPLICATION')
                 self._load_system_profiles()
             except Exception as e:
-                self._listing_error = e
+                # Only a permission error is permanent for this run; throttling or a network
+                # blip is retried by the next caller instead of dropping profiles for good
+                if is_access_denied(e):
+                    self._listing_error = e
                 raise
             profiles = []
             for profile in raw:
@@ -108,11 +112,6 @@ class InferenceProfileFetcher:
         return self._app_profiles
 
     # --------------------------------------------------------------- resolution
-
-    def resolve_source(self, model_arns: Iterable[str]) -> Optional[str]:
-        """Return the endpoint ID an application profile was copied from (first candidate)."""
-        sources = self.resolve_sources(model_arns)
-        return sources[0] if sources else None
 
     def resolve_sources(self, model_arns: Iterable[str]) -> List[str]:
         """Return the endpoint IDs an application profile may have been copied from.
@@ -234,15 +233,17 @@ class InferenceProfileFetcher:
         except Exception as e:
             if wanted:
                 raise
-            # e.g. no bedrock:ListInferenceProfiles permission: still analyze the endpoint itself
-            logger.info(f"  Warning: Could not list application inference profiles: {e}")
+            # e.g. no bedrock:ListInferenceProfiles permission: still analyze the endpoint itself,
+            # but say plainly that the report is missing its application profiles
+            logger.warning(f"  WARNING: Could not list application inference profiles ({e}). "
+                           f"This report covers {target_endpoint} only, without its application profiles.")
             app_profiles = []
         matched = 0
         for app in app_profiles:
             if wanted:
                 if app['id'] not in wanted:
                     continue
-            elif target_endpoint not in app.get('sources', [app['source']]):
+            elif target_endpoint not in app['sources']:
                 continue
             matched += 1
             profiles.append(app['id'])
@@ -265,7 +266,7 @@ class InferenceProfileFetcher:
             return counts
         target = model_id if profile_prefix is None else f"{profile_prefix}.{model_id}"
         for app in app_profiles:
-            if app['model_id'] == model_id and target not in app.get('sources', [app['source']]):
+            if app['model_id'] == model_id and target not in app['sources']:
                 key = app['profile_prefix'] or 'base'
                 counts[key] = counts.get(key, 0) + 1
         return counts
