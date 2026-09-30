@@ -29,12 +29,28 @@ def get_bundled_data_dir() -> Path:
 
 
 def get_bundled_file(filename: str) -> Optional[str]:
-    """Path of a bundled metadata file, or None if it is not shipped."""
+    """Filesystem path of a bundled metadata file, or None.
+
+    Only returns a path that stays valid after this call, i.e. when the package
+    is installed as plain files. For zip/egg installs use load_bundled_yaml().
+    """
     try:
-        with as_file(get_bundled_data_dir() / filename) as path:
-            if path.exists():
-                return str(path)
+        resource = get_bundled_data_dir() / filename
+        if isinstance(resource, Path) and resource.is_file():
+            return str(resource)
     except (TypeError, FileNotFoundError, ModuleNotFoundError):
+        pass
+    return None
+
+
+def load_bundled_yaml(filename: str):
+    """Parse a bundled YAML file straight from package resources (works for zip installs too)."""
+    import yaml
+    try:
+        resource = get_bundled_data_dir() / filename
+        if resource.is_file():
+            return yaml.safe_load(resource.read_text(encoding='utf-8'))
+    except (TypeError, FileNotFoundError, ModuleNotFoundError, OSError):
         pass
     return None
 

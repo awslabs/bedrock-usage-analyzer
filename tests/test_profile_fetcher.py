@@ -201,3 +201,20 @@ def test_fallback_tells_country_profiles_from_apac(regions, prefix):
     apps = [app_profile('x0000000001', 'x', [arn(rg, NOVA) for rg in regions])]
     fetcher = InferenceProfileFetcher(FakeBedrock(application=apps))
     assert fetcher.list_application_profiles()[0]['source'] == f"{prefix}.{NOVA}"
+
+
+def test_failed_listing_is_not_retried(sydney_bedrock):
+    calls = []
+
+    def denied(**kwargs):
+        calls.append(kwargs)
+        raise RuntimeError('AccessDeniedException')
+
+    sydney_bedrock.list_inference_profiles = denied
+    fetcher = InferenceProfileFetcher(sydney_bedrock)
+    for _ in range(3):
+        with pytest.raises(RuntimeError):
+            fetcher.list_application_profiles()
+    fetcher.find_profiles(HAIKU, 'au')
+    fetcher.other_sources_for_model(HAIKU, 'au')
+    assert len(calls) == 1

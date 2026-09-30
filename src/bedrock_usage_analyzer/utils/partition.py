@@ -12,6 +12,7 @@ commercial regions and vice versa).
 
 import logging
 import os
+import re
 from typing import Dict, Iterable, List, Optional
 
 import boto3
@@ -49,8 +50,12 @@ _PARTITION_NAMES = {
     CHINA: 'AWS China',
 }
 
+# AWS region names: 'us-west-2', 'us-gov-west-1', 'cn-north-1', 'eusc-de-east-1'
+REGION_PATTERN = re.compile(r'^[a-z]{2,5}(-[a-z0-9]+){1,3}-\d{1,2}$')
+
 _endpoint_data = None
 _caller_identity_cache: Dict[Optional[str], Dict[str, str]] = {}
+_config_region_cache: Dict[Optional[str], Optional[str]] = {}
 
 
 def _load_endpoint_data() -> dict:
@@ -154,15 +159,24 @@ def filter_regions_by_partition(regions: Iterable[str], partition: Optional[str]
     return [r for r in regions if get_partition_for_region(r) == partition]
 
 
+def is_valid_region_name(region: Optional[str]) -> bool:
+    """True for names shaped like AWS regions ('us-west-2', 'us-gov-west-1', 'eusc-de-east-1')."""
+    return bool(region) and bool(REGION_PATTERN.match(region))
+
+
 def region_hint() -> Optional[str]:
     """Region configured in the environment or AWS config, if any."""
     region = os.environ.get('AWS_REGION') or os.environ.get('AWS_DEFAULT_REGION')
     if region:
         return region
-    try:
-        return boto3.session.Session().region_name
-    except Exception:
-        return None
+    # Reading the AWS config files is not free; cache per profile
+    profile = os.environ.get('AWS_PROFILE') or os.environ.get('AWS_DEFAULT_PROFILE')
+    if profile not in _config_region_cache:
+        try:
+            _config_region_cache[profile] = boto3.session.Session().region_name
+        except Exception:
+            _config_region_cache[profile] = None
+    return _config_region_cache[profile]
 
 
 def get_caller_identity(region: Optional[str] = None) -> Dict[str, str]:
@@ -198,5 +212,6 @@ def detect_credentials_partition(region: Optional[str] = None) -> Optional[str]:
 
 
 def clear_cache() -> None:
-    """Forget cached caller identities (used by tests)."""
+    """Forget cached caller identities and config regions (used by tests)."""
     _caller_identity_cache.clear()
+    _config_region_cache.clear()

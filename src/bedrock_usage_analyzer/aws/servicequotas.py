@@ -36,6 +36,33 @@ def fetch_service_quotas(region: str, service_code: str = 'bedrock') -> Optional
         return None
 
 
+QUOTA_OK = 'ok'
+QUOTA_MISSING = 'missing'
+QUOTA_ERROR = 'error'
+
+
+def check_quota(quota_code: str, region: str, service_code: str = 'bedrock'):
+    """Look up one quota and say whether it exists.
+
+    Returns:
+        (QUOTA_OK, quota dict), (QUOTA_MISSING, None) when Service Quotas says the
+        code does not exist, or (QUOTA_ERROR, None) for any other failure (throttling,
+        network, permissions), which callers must not treat as "missing".
+    """
+    try:
+        client = create_client('service-quotas', region)
+        response = client.get_service_quota(ServiceCode=service_code, QuotaCode=quota_code)
+        return QUOTA_OK, response.get('Quota', {})
+    except ClientError as e:
+        if e.response.get('Error', {}).get('Code') == 'NoSuchResourceException':
+            return QUOTA_MISSING, None
+        print(f"Error fetching quota {quota_code}: {e}", file=sys.stderr)
+        return QUOTA_ERROR, None
+    except Exception as e:
+        print(f"Error fetching quota {quota_code}: {e}", file=sys.stderr)
+        return QUOTA_ERROR, None
+
+
 def get_quota_details(quota_code: str, region: str, service_code: str = 'bedrock') -> Optional[Dict]:
     """Get details for a specific quota
 

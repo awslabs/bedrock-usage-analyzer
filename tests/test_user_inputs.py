@@ -316,3 +316,14 @@ def test_application_profile_name_with_dots(inputs):
     inputs.profile_fetcher._app_profiles = None
     assert inputs._parse_model_id('team.prod:haiku') == {
         'model_id': HAIKU, 'profile_prefix': 'au', 'application_profile_ids': ['dotted00001']}
+
+
+def test_china_credentials_are_identified(monkeypatch, caplog):
+    def identity(region=None):
+        if region == 'cn-north-1':
+            return {'Account': '1', 'Arn': 'arn:aws-cn:iam::1:user/a', 'Partition': 'aws-cn'}
+        raise RuntimeError('InvalidClientTokenId')
+    monkeypatch.setattr(ui_module, 'get_caller_identity', identity)
+    with pytest.raises(SystemExit):
+        UserInputs()._get_current_account('us-east-1')
+    assert 'but the credentials are for AWS China' in caplog.text

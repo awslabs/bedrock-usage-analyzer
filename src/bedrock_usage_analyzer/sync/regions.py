@@ -4,6 +4,7 @@
 """AWS regions management across partitions (commercial, GovCloud, China)"""
 
 import logging
+import os
 import sys
 from typing import Iterable, List, Optional
 
@@ -41,34 +42,51 @@ def normalize_region_names(entries: Iterable) -> List[str]:
     return sorted(n for n in names if n)
 
 
+def read_region_file(path) -> List[str]:
+    """Region names from one regions.yml file ([] if it does not exist)."""
+    if not path or not os.path.exists(str(path)):
+        return []
+    return normalize_region_names((load_yaml(str(path)) or {}).get('regions', []))
+
+
 def load_region_names() -> List[str]:
     """Load region names: the user's regions.yml, plus bundled regions of partitions it lacks.
 
     A user file written before GovCloud was bundled lists only commercial
     regions; it still wins for commercial, but GovCloud comes from the bundle.
     """
-    from bedrock_usage_analyzer.utils.paths import get_bundled_file
-    names = normalize_region_names((load_yaml(get_data_path('regions.yml')) or {}).get('regions', []))
-    bundled_path = get_bundled_file('regions.yml')
-    if bundled_path:
-        bundled = normalize_region_names((load_yaml(bundled_path) or {}).get('regions', []))
-        present = {get_partition_for_region(r) for r in names}
-        names = sorted(set(names) | {r for r in bundled if get_partition_for_region(r) not in present})
-    return names
+    from bedrock_usage_analyzer.utils.paths import load_bundled_yaml
+    names = read_region_file(get_data_path('regions.yml'))
+    bundled = normalize_region_names((load_bundled_yaml('regions.yml') or {}).get('regions', []))
+    present = {get_partition_for_region(r) for r in names}
+    return sorted(set(names) | {r for r in bundled if get_partition_for_region(r) not in present})
+
+
+def credentials_partition_or_exit(region: Optional[str] = None) -> str:
+    """Partition of the current credentials; exit with advice when it cannot be read.
+
+    Commands that act on "the regions your credentials can call" must not guess:
+    guessing processes (or saves) regions of the wrong partition.
+    """
+    partition = detect_credentials_partition(region or region_hint())
+    if partition is None:
+        logger.error("Could not read the caller identity; check your AWS credentials "
+                     "(aws sts get-caller-identity); for GovCloud set AWS_REGION, e.g. AWS_REGION=us-gov-west-1.")
+        sys.exit(1)
+    return partition
 
 
 def regions_for_credentials(regions: Iterable[str], region: Optional[str] = None):
     """Filter regions to the partition of the current credentials.
 
-    Returns (regions, partition). When the partition cannot be detected the list
-    is returned unfiltered and partition is None.
+    Returns (regions, partition). Exits when the partition cannot be detected.
     """
-    partition = detect_credentials_partition(region or region_hint())
+    partition = credentials_partition_or_exit(region)
     filtered = filter_regions_by_partition(regions, partition)
-    if partition and not filtered:
+    if not filtered:
         logger.warning(f"No {get_partition_display_name(partition)} regions in regions.yml; "
                        f"run: bua refresh regions")
-    return (filtered if partition else list(regions)), partition
+    return filtered, partition
 
 
 def _home_region(partition: str, hint: Optional[str]) -> Optional[str]:
@@ -104,14 +122,9 @@ def fetch_enabled_regions(partition: Optional[str] = None, region: Optional[str]
     botocore's static region list for Bedrock in that partition.
     """
     hint = region or region_hint()
-    if partition is None:
-        partition = detect_credentials_partition(hint)
-    if partition is None:
-        # Without working credentials the static fallback below would silently
-        # replace the list with every region, including ones never enabled.
-        logger.error("Could not read the caller identity; check your AWS credentials "
-                     "(aws sts get-caller-identity); for GovCloud set AWS_REGION, e.g. AWS_REGION=us-gov-west-1.")
-        sys.exit(1)
+    # Without working credentials the static fallback below would silently
+    # replace the list with every region, including ones never enabled
+    partition = partition or credentials_partition_or_exit(hint)
     home = _home_region(partition, hint)
 
     errors = []
@@ -151,11 +164,7 @@ def merge_regions(existing: Iterable, fresh: Iterable[str], partition: str) -> L
 def discover_regions():
     """Return (partition, regions) enabled for the current credentials, minus SKIP_REGIONS."""
     hint = region_hint()
-    partition = detect_credentials_partition(hint)
-    if partition is None:
-        logger.error("Could not read the caller identity; check your AWS credentials "
-                     "(aws sts get-caller-identity); for GovCloud set AWS_REGION, e.g. AWS_REGION=us-gov-west-1.")
-        sys.exit(1)
+    partition = credentials_partition_or_exit(hint)
     logger.info(f"Fetching enabled regions ({get_partition_display_name(partition)})...")
 
     regions = fetch_enabled_regions(partition, hint)

@@ -118,29 +118,24 @@ def cmd_analyze(args):
 
 def cmd_refresh_regions(args):
     """Refresh regions list."""
-    import os
-    from bedrock_usage_analyzer.sync.regions import discover_regions, refresh_regions
-    from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
+    from bedrock_usage_analyzer.sync.regions import (
+        discover_regions, load_region_names, read_region_file, refresh_regions)
+    from bedrock_usage_analyzer.utils.yaml_handler import save_yaml
 
     print(get_refresh_location_message())
     print()
 
-    def existing_entries(path):
-        if path and os.path.exists(path):
-            return (load_yaml(str(path)) or {}).get('regions', [])
-        return []
-
     # Only the credentials' partition is replaced; other partitions are kept
     # (e.g. GovCloud regions when refreshing with commercial credentials)
     discovered = discover_regions()
-    data = refresh_regions(existing=existing_entries(get_data_path('regions.yml')), discovered=discovered)
+    data = refresh_regions(existing=load_region_names(), discovered=discovered)
     output_path = get_writable_path("regions.yml")
     save_yaml(str(output_path), data)
     logger.info(f"✓ Saved: {output_path}")
 
     bundle_path = get_bundle_path() if getattr(args, 'update_bundle', False) else None
     if bundle_path is not None:
-        data = refresh_regions(existing=existing_entries(bundle_path / "regions.yml"), discovered=discovered)
+        data = refresh_regions(existing=read_region_file(bundle_path / "regions.yml"), discovered=discovered)
     _maybe_update_bundle(args, "regions.yml", data)
 
 
@@ -152,10 +147,10 @@ def cmd_refresh_fm_list(args):
     print()
     
     from bedrock_usage_analyzer.sync.regions import load_region_names, regions_for_credentials
-    from bedrock_usage_analyzer.core.user_inputs import REGION_PATTERN
+    from bedrock_usage_analyzer.utils.partition import is_valid_region_name
 
     if args.region:
-        if not REGION_PATTERN.match(args.region):
+        if not is_valid_region_name(args.region):
             logger.error(f"Invalid region format: {args.region}")
             sys.exit(1)
         refresh_region(args.region, update_bundle=args.update_bundle)

@@ -50,16 +50,15 @@ def save_models(filepath: str, models: List[Dict]):
     save_yaml(filepath, {'models': sorted_models})
 
 
-def refresh_region(region: str, update_bundle: bool = False):
+def refresh_region(region_name: str, update_bundle: bool = False):
     """Refresh foundation models for a region
-    
+
     Also refreshes prefix mapping, merging with existing prefixes.
-    
+
     Args:
-        region: AWS region name
+        region_name: AWS region name
         update_bundle: Also update bundled metadata (for maintainers)
     """
-    region_name = region
     logger.info(f"\nProcessing region: {region_name}")
 
     # List the system inference profiles once; both the prefix discovery and the

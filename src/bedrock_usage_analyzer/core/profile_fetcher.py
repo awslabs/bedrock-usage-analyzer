@@ -42,6 +42,7 @@ class InferenceProfileFetcher:
         self._system_profiles: Optional[List[Dict]] = None
         self._system_by_arns: Dict[FrozenSet[str], str] = {}
         self._app_profiles: Optional[List[Dict]] = None
+        self._listing_error: Optional[Exception] = None
         self._tags_cache: Dict[str, Dict[str, str]] = {}
 
     # ------------------------------------------------------------------ listing
@@ -61,10 +62,17 @@ class InferenceProfileFetcher:
         Each entry: id, name, arn, status, model_id, profile_prefix (None for a
         base-model copy) and source (the endpoint ID it was copied from).
         """
+        if self._listing_error is not None:
+            # A failed listing (no permission, throttled out) is not retried by every caller
+            raise self._listing_error
         if self._app_profiles is None:
             logger.info("  Listing application inference profiles...")
-            raw = list_inference_profiles(self.bedrock_client, 'APPLICATION')
-            self._load_system_profiles()
+            try:
+                raw = list_inference_profiles(self.bedrock_client, 'APPLICATION')
+                self._load_system_profiles()
+            except Exception as e:
+                self._listing_error = e
+                raise
             profiles = []
             for profile in raw:
                 arns = [m.get('modelArn', '') for m in profile.get('models', [])]

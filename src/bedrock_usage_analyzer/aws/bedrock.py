@@ -52,11 +52,10 @@ def _load_prefix_mapping() -> List[Dict]:
     if _prefix_mapping_cache is not None:
         return _prefix_mapping_cache
 
-    from bedrock_usage_analyzer.utils.paths import get_bundled_file, get_user_data_dir
+    from bedrock_usage_analyzer.utils.paths import get_user_data_dir, load_bundled_yaml
 
     merged: Dict[str, Dict] = {}
-    bundled = get_bundled_file('prefix-mapping.yml')
-    for entry in (_read_prefixes(bundled) if bundled else []):
+    for entry in (load_bundled_yaml('prefix-mapping.yml') or {}).get('prefixes', []) or []:
         merged[entry['prefix']] = entry
     for entry in _read_prefixes(get_user_data_dir() / 'prefix-mapping.yml'):
         merged[entry['prefix']] = entry
@@ -207,9 +206,8 @@ def discover_prefix_mapping(region: str, profiles: Optional[List[Dict]] = None) 
         ]
     """
     try:
-        if profiles is None:
-            profiles = list_inference_profiles(create_client('bedrock', region), 'SYSTEM_DEFINED')
-        all_profiles = profiles
+        all_profiles = profiles if profiles is not None else \
+            list_inference_profiles(create_client('bedrock', region), 'SYSTEM_DEFINED')
 
         # Extract system profile prefixes
         discovered = []

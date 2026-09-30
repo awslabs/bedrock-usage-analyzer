@@ -4,7 +4,6 @@
 """User input collection for Bedrock usage analysis"""
 
 import os
-import re
 import sys
 import logging
 from typing import Dict, List, Optional, Sequence, Union
@@ -18,21 +17,21 @@ from ..utils.yaml_handler import load_yaml
 from ..utils.ui import select_from_list
 from ..utils.paths import get_data_path
 from ..utils.partition import (
+    REGION_PATTERN,  # re-exported for callers of the previous location
     get_caller_identity,
     get_partition_display_name,
     get_partition_for_region,
     get_region_display_name,
     is_govcloud_region,
+    is_valid_region_name,
     region_hint,
 )
 
 logger = logging.getLogger(__name__)
 
-# AWS region names: 'us-west-2', 'us-gov-west-1', 'cn-north-1', 'eusc-de-east-1'
-REGION_PATTERN = re.compile(r'^[a-z]{2,5}(-[a-z0-9]+){1,3}-\d{1,2}$')
 
 # One STS region per partition, used to tell which partition rejected credentials belong to
-PARTITION_PROBE_REGIONS = ('us-east-1', 'us-gov-west-1')
+PARTITION_PROBE_REGIONS = ('us-east-1', 'us-gov-west-1', 'cn-north-1')
 
 
 def parse_selection(text: str, count: int) -> List[int]:
@@ -190,7 +189,7 @@ class UserInputs:
 
     @staticmethod
     def _validate_region(region):
-        if not REGION_PATTERN.match(region or ''):
+        if not is_valid_region_name(region):
             logger.error(f"Invalid region format: {region!r} (expected e.g. us-west-2 or us-gov-west-1)")
             sys.exit(1)
 
@@ -568,7 +567,7 @@ class UserInputs:
     def _ensure_fm_list(self, region):
         """Ensure FM list exists for region"""
         # Validate region format before using it in a file name
-        if not region or not REGION_PATTERN.match(region):
+        if not is_valid_region_name(region):
             raise ValueError(f"Invalid region format: {region}")
 
         if not os.path.exists(get_data_path(f'fm-list-{region}.yml')):

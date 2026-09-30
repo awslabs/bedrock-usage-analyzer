@@ -66,8 +66,10 @@ def test_user_regions_file_overrides_bundle_per_partition(tmp_path):
 def test_regions_for_credentials_filters_by_partition(monkeypatch):
     monkeypatch.setattr(r, 'detect_credentials_partition', lambda _=None: 'aws-us-gov')
     assert r.regions_for_credentials(['us-east-1', 'us-gov-west-1']) == (['us-gov-west-1'], 'aws-us-gov')
+    # Unknown partition: stop instead of processing regions the credentials cannot call
     monkeypatch.setattr(r, 'detect_credentials_partition', lambda _=None: None)
-    assert r.regions_for_credentials(['us-east-1', 'us-gov-west-1']) == (['us-east-1', 'us-gov-west-1'], None)
+    with pytest.raises(SystemExit):
+        r.regions_for_credentials(['us-east-1', 'us-gov-west-1'])
 
 
 def test_fetch_uses_account_api_in_commercial(monkeypatch):

@@ -144,3 +144,26 @@ def test_client_factory_resolves_partition_endpoints(service, region, url):
     expected_mode = 'standard' if service == 'sts' else 'adaptive'
     assert client.meta.config.retries['mode'] == expected_mode
     assert client.meta.config.max_pool_connections >= 16
+
+
+def test_region_hint_caches_config_lookup(monkeypatch):
+    monkeypatch.delenv('AWS_REGION', raising=False)
+    monkeypatch.delenv('AWS_DEFAULT_REGION', raising=False)
+    created = []
+
+    class FakeSession:
+        region_name = 'us-gov-east-1'
+
+        def __init__(self):
+            created.append(1)
+
+    monkeypatch.setattr(p.boto3.session, 'Session', FakeSession)
+    assert p.region_hint() == 'us-gov-east-1'
+    assert p.region_hint() == 'us-gov-east-1'
+    assert len(created) == 1
+
+
+@pytest.mark.parametrize('name,valid', [('us-gov-west-1', True), ('eusc-de-east-1', True), ('../x', False),
+                                        (None, False), ('', False)])
+def test_is_valid_region_name(name, valid):
+    assert p.is_valid_region_name(name) is valid

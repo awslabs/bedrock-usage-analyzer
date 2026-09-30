@@ -209,3 +209,67 @@ def test_fetch_service_quotas_returns_none_on_error(monkeypatch):
 
     monkeypatch.setattr(servicequotas, 'create_client', lambda *a, **k: Client())
     assert servicequotas.fetch_service_quotas('sa-east-1') is None
+
+
+def _index_fixture(tmp_path, codes):
+    (tmp_path / 'data').mkdir(exist_ok=True)
+    for region in ('us-east-1', 'us-west-2'):
+        save_yaml(str(tmp_path / 'data' / f'fm-list-{region}.yml'), {'models': [
+            {'model_id': 'm1', 'provider': 'X', 'endpoints': {'base': {'quotas': {
+                'tpm': {'code': codes['tpm'], 'name': 'old name'},
+                'rpm': {'code': codes['rpm'], 'name': 'rpm'}}}}}]})
+
+
+def test_quota_index_removes_only_codes_reported_missing(monkeypatch, tmp_path):
+    from bedrock_usage_analyzer.sync import quota_index
+    from bedrock_usage_analyzer.aws.servicequotas import QUOTA_OK, QUOTA_MISSING, QUOTA_ERROR
+    _index_fixture(tmp_path, {'tpm': 'L-GONE', 'rpm': 'L-FLAKY'})
+    answers = {'L-GONE': (QUOTA_MISSING, None), 'L-FLAKY': (QUOTA_ERROR, None)}
+    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: answers[code])
+    quota_index.QuotaIndexGenerator().run()
+    for region in ('us-east-1', 'us-west-2'):
+        quotas = load_yaml(str(tmp_path / 'data' / f'fm-list-{region}.yml'))['models'][0]['endpoints']['base']['quotas']
+        assert quotas['tpm'] is None                       # missing: removed in every region
+        assert quotas['rpm']['code'] == 'L-FLAKY'          # API error: kept
+
+
+def test_quota_index_refreshes_names(monkeypatch, tmp_path):
+    from bedrock_usage_analyzer.sync import quota_index
+    from bedrock_usage_analyzer.aws.servicequotas import QUOTA_OK
+    _index_fixture(tmp_path, {'tpm': 'L-1', 'rpm': 'L-2'})
+    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: (QUOTA_OK, {'QuotaName': f'new {code}'}))
+    gen = quota_index.QuotaIndexGenerator()
+    gen.run()
+    assert {e['quota_name'] for e in gen.entries} == {'new L-1', 'new L-2'}
+
+
+def test_check_quota_statuses(monkeypatch):
+    from botocore.exceptions import ClientError
+    from bedrock_usage_analyzer.aws import servicequotas as sq
+
+    def client_for(error_code):
+        class Client:
+            def get_service_quota(self, **_):
+                if error_code:
+                    raise ClientError({'Error': {'Code': error_code, 'Message': 'x'}}, 'GetServiceQuota')
+                return {'Quota': {'QuotaName': 'n'}}
+        return Client()
+
+    for code, expected in ((None, sq.QUOTA_OK), ('NoSuchResourceException', sq.QUOTA_MISSING),
+                           ('ThrottlingException', sq.QUOTA_ERROR)):
+        monkeypatch.setattr(sq, 'create_client', lambda *a, _c=code, **k: client_for(_c))
+        assert sq.check_quota('L-1', 'us-east-1')[0] == expected
+
+
+def test_refresh_fm_list_all_regions_stops_without_partition(monkeypatch):
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: None)
+    monkeypatch.setattr(sys, 'argv', ['bua', 'refresh', 'fm-list'])
+    with pytest.raises(SystemExit):
+        cli.main()
+
+
+def test_load_bundled_yaml_reads_package_resources():
+    from bedrock_usage_analyzer.utils.paths import load_bundled_yaml, get_bundled_file
+    assert 'us-gov-west-1' in load_bundled_yaml('regions.yml')['regions']
+    assert load_bundled_yaml('missing.yml') is None
+    assert get_bundled_file('missing.yml') is None

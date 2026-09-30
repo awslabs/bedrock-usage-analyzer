@@ -36,11 +36,15 @@ class BedrockAnalyzer:
         self.tz_api_format = offset[:5]  # +0800 format for API
 
         # botocore picks the endpoint for the region's partition (commercial, GovCloud, China)
-        self.bedrock_client = create_client('bedrock', region)
         self.cloudwatch_client = create_client('cloudwatch', region)
         self.sq_client = create_client('service-quotas', region)
         # Reuse the fetcher from input collection so profiles are listed only once
-        self.profile_fetcher = profile_fetcher or InferenceProfileFetcher(self.bedrock_client)
+        if profile_fetcher is not None:
+            self.profile_fetcher = profile_fetcher
+            self.bedrock_client = profile_fetcher.bedrock_client
+        else:
+            self.bedrock_client = create_client('bedrock', region)
+            self.profile_fetcher = InferenceProfileFetcher(self.bedrock_client)
         self.metrics_fetcher = CloudWatchMetricsFetcher(self.cloudwatch_client, self.tz_api_format)
         self.output_generator = None  # Initialized in analyze() with output_dir
     

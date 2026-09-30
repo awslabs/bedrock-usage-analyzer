@@ -3,15 +3,14 @@
 
 """Generate quota index CSV for validation"""
 
-import glob
 import logging
-from typing import Dict, List, Set
+from typing import Dict, List
 import sys
 
 from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
 from bedrock_usage_analyzer.utils.csv_handler import write_csv
-from bedrock_usage_analyzer.utils.paths import list_data_files, get_writable_path, get_bundle_path
-from bedrock_usage_analyzer.aws.servicequotas import get_quota_details
+from bedrock_usage_analyzer.utils.paths import list_data_files, get_writable_path, get_bundle_path, get_data_path
+from bedrock_usage_analyzer.aws.servicequotas import check_quota, QUOTA_OK, QUOTA_MISSING
 
 logger = logging.getLogger(__name__)
 
@@ -138,82 +137,74 @@ class QuotaIndexGenerator:
         logger.info(f"Found {len(self.entries)} unique quota mappings\n")
     
     def _fetch_quota_details(self):
-        """Fetch quota details from AWS (skipped if names already present)"""
+        """Validate every mapped quota code against Service Quotas.
+
+        Names are refreshed from the API. A code that Service Quotas reports as
+        missing is marked ERROR and later removed from the fm-lists; other failures
+        (throttling, network) leave the entry untouched.
+        """
         if not self.entries:
             return
-        
-        # Check if we already have quota names (new format)
-        entries_without_names = [e for e in self.entries if not e.get('quota_name')]
-        
-        if not entries_without_names:
-            logger.info(f"All {len(self.entries)} entries already have quota names (new format)\n")
-            return
-        
-        logger.info(f"Fetching quota details for {len(entries_without_names)} entries without names...\n")
-        
-        for entry in entries_without_names:
-            quota_code = entry['quota_code']
-            region = entry['source_region']
-            
-            quota = get_quota_details(quota_code, region)
-            
-            if quota:
-                entry['quota_name'] = quota.get('QuotaName', 'N/A')
-            else:
+
+        logger.info(f"Validating {len(self.entries)} quota mappings against Service Quotas...\n")
+        cache = {}
+        unverified = 0
+        for entry in self.entries:
+            key = (entry['quota_code'], entry['source_region'])
+            if key not in cache:
+                cache[key] = check_quota(entry['quota_code'], entry['source_region'])
+            status, quota = cache[key]
+            if status == QUOTA_OK:
+                entry['quota_name'] = quota.get('QuotaName') or entry.get('quota_name') or 'N/A'
+            elif status == QUOTA_MISSING:
                 entry['quota_name'] = 'ERROR'
                 self.error_entries.append(entry)
-    
+            else:
+                unverified += 1
+                entry.setdefault('quota_name', entry.get('quota_name') or 'N/A')
+        if unverified:
+            logger.info(f"  {unverified} mapping(s) could not be verified (API errors); kept as is")
+
     def _cleanup_errors(self):
-        """Remove ERROR entries from YAML files"""
+        """Remove quota codes that no longer exist from every fm-list that uses them"""
         if not self.error_entries:
             logger.info(f"\nThere is no erroneous entry.")
             return
-        
+
         logger.info(f"\nCleaning up {len(self.error_entries)} ERROR entries...")
-        
-        # Group by region
-        by_region = {}
-        for entry in self.error_entries:
-            region = entry['source_region']
-            if region not in by_region:
-                by_region[region] = []
-            by_region[region].append(entry)
-        
-        # Update each region's YAML
-        for region, entries in by_region.items():
-            self._cleanup_region_errors(region, entries)
-    
-    def _cleanup_region_errors(self, region: str, entries: List[Dict]):
-        """Clean up errors for a specific region"""
+        stale = {(e['model_id'], e['endpoint'], e['quota_type'], e['quota_code']) for e in self.error_entries}
+        for fm_file in list_data_files('fm-list-*.yml'):
+            filename = fm_file.name if hasattr(fm_file, 'name') else str(fm_file)
+            region = filename.replace('fm-list-', '').replace('.yml', '')
+            self._cleanup_region_errors(region, stale)
+
+    def _cleanup_region_errors(self, region: str, stale):
+        """Null out stale codes in one region's fm-list (user copy, else bundled)"""
         yaml_file = get_writable_path(f'fm-list-{region}.yml')
-        data = load_yaml(str(yaml_file))
-        
+        data = load_yaml(get_data_path(f'fm-list-{region}.yml')) or {}
+
         modified = False
-        for entry in entries:
-            model_id = entry['model_id']
-            endpoint = entry['endpoint']
-            quota_type = entry['quota_type']
-            
-            for model in data.get('models', []):
-                if model['model_id'] == model_id:
-                    if 'endpoints' in model and endpoint in model['endpoints']:
-                        if 'quotas' in model['endpoints'][endpoint]:
-                            if quota_type in model['endpoints'][endpoint]['quotas']:
-                                logger.info(f"  Removing {model_id} -> {endpoint} -> {quota_type}")
-                                model['endpoints'][endpoint]['quotas'][quota_type] = None
-                                modified = True
-        
+        for model in data.get('models', []):
+            for endpoint, endpoint_data in (model.get('endpoints') or {}).items():
+                quotas = (endpoint_data or {}).get('quotas') or {}
+                for quota_type, quota in quotas.items():
+                    code = quota.get('code') if isinstance(quota, dict) else None
+                    if (model['model_id'], endpoint, quota_type, code) in stale:
+                        logger.info(f"  Removing {model['model_id']} -> {endpoint} -> {quota_type} ({code}) in {region}")
+                        quotas[quota_type] = None
+                        modified = True
+
         if modified:
             save_yaml(str(yaml_file), data)
             logger.info(f"  ✓ Updated {yaml_file}")
-            
+
             if getattr(self, 'update_bundle', False):
                 bundle_path = get_bundle_path()
                 if bundle_path:
                     bundle_file = bundle_path / f'fm-list-{region}.yml'
                     save_yaml(str(bundle_file), data)
                     logger.info(f"  ✓ Updated {bundle_file} (bundled)")
-    
+
     def _generate_csv(self):
         """Generate CSV file with valid entries"""
         valid_rows = [
