@@ -14,13 +14,15 @@ authors = [
 ]
 keywords = ["aws", "bedrock", "cloudwatch", "metrics", "tokens", "usage", "statistics", "govcloud", "government"]
 
+# Floors exclude releases with known CVEs or missing APIs. No upper bounds: this is a
+# CLI installed next to other tools, and caps would block security fixes.
 dependencies = [
     "boto3>=1.35",
-    "numpy",
-    "jinja2>=3.0",
-    "pyyaml",
-    "defusedcsv",
-    "platformdirs",
+    "numpy>=1.22",
+    "jinja2>=3.1.6",
+    "pyyaml>=6.0.1",
+    "defusedcsv>=2.0",
+    "platformdirs>=3.0",
 ]
 
 [project.optional-dependencies]

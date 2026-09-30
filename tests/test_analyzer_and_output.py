@@ -196,3 +196,24 @@ def test_missing_end_time_is_handled(tmp_path):
 ])
 def test_safe_filename(label, expected):
     assert safe_filename(label) == expected
+
+
+@pytest.mark.parametrize('value,expected', [
+    ('https://console.aws.amazon.com/x', 'https://console.aws.amazon.com/x'),
+    ('javascript:alert(1)', ''),
+    ('data:text/html,x', ''),
+    ('http://example.com', ''),
+    (None, ''),
+])
+def test_https_url_filter(value, expected):
+    from bedrock_usage_analyzer.core.output_generator import https_url
+    assert https_url(value) == expected
+
+
+def test_report_drops_non_https_quota_links(tmp_path):
+    quotas = {'tpm': {'value': 5.0, 'code': 'L-9', 'name': 'TPM', 'url': 'javascript:alert(1)'},
+              'rpm': None, 'tpd': None}
+    OutputGenerator(str(tmp_path)).generate({'m': base_data(quotas=quotas)})
+    html = (tmp_path / next(f for f in os.listdir(tmp_path) if f.endswith('.html'))).read_text()
+    # No link is rendered; the value only survives as inert JSON data for the charts
+    assert 'href="javascript:' not in html and '[L-9]' in html

@@ -22,6 +22,12 @@ def safe_filename(label: str) -> str:
     return re.sub(r'[^A-Za-z0-9_-]+', '_', label).strip('_') or 'report'
 
 
+def https_url(value) -> str:
+    """Template filter: keep only https:// links (no javascript: or data: URIs in href)."""
+    text = str(value or '')
+    return text if text.startswith('https://') else ''
+
+
 class OutputGenerator:
     """Handles JSON and HTML output generation"""
 
@@ -35,6 +41,7 @@ class OutputGenerator:
             loader=FileSystemLoader(TEMPLATES_DIR),
             autoescape=select_autoescape(['html']),
         )
+        self._env.filters['https_url'] = https_url
 
     def generate(self, results):
         """Generate JSON and HTML output files with interactive graphs"""
