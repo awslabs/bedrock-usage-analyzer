@@ -295,6 +295,10 @@
           "description": "Initialize analyzer with region and granularity config, setup AWS clients"
         },
         {
+          "name": "_endpoint_listed",
+          "description": "True when the region's fm-list has this model with this endpoint."
+        },
+        {
           "name": "_load_quota_codes",
           "description": "Load quota codes for a model from FM list YAML based on endpoint type"
         },
@@ -1165,6 +1169,10 @@
         {
           "name": "resolve_caller_identity",
           "description": "Caller identity via the configured (regional) STS endpoint, then the partition's home region."
+        },
+        {
+          "name": "probe_other_partitions",
+          "description": "Identity found by asking STS in the home region of each *other* partition."
         },
         {
           "name": "detect_credentials_partition",
