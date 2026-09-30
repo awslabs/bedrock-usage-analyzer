@@ -78,6 +78,10 @@ def mapping_conflict(model_id: str, endpoint_type: str, quota_name: Optional[str
         return "cross-region quota for an on-demand endpoint"
     if endpoint_type == 'global' and 'global' not in name:
         return "non-global quota for a global endpoint"
+    if 'context length' in name:
+        # e.g. '... Claude Sonnet 4.5 V1 1M Context Length': a separate limit for long-context
+        # requests on the same model ID; the standard quota is the one usage is measured against
+        return "long-context variant quota"
     version = model_version(model_id)
     version = _canonical(version) if version else None
     versions = quota_versions(quota_name)

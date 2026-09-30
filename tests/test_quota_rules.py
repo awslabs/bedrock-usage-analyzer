@@ -235,3 +235,10 @@ def test_mapper_drops_conflicts_even_without_common_name(monkeypatch, tmp_path):
     monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws')
     qm.QuotaMapper('us-east-1', 'model', 'us-east-1').run()
     assert load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]['endpoints']['us']['quotas']['tpm'] is None
+
+
+def test_long_context_variant_quota_is_rejected():
+    name = 'Model invocation max tokens per day for Anthropic Claude Sonnet 4.5 V1 1M Context Length (doubled for cross-region calls)'
+    assert mapping_conflict('anthropic.claude-sonnet-4-5-20250929-v1:0', 'us', name, REGIONAL) == 'long-context variant quota'
+    std = 'Model invocation max tokens per day for Anthropic Claude Sonnet 4.5 V1 (doubled for cross-region calls)'
+    assert mapping_conflict('anthropic.claude-sonnet-4-5-20250929-v1:0', 'us', std, REGIONAL) is None

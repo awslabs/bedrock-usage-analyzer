@@ -153,11 +153,20 @@ def split_profile_id(endpoint_id: str) -> Tuple[str, Optional[str]]:
     return endpoint_id, None
 
 
+# Second name segments that mark a separate partition rather than a direction
+_PARTITION_SEGMENTS = {'gov', 'iso', 'isob', 'isof', 'isoe'}
+
+
 def region_group(region: str) -> str:
-    """Region family used to guess a profile prefix: 'us-gov-west-1' -> 'us-gov', 'eu-west-1' -> 'eu'."""
-    if region.startswith('us-gov-'):
-        return 'us-gov'
-    return region.split('-')[0]
+    """Region family used to guess a profile prefix.
+
+    'eu-west-1' -> 'eu', 'us-gov-west-1' -> 'us-gov', 'us-iso-east-1' -> 'us-iso',
+    so regions of other partitions never fall into a commercial family.
+    """
+    parts = region.split('-')
+    if len(parts) > 2 and parts[1] in _PARTITION_SEGMENTS:
+        return f"{parts[0]}-{parts[1]}"
+    return parts[0]
 
 
 def model_id_from_arn(arn: str) -> Optional[str]:

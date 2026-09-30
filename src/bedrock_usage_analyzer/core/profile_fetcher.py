@@ -56,6 +56,7 @@ class InferenceProfileFetcher:
         self._system_profiles: Optional[List[Dict]] = None
         self._system_by_arns: Dict[FrozenSet[str], List[str]] = {}
         self._prefix_regions: Dict[str, set] = {}
+        self._system_ids: set = set()
         self._app_profiles: Optional[List[Dict]] = None
         self._listing_error: Optional[Exception] = None
         self._listing_failures = 0
@@ -67,6 +68,7 @@ class InferenceProfileFetcher:
         if self._system_profiles is None:
             self._system_profiles = list_inference_profiles(self.bedrock_client, 'SYSTEM_DEFINED')
             for profile in self._system_profiles:
+                self._system_ids.add(profile['inferenceProfileId'])
                 arns = frozenset(m.get('modelArn', '') for m in profile.get('models', []))
                 if arns:
                     # Several profiles can share one routing set (jp.X and apac.X when a model
@@ -105,7 +107,12 @@ class InferenceProfileFetcher:
                 sources = self.resolve_sources(arns)
                 if sources:
                     source = sources[0]
-                    model_id, prefix = split_profile_id(source)
+                    if source in self._system_ids and '.' in source:
+                        # A listed system profile: its first segment is the prefix, even one
+                        # launched after this release (e.g. a new 'kr.' geography)
+                        prefix, model_id = source.split('.', 1)
+                    else:
+                        model_id, prefix = split_profile_id(source)
                 else:
                     # Still listed (it can be analyzed by ID), but no endpoint or quotas are implied
                     model_ids = sorted({m for m in (model_id_from_arn(a) for a in arns) if m})

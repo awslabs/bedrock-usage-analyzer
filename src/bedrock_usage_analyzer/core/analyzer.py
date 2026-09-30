@@ -50,6 +50,7 @@ class BedrockAnalyzer:
             self.profile_fetcher = InferenceProfileFetcher(self.bedrock_client)
         self.metrics_fetcher = CloudWatchMetricsFetcher(self.cloudwatch_client, self.tz_api_format)
         self.output_generator = None  # Initialized in analyze() with output_dir
+        self._fm_models = None  # Region's fm-list, loaded on first quota lookup
     
     def _load_quota_codes(self, model_id, profile_prefix=None):
         """Load quota codes for a model from FM list based on endpoint
@@ -61,15 +62,20 @@ class BedrockAnalyzer:
         Returns:
             dict: Quota codes for the specified endpoint (tpm, rpm, tpd, concurrent)
         """
-        fm_file = get_data_path(f'fm-list-{self.region}.yml')
-        if profile_prefix == UNKNOWN_SOURCE or not os.path.exists(fm_file):
+        if profile_prefix == UNKNOWN_SOURCE:
             return {}
-
-        with open(fm_file, 'r', encoding='utf-8') as f:
-            data = yaml.safe_load(f) or {}
+        if getattr(self, '_fm_models', None) is None:
+            # Parsed once per run; every analyzed target reads the same region file
+            fm_file = get_data_path(f'fm-list-{self.region}.yml')
+            data = {}
+            if os.path.exists(fm_file):
+                with open(fm_file, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f) or {}
+            self._fm_models = data.get('models', []) or []
+            self._regional = set(get_regional_profile_prefixes())
 
         endpoint_key = profile_prefix if profile_prefix else 'base'
-        for model in data.get('models', []):
+        for model in self._fm_models:
             if model['model_id'] != model_id:
                 continue
             endpoints = model.get('endpoints') or {}
@@ -82,10 +88,9 @@ class BedrockAnalyzer:
                 return {}
             # Skip codes that contradict this model or endpoint (e.g. saved by an older
             # version, before the mapping checks existed) instead of showing another limit
-            regional = set(get_regional_profile_prefixes())
             for metric, quota in list(quotas.items()):
                 if isinstance(quota, dict):
-                    reason = mapping_conflict(model_id, endpoint_key, quota.get('name'), regional)
+                    reason = mapping_conflict(model_id, endpoint_key, quota.get('name'), self._regional)
                     if reason:
                         logger.info(f"  Ignoring {metric} quota {quota.get('code')}: {reason}")
                         quotas[metric] = None

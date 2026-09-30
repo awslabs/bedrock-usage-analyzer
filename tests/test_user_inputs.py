@@ -402,3 +402,13 @@ def test_fm_list_is_parsed_once(inputs, monkeypatch):
     inputs._load_fm_list('us-east-1')
     inputs._load_fm_list('us-east-1')
     assert len(calls) == 1
+
+
+def test_manual_entry_listing_error_skips_model(inputs, monkeypatch):
+    monkeypatch.setattr(inputs, '_load_fm_list',
+                        lambda region: [{'model_id': 'x.y-v1:0', 'provider': 'X', 'endpoints': {}}])
+    def denied(identifier):
+        raise RuntimeError('ThrottlingException')
+    monkeypatch.setattr(inputs.profile_fetcher, 'resolve_application_profile', denied)
+    feed(monkeypatch, ['1', '1', 'claude-haiku'])
+    assert inputs._select_model('ap-southeast-2') is None

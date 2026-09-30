@@ -460,8 +460,11 @@ class UserInputs:
             return None
         try:
             return self._parse_model_id(manual_input)
-        except SystemExit:
-            # A typo here should skip this model, not end the whole session
+        except (SystemExit, Exception) as e:
+            # A typo, or a failed profile lookup, skips this model; it does not end the
+            # session and discard the models already selected
+            if not isinstance(e, SystemExit):
+                logger.info(f"Could not look up {manual_input!r}: {e}")
             logger.info("Skipping this model.")
             return None
 

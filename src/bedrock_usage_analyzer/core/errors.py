@@ -7,13 +7,15 @@ from typing import Optional
 
 from bedrock_usage_analyzer.utils.partition import (
     COMMERCIAL,
+    TOKEN_REJECTION_CODES,
     get_partition_display_name,
     get_partition_for_region,
 )
 
-_CREDENTIAL_MARKERS = ('invalidclienttokenid', 'unrecognizedclient', 'security token',
-                       'unable to locate credentials', 'nocredentials', 'expiredtoken',
-                       'expired token', 'credentials')
+# The STS token-rejection codes plus other signs of missing or stale credentials
+_CREDENTIAL_MARKERS = tuple(code.lower() for code in TOKEN_REJECTION_CODES) + (
+    'security token', 'unable to locate credentials', 'nocredentials', 'expiredtoken',
+    'expired token', 'credentials')
 _ACCESS_MARKERS = ('accessdenied', 'access denied', 'not authorized', 'unauthorizedoperation')
 _NETWORK_MARKERS = ('could not connect', 'endpoint url', 'connecttimeout', 'read timeout',
                     'connection was closed', 'name or service not known')

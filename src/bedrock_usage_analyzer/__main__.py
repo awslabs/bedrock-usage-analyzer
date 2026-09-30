@@ -154,14 +154,8 @@ def cmd_refresh_fm_list(args):
             sys.exit(1)
         refresh_region(args.region, update_bundle=args.update_bundle)
     else:
-        try:
-            # Only the regions the current credentials can call
-            regions, _ = regions_for_credentials(load_region_names())
-        except FileNotFoundError:
-            logger.error("Regions file not found")
-            logger.error("Please run: bua refresh regions")
-            sys.exit(1)
-
+        # Only the regions the current credentials can call
+        regions, _ = regions_for_credentials(load_region_names())
         if not regions:
             logger.error("No regions found in regions.yml")
             logger.error("Please run: bua refresh regions")

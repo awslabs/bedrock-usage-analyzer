@@ -310,3 +310,18 @@ def test_unknown_geography_keeps_profile_listed_without_a_source():
     assert app['source'] is None and app['sources'] == [] and app['model_id'] == NOVA
     assert fetcher.find_profiles(NOVA, None)[0] == [NOVA]
     assert fetcher.find_profiles(NOVA, 'unknown', application_profile_ids=['sa000000001'])[0] == ['sa000000001']
+
+
+def test_new_system_prefix_is_taken_from_the_listed_profile():
+    kr = [arn('ap-northeast-2', HAIKU), arn('ap-northeast-9', HAIKU)]
+    fetcher = InferenceProfileFetcher(FakeBedrock(system=[system_profile(f"kr.{HAIKU}", kr)],
+                                                  application=[app_profile('kr000000001', 'kr', kr)]))
+    app = fetcher.list_application_profiles()[0]
+    assert (app['model_id'], app['profile_prefix'], app['source']) == (HAIKU, 'kr', f"kr.{HAIKU}")
+
+
+@pytest.mark.parametrize('region,group', [('us-iso-east-1', 'us-iso'), ('us-isob-east-1', 'us-isob'),
+                                          ('eu-isoe-west-1', 'eu-isoe'), ('us-gov-east-1', 'us-gov'),
+                                          ('ap-southeast-2', 'ap'), ('eusc-de-east-1', 'eusc')])
+def test_region_group_keeps_partitions_apart(region, group):
+    assert region_group(region) == group
