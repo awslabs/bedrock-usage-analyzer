@@ -5,11 +5,10 @@
 
 from typing import Optional
 
-from bedrock_usage_analyzer.utils.partition import (  # noqa: F401  is_token_rejection re-exported
+from bedrock_usage_analyzer.utils.partition import (
     COMMERCIAL,
     get_partition_display_name,
     get_partition_for_region,
-    is_token_rejection,
 )
 
 _CREDENTIAL_MARKERS = ('invalidclienttokenid', 'unrecognizedclient', 'security token',

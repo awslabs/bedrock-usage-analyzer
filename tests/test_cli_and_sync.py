@@ -301,7 +301,8 @@ def test_probe_clients_fail_fast():
 
 
 def test_error_classifiers():
-    from bedrock_usage_analyzer.core.errors import is_access_denied, is_token_rejection
+    from bedrock_usage_analyzer.core.errors import is_access_denied
+    from bedrock_usage_analyzer.utils.partition import is_token_rejection
     assert is_token_rejection(RuntimeError('An error occurred (InvalidClientTokenId) when calling'))
     assert not is_token_rejection(RuntimeError('Could not connect to the endpoint URL'))
     assert is_access_denied(RuntimeError('AccessDeniedException: User is not authorized'))

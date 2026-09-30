@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Sequence, Union
 
 from ..aws.bedrock import region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
-from ..core.errors import is_token_rejection, troubleshooting_hint
+from ..core.errors import troubleshooting_hint
 from ..core.profile_fetcher import InferenceProfileFetcher
 from ..sync.regions import load_region_names, regions_for_credentials
 from ..utils.yaml_handler import load_yaml
@@ -24,6 +24,7 @@ from ..utils.partition import (
     get_partition_for_region,
     get_region_display_name,
     is_govcloud_region,
+    is_token_rejection,
     is_valid_region_name,
     region_hint,
     resolve_caller_identity,
