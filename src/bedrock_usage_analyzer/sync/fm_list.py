@@ -7,7 +7,7 @@ import logging
 from typing import List, Dict
 
 from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
-from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path, get_data_path
+from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path, get_data_path, load_bundled_yaml
 from bedrock_usage_analyzer.aws.bedrock import (
     fetch_foundation_models,
     fetch_all_inference_profiles,
@@ -70,10 +70,16 @@ def refresh_region(region_name: str, update_bundle: bool = False):
     logger.info("  Refreshing prefix mapping...")
     discovered = discover_prefix_mapping(region_name, all_profiles)
 
-    # Bundled + user prefixes: keeps prefixes of other partitions (e.g. us-gov)
+    # Known = bundled + user entries (keeps prefixes of other partitions, e.g. us-gov).
+    # The user file only ever gets the user's own and newly discovered entries: a full copy
+    # of the bundle there would hide later bundled changes to existing prefixes.
     prefix_file = get_writable_path('prefix-mapping.yml')
-    existing_prefixes = {p['prefix']: p for p in load_prefix_mapping(refresh=True)}
-    
+    known = {p['prefix']: p for p in load_prefix_mapping(refresh=True)}
+    user_entries = {}
+    if prefix_file.exists():
+        user_entries = {p['prefix']: p for p in (load_yaml(str(prefix_file)) or {}).get('prefixes', []) or []}
+    new_entries = [e for e in discovered if e['prefix'] not in known]
+
     # Manual entries (always include)
     manual_entries = [
         {
@@ -92,29 +98,32 @@ def refresh_region(region_name: str, update_bundle: bool = False):
         }
     ]
     
-    # Merge: manual entries + existing + newly discovered
-    for entry in manual_entries:
-        existing_prefixes[entry['prefix']] = entry
-    
-    for entry in discovered:
-        if entry['prefix'] not in existing_prefixes:
-            existing_prefixes[entry['prefix']] = entry
-    
-    # Sort by prefix for consistency
-    all_prefixes = sorted(existing_prefixes.values(), key=lambda x: x['prefix'])
-    prefix_data = {'prefixes': all_prefixes}
-    
-    save_yaml(str(prefix_file), prefix_data)
-    logger.info(f"  ✓ Prefix mapping saved: {prefix_file}")
-    
+    def by_prefix(entries):
+        return sorted(entries.values(), key=lambda x: x['prefix'])
+
+    if new_entries or user_entries:
+        for entry in new_entries:
+            user_entries[entry['prefix']] = entry
+        save_yaml(str(prefix_file), {'prefixes': by_prefix(user_entries)})
+        logger.info(f"  ✓ Prefix mapping saved: {prefix_file}")
+
+    all_prefixes = dict(known)
+    for entry in manual_entries + new_entries:
+        all_prefixes[entry['prefix']] = entry
+
     if update_bundle:
         bundle_path = get_bundle_path()
         if bundle_path:
             bundle_prefix_file = bundle_path / 'prefix-mapping.yml'
-            save_yaml(str(bundle_prefix_file), prefix_data)
+            bundled = {p['prefix']: p for p in (load_bundled_yaml('prefix-mapping.yml') or {}).get('prefixes', []) or []}
+            for entry in manual_entries + new_entries:
+                bundled[entry['prefix']] = entry
+            save_yaml(str(bundle_prefix_file), {'prefixes': by_prefix(bundled)})
             logger.info(f"  ✓ Prefix mapping saved: {bundle_prefix_file} (bundled)")
-    
-    logger.info(f"  ({len(discovered)} discovered, {len(all_prefixes)} total prefixes)")
+
+    # Later lookups in this run must see newly discovered prefixes
+    load_prefix_mapping(refresh=True)
+    logger.info(f"  ({len(discovered)} discovered, {len(new_entries)} new, {len(all_prefixes)} total prefixes)")
     
     output_file = get_writable_path(f'fm-list-{region_name}.yml')
     

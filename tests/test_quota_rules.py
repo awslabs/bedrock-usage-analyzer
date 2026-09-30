@@ -110,7 +110,7 @@ def test_cached_codes_are_reused_only_where_they_exist(monkeypatch):
     assert elsewhere['tpm']['code'] == 'L-US-OTHER'
 
 
-def test_quota_index_removes_saved_mismatches_in_every_region(monkeypatch, tmp_path, no_bundle):
+def test_quota_index_removes_saved_mismatches_in_every_region(monkeypatch, tmp_path, no_bundle, commercial_creds):
     (tmp_path / 'data').mkdir()
     wrong = {'code': 'L-GL46', 'name': 'Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6'}
     right = {'code': 'L-US', 'name': 'Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4 V1'}
@@ -149,7 +149,7 @@ def test_partial_new_mapping_keeps_other_saved_metrics(monkeypatch, tmp_path):
                       'tpd': {'code': 'L-TPD', 'name': 't'}, 'concurrent': None}
 
 
-def test_unverified_conflicting_entry_is_left_out_of_csv(monkeypatch, tmp_path, no_bundle):
+def test_unverified_conflicting_entry_is_left_out_of_csv(monkeypatch, tmp_path, no_bundle, commercial_creds):
     (tmp_path / 'data').mkdir()
     wrong = {'code': 'L-GL46', 'name': 'Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6'}
     save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [
@@ -185,3 +185,53 @@ def test_saved_conflicting_codes_are_dropped_on_refresh(monkeypatch, tmp_path):
     mapper.run()
     quotas = load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]['endpoints']['us']['quotas']
     assert quotas['tpd'] is None
+
+
+def test_quota_index_ignores_other_partitions(monkeypatch, tmp_path, no_bundle, commercial_creds):
+    (tmp_path / 'data').mkdir()
+    for region in ('us-east-1', 'us-gov-west-1'):
+        save_yaml(str(tmp_path / 'data' / f'fm-list-{region}.yml'), {'models': [
+            {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': {
+                'tpm': {'code': f'L-{region}', 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
+    checked = []
+    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: checked.append(region) or ('ok', {'QuotaName': 'n'}))
+    gen = quota_index.QuotaIndexGenerator()
+    gen.run()
+    assert set(checked) == {'us-east-1'} and set(gen._fm_data) == {'us-east-1'}
+
+
+def test_quota_index_cleanup_never_creates_user_copies(monkeypatch, tmp_path, commercial_creds):
+    """Bundled lists are left alone (a user copy would hide future bundled updates)."""
+    before = set((tmp_path / 'data').glob('*')) if (tmp_path / 'data').exists() else set()
+    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: ('missing', None))
+    quota_index.QuotaIndexGenerator().run()
+    created = {p.name for p in (tmp_path / 'data').glob('fm-list-*.yml')} - {p.name for p in before}
+    assert created == set()
+
+
+def test_analyzer_skips_saved_conflicting_codes(tmp_path, monkeypatch):
+    from bedrock_usage_analyzer.core.analyzer import BedrockAnalyzer
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [
+        {'model_id': SONNET4, 'provider': 'Anthropic', 'endpoints': {'us': {'quotas': {
+            'tpm': {'code': 'L-GL46', 'name': 'Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6'},
+            'rpm': {'code': 'L-US', 'name': 'Cross-region model inference requests per minute for Anthropic Claude Sonnet 4 V1'}}}}}]})
+    analyzer = BedrockAnalyzer.__new__(BedrockAnalyzer)
+    analyzer.region = 'us-east-1'
+    codes = analyzer._load_quota_codes(SONNET4, 'us')
+    assert codes['tpm'] is None and codes['rpm']['code'] == 'L-US'
+    assert analyzer._load_quota_codes(SONNET4, 'unknown') == {}
+    assert analyzer._load_quota_codes('missing.model', 'us') == {}
+
+
+def test_mapper_drops_conflicts_even_without_common_name(monkeypatch, tmp_path):
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1']})
+    wrong = {'code': 'L-GL46', 'name': 'Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6'}
+    save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [
+        {'model_id': SONNET4, 'provider': 'Anthropic', 'endpoints': {'us': {'quotas': {'tpm': wrong}}}}]})
+    monkeypatch.setattr(qm, 'fetch_service_quotas', lambda region: [])
+    monkeypatch.setattr(qm, 'extract_common_name', lambda *a: None)      # LLM failed
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws')
+    qm.QuotaMapper('us-east-1', 'model', 'us-east-1').run()
+    assert load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]['endpoints']['us']['quotas']['tpm'] is None

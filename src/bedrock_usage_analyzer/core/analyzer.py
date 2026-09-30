@@ -5,11 +5,13 @@
 
 import numpy as np
 import logging
+import os
 import traceback
 import yaml
 from datetime import datetime
 
-from bedrock_usage_analyzer.core.profile_fetcher import InferenceProfileFetcher
+from bedrock_usage_analyzer.core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
+from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict
 from bedrock_usage_analyzer.core.metrics_fetcher import CloudWatchMetricsFetcher
 from bedrock_usage_analyzer.core.output_generator import OutputGenerator
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
@@ -59,29 +61,36 @@ class BedrockAnalyzer:
         Returns:
             dict: Quota codes for the specified endpoint (tpm, rpm, tpd, concurrent)
         """
-        try:
-            fm_file = get_data_path(f'fm-list-{self.region}.yml')
-        except FileNotFoundError:
+        fm_file = get_data_path(f'fm-list-{self.region}.yml')
+        if profile_prefix == UNKNOWN_SOURCE or not os.path.exists(fm_file):
             return {}
-        
+
         with open(fm_file, 'r', encoding='utf-8') as f:
-            data = yaml.safe_load(f)
-            models = data.get('models', [])
-            
-            for model in models:
-                if model['model_id'] == model_id:
-                    endpoints = model.get('endpoints', {})
-                    
-                    # Determine which endpoint to use
-                    endpoint_key = profile_prefix if profile_prefix else 'base'
-                    
-                    # Get quotas from the specified endpoint
-                    if endpoint_key in endpoints:
-                        return endpoints[endpoint_key].get('quotas', {})
-                    
-                    # Fallback to old structure for backward compatibility
-                    return model.get('quotas', {})
-        
+            data = yaml.safe_load(f) or {}
+
+        endpoint_key = profile_prefix if profile_prefix else 'base'
+        for model in data.get('models', []):
+            if model['model_id'] != model_id:
+                continue
+            endpoints = model.get('endpoints') or {}
+            if endpoint_key in endpoints:
+                quotas = dict((endpoints[endpoint_key] or {}).get('quotas') or {})
+            elif endpoint_key == 'base':
+                # Old fm-list structure: model-level quotas were on-demand quotas
+                quotas = dict(model.get('quotas') or {})
+            else:
+                return {}
+            # Skip codes that contradict this model or endpoint (e.g. saved by an older
+            # version, before the mapping checks existed) instead of showing another limit
+            regional = set(get_regional_profile_prefixes())
+            for metric, quota in list(quotas.items()):
+                if isinstance(quota, dict):
+                    reason = mapping_conflict(model_id, endpoint_key, quota.get('name'), regional)
+                    if reason:
+                        logger.info(f"  Ignoring {metric} quota {quota.get('code')}: {reason}")
+                        quotas[metric] = None
+            return quotas
+
         return {}
     
     def _fetch_quotas(self, model_id, quota_codes, profile_prefix=None):
@@ -325,7 +334,10 @@ class BedrockAnalyzer:
             # Step 6: Generate output
             logger.info(f"  Generating output files...")
             end_time_local = datetime.now(self.local_tz)
-            endpoint = f"{profile_prefix}.{model_id}" if profile_prefix else model_id
+            if profile_prefix == UNKNOWN_SOURCE:
+                endpoint = f"{model_id} (source endpoint unknown)"
+            else:
+                endpoint = f"{profile_prefix}.{model_id}" if profile_prefix else model_id
             scope = [profile_names.get(pid, pid) for pid in final_model_ids] if app_ids else []
 
             self.output_generator.generate({

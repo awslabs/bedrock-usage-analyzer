@@ -331,6 +331,7 @@
         "datetime",
         "logging",
         "numpy",
+        "os",
         "traceback",
         "yaml"
       ],
@@ -341,6 +342,7 @@
         "bedrock_usage_analyzer.core.metrics_fetcher",
         "bedrock_usage_analyzer.core.output_generator",
         "bedrock_usage_analyzer.core.profile_fetcher",
+        "bedrock_usage_analyzer.sync.quota_rules",
         "bedrock_usage_analyzer.utils.partition",
         "bedrock_usage_analyzer.utils.paths"
       ]
@@ -848,7 +850,9 @@
         "bedrock_usage_analyzer.aws.bedrock",
         "bedrock_usage_analyzer.aws.servicequotas",
         "bedrock_usage_analyzer.sync.quota_rules",
+        "bedrock_usage_analyzer.sync.regions",
         "bedrock_usage_analyzer.utils.csv_handler",
+        "bedrock_usage_analyzer.utils.partition",
         "bedrock_usage_analyzer.utils.paths",
         "bedrock_usage_analyzer.utils.yaml_handler"
       ]
@@ -882,6 +886,10 @@
         {
           "name": "_process_region",
           "description": "Process quota mapping for a single region"
+        },
+        {
+          "name": "_drop_conflicting_saved_codes",
+          "description": ""
         },
         {
           "name": "_get_endpoints_to_process",
@@ -1302,11 +1310,13 @@
       "imports_files": [
         "bedrock_usage_analyzer.__main__",
         "bedrock_usage_analyzer.aws",
+        "bedrock_usage_analyzer.aws.bedrock",
         "bedrock_usage_analyzer.aws.client_factory",
         "bedrock_usage_analyzer.aws.servicequotas",
         "bedrock_usage_analyzer.core.errors",
         "bedrock_usage_analyzer.sync",
         "bedrock_usage_analyzer.utils",
+        "bedrock_usage_analyzer.utils.partition",
         "bedrock_usage_analyzer.utils.paths",
         "bedrock_usage_analyzer.utils.yaml_handler"
       ]
@@ -1345,6 +1355,7 @@
       ],
       "imports_files": [
         "bedrock_usage_analyzer.aws",
+        "bedrock_usage_analyzer.core.analyzer",
         "bedrock_usage_analyzer.sync",
         "bedrock_usage_analyzer.sync.quota_rules",
         "bedrock_usage_analyzer.utils.yaml_handler"

@@ -268,3 +268,12 @@ def test_report_is_well_formed_utf8(tmp_path):
     checker = Checker()
     checker.feed(src)
     assert checker.errors == [] and checker.stack == []
+
+
+def test_unknown_source_endpoint_label(analyzer, tmp_path):
+    out = tmp_path / 'results'
+    analyzer.analyze([{'model_id': HAIKU, 'profile_prefix': 'unknown', 'application_profile_ids': ['auapp000001']}],
+                     output_dir=str(out))
+    data = json.loads((out / reports(out)[1]).read_text())
+    assert data['endpoint'] == f"{HAIKU} (source endpoint unknown)"
+    assert not reports(out)[0].startswith('unknown.')

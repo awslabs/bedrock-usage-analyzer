@@ -185,3 +185,17 @@ def test_resolve_caller_identity_retries_home_region_only_on_token_rejection():
     with pytest.raises(RuntimeError, match='Could not connect'):
         p.resolve_caller_identity('ap-east-2', lookup)
     assert calls[-1] == 'ap-east-2'
+
+
+def test_identity_fallback_is_remembered():
+    calls = []
+
+    def lookup(region):
+        calls.append(region)
+        if region == 'ap-east-1':
+            raise RuntimeError('InvalidClientTokenId')
+        return {'Partition': 'aws'}
+
+    p.resolve_caller_identity('ap-east-1', lookup)
+    p.resolve_caller_identity('ap-east-1', lookup)
+    assert calls == ['ap-east-1', 'us-east-1', 'us-east-1']

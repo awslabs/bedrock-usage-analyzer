@@ -32,6 +32,8 @@ class QuotaIndexGenerator:
         self._region_checks = {}
         self._regional = set()
         self._mismatched = set()
+        # Parsed fm-lists of the credentials' partition, by region (read once per run)
+        self._fm_data = {}
 
     def run(self, update_bundle: bool = False):
         """Execute quota index generation
@@ -52,24 +54,33 @@ class QuotaIndexGenerator:
         logger.info("Review quota-index.csv to validate quota mappings")
     
     def _load_all_models(self):
-        """Load all FM list files and merge endpoints from all regions"""
-        fm_files = list_data_files('fm-list-*.yml')
-        
+        """Load the FM lists of the credentials' partition and merge endpoints from all regions"""
+        from bedrock_usage_analyzer.sync.regions import credentials_partition_or_exit
+        from bedrock_usage_analyzer.utils.partition import get_partition_for_region
+
+        # Quota codes are validated with these credentials, so only this partition's lists
+        # are loaded (a GovCloud run must not judge commercial lists, and vice versa)
+        partition = credentials_partition_or_exit()
+        fm_files = []
+        for fm_file in list_data_files('fm-list-*.yml'):
+            filename = fm_file.name if hasattr(fm_file, 'name') else str(fm_file)
+            region = filename.replace('fm-list-', '').replace('.yml', '')
+            if get_partition_for_region(region) == partition:
+                fm_files.append((region, fm_file))
+
         if not fm_files:
             logger.error("No fm-list files found")
             sys.exit(1)
-        
+
         logger.info(f"Found {len(fm_files)} fm-list files")
-        
-        for fm_file in fm_files:
-            # Extract region from filename
-            filename = fm_file.name if hasattr(fm_file, 'name') else str(fm_file)
-            region = filename.replace('fm-list-', '').replace('.yml', '')
-            data = load_yaml(str(fm_file))
-            
+
+        for region, fm_file in fm_files:
+            data = load_yaml(str(fm_file)) or {}
+            self._fm_data[region] = data
+
             for model in data.get('models', []):
                 model_id = model['model_id']
-                
+
                 if model_id not in self.models:
                     # First time seeing this model - initialize
                     self.models[model_id] = {
@@ -79,7 +90,7 @@ class QuotaIndexGenerator:
                         'inference_profiles': model.get('inference_profiles', []),
                         'endpoints': {}
                     }
-                
+
                 # Merge endpoints from this region, to the dictionary that aggregates all regions
                 self._merge_endpoints(model_id, model, region)
         
@@ -202,13 +213,13 @@ class QuotaIndexGenerator:
         self._regional = set(get_regional_profile_prefixes())
         self._mismatched = {(e['model_id'], e['endpoint'], e['quota_type'], e['quota_code'])
                             for e in self.mismatch_entries}
-        regions = []
-        for fm_file in list_data_files('fm-list-*.yml'):
-            filename = fm_file.name if hasattr(fm_file, 'name') else str(fm_file)
-            regions.append(filename.replace('fm-list-', '').replace('.yml', ''))
+        regions = sorted(self._fm_data)
         # Look up, in parallel, every (code, region) pair the cleanup will ask about
-        pending = sorted({(slot[3], region) for region in regions
-                          for slot in self._stale_slots_in(region, stale)} - set(self._region_checks))
+        pending = set()
+        if stale:
+            pending = {(slot[3], region) for region in regions
+                       for slot in self._stale_slots_in(self._fm_data[region], stale)}
+        pending = sorted(pending - set(self._region_checks))
         with ThreadPoolExecutor(max_workers=8) as pool:
             for key, result in zip(pending, pool.map(lambda k: check_quota(*k), pending)):
                 self._region_checks[key] = result[0]
@@ -225,9 +236,8 @@ class QuotaIndexGenerator:
                 self.error_entries.remove(entry)
 
     @staticmethod
-    def _stale_slots_in(region: str, stale):
-        """(model, endpoint, type, code) slots of one region file that are in ``stale``."""
-        data = load_yaml(get_data_path(f'fm-list-{region}.yml')) or {}
+    def _stale_slots_in(data, stale):
+        """(model, endpoint, type, code) slots of one parsed fm-list that are in ``stale``."""
         for model in data.get('models', []):
             for endpoint, endpoint_data in (model.get('endpoints') or {}).items():
                 for quota_type, quota in ((endpoint_data or {}).get('quotas') or {}).items():
@@ -245,8 +255,9 @@ class QuotaIndexGenerator:
     def _cleanup_region_errors(self, region: str, stale):
         """Null out codes missing in this region or contradicting their model/endpoint (user copy, else bundled)"""
         regional, mismatched = self._regional, self._mismatched
-        yaml_file = get_writable_path(f'fm-list-{region}.yml')
-        data = load_yaml(get_data_path(f'fm-list-{region}.yml')) or {}
+        data = self._fm_data.get(region)
+        if data is None:
+            data = load_yaml(get_data_path(f'fm-list-{region}.yml')) or {}
 
         modified = False
         for model in data.get('models', []):
@@ -270,16 +281,22 @@ class QuotaIndexGenerator:
                         quotas[quota_type] = None
                         modified = True
 
-        if modified:
-            save_yaml(str(yaml_file), data)
-            logger.info(f"  ✓ Updated {yaml_file}")
-
-            if getattr(self, 'update_bundle', False):
-                bundle_path = get_bundle_path()
-                if bundle_path:
-                    bundle_file = bundle_path / f'fm-list-{region}.yml'
-                    save_yaml(str(bundle_file), data)
-                    logger.info(f"  ✓ Updated {bundle_file} (bundled)")
+        if not modified:
+            return
+        user_file = get_writable_path(f'fm-list-{region}.yml')
+        # Only an existing user copy is rewritten. Creating one from a bundled list would hide
+        # every later bundled update for that region; the analyzer applies the same checks
+        # when it reads quotas, so bundled lists are corrected by maintainers (--update-bundle).
+        if user_file.exists():
+            save_yaml(str(user_file), data)
+            logger.info(f"  ✓ Updated {user_file}")
+        bundle_path = get_bundle_path() if self.update_bundle else None
+        if bundle_path:
+            bundle_file = bundle_path / f'fm-list-{region}.yml'
+            save_yaml(str(bundle_file), data)
+            logger.info(f"  ✓ Updated {bundle_file} (bundled)")
+        elif not user_file.exists():
+            logger.info(f"  (bundled list for {region} left unchanged; the analyzer skips these codes)")
 
     def _generate_csv(self):
         """Generate CSV file with valid entries"""

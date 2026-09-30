@@ -135,8 +135,11 @@ def test_fm_list_refresh_keeps_bundled_quota_mappings_and_prefixes(monkeypatch, 
 
     saved = load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]
     assert saved['endpoints'] == mapped['endpoints']
-    prefixes = {p['prefix'] for p in load_yaml(str(tmp_path / 'data' / 'prefix-mapping.yml'))['prefixes']}
-    assert {'us-gov', 'au', 'jp', 'base', 'global'} <= prefixes
+    # Nothing new discovered: no user copy of the bundled prefixes (it would hide later
+    # bundled changes), and the merged mapping still has every prefix
+    assert not (tmp_path / 'data' / 'prefix-mapping.yml').exists()
+    from bedrock_usage_analyzer.aws.bedrock import load_prefix_mapping
+    assert {'us-gov', 'au', 'jp', 'base', 'global'} <= {p['prefix'] for p in load_prefix_mapping(refresh=True)}
 
 
 def test_quota_mapping_picker_exits_without_regions(monkeypatch):
@@ -208,7 +211,7 @@ def _index_fixture(tmp_path, codes):
                 'rpm': {'code': codes['rpm'], 'name': 'rpm'}}}}}]})
 
 
-def test_quota_index_removes_only_codes_reported_missing(monkeypatch, tmp_path, no_bundle):
+def test_quota_index_removes_only_codes_reported_missing(monkeypatch, tmp_path, no_bundle, commercial_creds):
     from bedrock_usage_analyzer.sync import quota_index
     from bedrock_usage_analyzer.aws.servicequotas import QUOTA_MISSING, QUOTA_ERROR
     _index_fixture(tmp_path, {'tpm': 'L-GONE', 'rpm': 'L-FLAKY'})
@@ -221,7 +224,7 @@ def test_quota_index_removes_only_codes_reported_missing(monkeypatch, tmp_path, 
         assert quotas['rpm']['code'] == 'L-FLAKY'          # API error: kept
 
 
-def test_quota_index_refreshes_names(monkeypatch, tmp_path, no_bundle):
+def test_quota_index_refreshes_names(monkeypatch, tmp_path, no_bundle, commercial_creds):
     from bedrock_usage_analyzer.sync import quota_index
     from bedrock_usage_analyzer.aws.servicequotas import QUOTA_OK
     _index_fixture(tmp_path, {'tpm': 'L-1', 'rpm': 'L-2'})
@@ -265,7 +268,7 @@ def test_load_bundled_yaml_reads_package_resources():
     assert get_bundled_file('missing.yml') is None
 
 
-def test_quota_index_keeps_code_where_it_exists(monkeypatch, tmp_path, no_bundle):
+def test_quota_index_keeps_code_where_it_exists(monkeypatch, tmp_path, no_bundle, commercial_creds):
     """Missing in the source region but present in another: removed only where missing."""
     from bedrock_usage_analyzer.sync import quota_index
     from bedrock_usage_analyzer.aws.servicequotas import QUOTA_OK, QUOTA_MISSING
@@ -307,3 +310,15 @@ def test_error_classifiers():
     assert not is_token_rejection(RuntimeError('Could not connect to the endpoint URL'))
     assert is_access_denied(RuntimeError('AccessDeniedException: User is not authorized'))
     assert not is_access_denied(RuntimeError('ThrottlingException'))
+
+
+def test_fm_list_refresh_writes_only_new_prefixes_to_user_file(monkeypatch, tmp_path):
+    from bedrock_usage_analyzer.sync import fm_list
+    new = {'prefix': 'mx', 'quota_keyword': 'cross-region', 'description': 'cross-region inference profile',
+           'is_regional': True, 'source': 'discovered'}
+    monkeypatch.setattr(fm_list, 'discover_prefix_mapping', lambda region, profiles=None: [new])
+    monkeypatch.setattr(fm_list, 'fetch_foundation_models', lambda region: None)
+    monkeypatch.setattr(fm_list, 'fetch_all_inference_profiles', lambda region: [])
+    fm_list.refresh_region('mx-central-1')
+    saved = load_yaml(str(tmp_path / 'data' / 'prefix-mapping.yml'))['prefixes']
+    assert [p['prefix'] for p in saved] == ['mx']

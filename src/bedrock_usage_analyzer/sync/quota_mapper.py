@@ -92,12 +92,16 @@ class QuotaMapper:
         logger.info(f"  Mapping quotas for {len(fm_list)} models...")
         
         updated_count = 0
+        regional = set(get_regional_profile_prefixes())
         for i, fm in enumerate(fm_list, 1):
             model_id = fm['model_id']
             logger.info(f"    [{i}/{len(fm_list)}] {model_id}... ", extra={'end': ''})
             
             endpoints_to_process = self._get_endpoints_to_process(fm)
-            
+            # First, before any 'continue': saved codes that contradict their model/endpoint
+            # (written by older versions) go even when nothing new replaces them
+            self._drop_conflicting_saved_codes(fm, regional)
+
             if not endpoints_to_process:
                 logger.info("⊘ (no endpoints)")
                 continue
@@ -123,14 +127,6 @@ class QuotaMapper:
             # correct code is worse than keeping a stale one. `bua refresh quota-index` removes
             # codes that Service Quotas rejects or that contradict their model/endpoint.
             endpoints = fm.setdefault('endpoints', {})
-            regional = set(get_regional_profile_prefixes())
-            for endpoint_type, endpoint_value in list(endpoints.items()):
-                # Saved codes that contradict their model/endpoint (written by older versions)
-                # are dropped even when nothing new was found to replace them
-                saved = (endpoint_value or {}).get('quotas') or {}
-                for metric, value in list(saved.items()):
-                    if isinstance(value, dict) and mapping_conflict(model_id, endpoint_type, value.get('name'), regional):
-                        saved[metric] = None
             for endpoint_type, new in endpoints_data.items():
                 saved = (endpoints.get(endpoint_type) or {}).get('quotas') or {}
                 merged = dict(saved)
@@ -149,6 +145,14 @@ class QuotaMapper:
         self._save_fm_list(region, fm_list)
         logger.info(f"  ✓ Updated {updated_count} models\n")
     
+    @staticmethod
+    def _drop_conflicting_saved_codes(fm: Dict, regional) -> None:
+        for endpoint_type, endpoint_value in (fm.get('endpoints') or {}).items():
+            saved = (endpoint_value or {}).get('quotas') or {}
+            for metric, value in list(saved.items()):
+                if isinstance(value, dict) and mapping_conflict(fm['model_id'], endpoint_type, value.get('name'), regional):
+                    saved[metric] = None
+
     def _get_endpoints_to_process(self, fm: Dict) -> List[str]:
         """Determine which endpoints to process for a model"""
         # Simply return the keys from the endpoints dict

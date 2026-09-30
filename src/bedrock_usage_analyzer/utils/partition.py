@@ -63,6 +63,8 @@ REGION_PATTERN = re.compile(r'^[a-z]{2,5}(-[a-z0-9]+){1,3}-\d{1,2}$')
 _endpoint_data = None
 _caller_identity_cache: Dict[Optional[str], Dict[str, str]] = {}
 _config_region_cache: Dict[Optional[str], Optional[str]] = {}
+# STS region -> home region to ask instead, after the first region rejected the token
+_identity_fallback: Dict[Optional[str], str] = {}
 
 
 def _load_endpoint_data() -> dict:
@@ -232,6 +234,9 @@ def resolve_caller_identity(region: Optional[str] = None, lookup=None) -> Dict[s
     """
     lookup = lookup or get_caller_identity
     key = region or region_hint()
+    if key in _identity_fallback:
+        # This regional endpoint already rejected the token in this run
+        return lookup(_identity_fallback[key])
     try:
         return lookup(key)
     except Exception as e:
@@ -239,9 +244,11 @@ def resolve_caller_identity(region: Optional[str] = None, lookup=None) -> Dict[s
         if not (is_token_rejection(e) and home and home != key):
             raise
         try:
-            return lookup(home)
+            identity = lookup(home)
         except Exception:
             raise e
+        _identity_fallback[key] = home
+        return identity
 
 
 def detect_credentials_partition(region: Optional[str] = None) -> Optional[str]:
@@ -257,3 +264,4 @@ def clear_cache() -> None:
     """Forget cached caller identities and config regions (used by tests)."""
     _caller_identity_cache.clear()
     _config_region_cache.clear()
+    _identity_fallback.clear()

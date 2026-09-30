@@ -291,7 +291,8 @@ class InferenceProfileFetcher:
         app_profiles = self._app_profiles or []
         target = model_id if profile_prefix is None else f"{profile_prefix}.{model_id}"
         for app in app_profiles:
-            if app['model_id'] == model_id and target not in app['sources']:
+            # Profiles with an unknown source are not pointed to: there is no endpoint to pick
+            if app['model_id'] == model_id and app['sources'] and target not in app['sources']:
                 key = app['profile_prefix'] or 'base'
                 counts[key] = counts.get(key, 0) + 1
         return counts
