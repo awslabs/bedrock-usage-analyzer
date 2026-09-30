@@ -77,7 +77,8 @@ def refresh_region(region, update_bundle: bool = False):
     existing_prefixes = {}
     prefix_file = get_writable_path('prefix-mapping.yml')
     try:
-        existing_data = load_yaml(str(prefix_file))
+        # User copy if present, else bundled: keeps prefixes of other partitions (e.g. us-gov)
+        existing_data = load_yaml(get_data_path('prefix-mapping.yml'))
         existing_prefixes = {p['prefix']: p for p in existing_data.get('prefixes', [])}
     except (FileNotFoundError, Exception):
         pass
@@ -132,7 +133,8 @@ def refresh_region(region, update_bundle: bool = False):
         return
     
     # Load existing models to preserve quota mappings
-    existing_models = load_existing_models(output_file)
+    # User copy if present, else the bundled list, so refreshing never drops quota mappings
+    existing_models = load_existing_models(get_data_path(f'fm-list-{region_name}.yml'))
     
     # Fetch ALL inference profiles once
     logger.info(f"  Fetching inference profiles...")

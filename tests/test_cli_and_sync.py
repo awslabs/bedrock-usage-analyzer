@@ -128,3 +128,24 @@ def test_sts_get_account_id(monkeypatch):
     from bedrock_usage_analyzer.aws import sts
     monkeypatch.setattr(sts, 'get_caller_identity', lambda region=None: {'Account': '42'})
     assert sts.get_account_id('us-gov-west-1') == '42'
+
+
+def test_fm_list_refresh_keeps_bundled_quota_mappings_and_prefixes(monkeypatch, tmp_path):
+    """Refreshing on a clean machine must not wipe bundled quota codes or the us-gov prefix."""
+    from bedrock_usage_analyzer.sync import fm_list
+    from bedrock_usage_analyzer.utils.paths import get_data_path
+
+    bundled = load_yaml(get_data_path('fm-list-us-east-1.yml'))['models']
+    mapped = next(m for m in bundled
+                  if any(q for e in m.get('endpoints', {}).values() for q in (e.get('quotas') or {}).values()))
+    monkeypatch.setattr(fm_list, 'discover_prefix_mapping', lambda region: [])
+    monkeypatch.setattr(fm_list, 'fetch_foundation_models', lambda region: [
+        {'model_id': mapped['model_id'], 'provider': mapped['provider'],
+         'inference_types': mapped.get('inference_types', [])}])
+    monkeypatch.setattr(fm_list, 'fetch_all_inference_profiles', lambda region: [])
+    fm_list.refresh_region('us-east-1')
+
+    saved = load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]
+    assert saved['endpoints'] == mapped['endpoints']
+    prefixes = {p['prefix'] for p in load_yaml(str(tmp_path / 'data' / 'prefix-mapping.yml'))['prefixes']}
+    assert {'us-gov', 'au', 'jp', 'base', 'global'} <= prefixes
