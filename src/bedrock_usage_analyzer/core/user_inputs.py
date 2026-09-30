@@ -231,7 +231,9 @@ class UserInputs:
         for probe in probes:
             try:
                 identity = get_caller_identity(probe)
-            except Exception:
+            except Exception as e:
+                # Expected for every partition the credentials do not belong to
+                logger.debug(f"STS probe in {probe} rejected the credentials: {e}")
                 continue
             self.partition = identity['Partition']
             self._check_region_partition(region)
