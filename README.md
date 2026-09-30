@@ -4,6 +4,8 @@
 
 This CLI tool visualizes foundation model (FM) usage in [Amazon Bedrock](https://aws.amazon.com/bedrock/). It calculates the  tokens-per-minute/TPM and requests-per-minute/RPM. It also aggregates the FM usage across Bedrock application inference profiles and provides visibility on current usage gap towards the service quotas.
 
+**✨ Now with AWS GovCloud and multi-partition support!** Works seamlessly across commercial AWS, GovCloud (us-gov-*), China (cn-*), and ISO partitions.
+
 While [Amazon CloudWatch](https://aws.amazon.com/cloudwatch/) already provides metrics for the FMs used in Bedrock, it might not be straightforward to calculate TPM & RPM, to aggregate token usage across application inference profiles, and see how each profile contributes to usage. Also, the quota lookup needs to be done separately via [AWS service quotas](https://docs.aws.amazon.com/general/latest/gr/aws_service_limits.html). With this tool, you can specify the region and model to analyze and it will fetch the usage across last 1 hour, 1 day, 7 days, 14 days, and 30 days, each with aggregated data across the application inference profiles. It will generate HTML report containing the statistics table and time series data.
 
 This CLI tool can help answers:
@@ -43,6 +45,7 @@ The tool generates HTML report showing token usage over time with quota limits. 
 ### AWS Account Requirements
 - **Bedrock Access**: Enabled foundation models in your AWS account
 - **IAM Permissions**: See detailed permission requirements below
+- **Supported Partitions**: Works in AWS Commercial, GovCloud (us-gov-*), China (cn-*), and ISO partitions
 
 ### Network Requirements
 - **Endpoint Access**: For accessing APIs from Amazon CloudWatch and Amazon Bedrock, either via the internet or via-VPC access.
@@ -579,6 +582,26 @@ A: CloudWatch queries can take time for large time ranges. To speed up:
 3. Check your network connection to AWS
 
 ### Advanced scenarios
+
+**Q: How do I use this tool with AWS GovCloud?**
+A: The tool automatically detects GovCloud and other AWS partitions. Simply configure your GovCloud credentials:
+```bash
+# Using AWS profile
+AWS_PROFILE=my-govcloud-profile bedrock-usage-analyzer analyze --region us-gov-west-1
+
+# Or set credentials directly
+export AWS_REGION=us-gov-west-1
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
+bedrock-usage-analyzer analyze
+```
+
+The tool will automatically:
+- Use correct ARN format (`arn:aws-us-gov:...` instead of `arn:aws:...`)
+- Generate console URLs pointing to `console.amazonaws-us-gov.com`
+- Handle GovCloud-specific service quotas
+
+See [GOVCLOUD_SUPPORT.md](GOVCLOUD_SUPPORT.md) for detailed documentation on multi-partition support.
 
 **Q: How do I switch to different AWS accounts when using this tool?**
 A: You can use different AWS profile as shown in the following code snippet:

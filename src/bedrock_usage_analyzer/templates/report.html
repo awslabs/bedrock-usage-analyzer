@@ -76,7 +76,7 @@
         <p><strong>Concurrent Requests:</strong> {{ "{:,.0f}".format(quotas.concurrent.value) }}<br>
         <span style="font-size: 0.85em;"><a href="{{ quotas.concurrent.url }}" target="_blank">[{{ quotas.concurrent.code }}]</a> {{ quotas.concurrent.name }}</span></p>
         {% endif %}
-        <p><strong>IMPORTANT:</strong> These quotas (and those on the charts) were intelligently mapped with large language model. It is always good to crosscheck with <a href="https://console.aws.amazon.com/servicequotas">AWS service quotas</a></p>
+        <p><strong>IMPORTANT:</strong> These quotas (and those on the charts) were intelligently mapped with large language model. It is always good to crosscheck with <a href="https://{{ console_domain }}/servicequotas">AWS service quotas</a></p>
     </div>
     {% endif %}
     
