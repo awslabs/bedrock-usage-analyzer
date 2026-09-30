@@ -157,6 +157,7 @@ class QuotaIndexGenerator:
             if status == QUOTA_OK:
                 entry['quota_name'] = quota.get('QuotaName') or entry.get('quota_name') or 'N/A'
             elif status == QUOTA_MISSING:
+                entry['previous_name'] = entry.get('quota_name')
                 entry['quota_name'] = 'ERROR'
                 self.error_entries.append(entry)
             else:
@@ -173,13 +174,32 @@ class QuotaIndexGenerator:
 
         logger.info(f"\nCleaning up {len(self.error_entries)} ERROR entries...")
         stale = {(e['model_id'], e['endpoint'], e['quota_type'], e['quota_code']) for e in self.error_entries}
+        # Quota availability differs by region: a code missing in the entry's source
+        # region can exist elsewhere, so re-check it in every region before removing it
+        self._region_checks = {
+            (e['quota_code'], e['source_region']): QUOTA_MISSING for e in self.error_entries}
         for fm_file in list_data_files('fm-list-*.yml'):
             filename = fm_file.name if hasattr(fm_file, 'name') else str(fm_file)
             region = filename.replace('fm-list-', '').replace('.yml', '')
             self._cleanup_region_errors(region, stale)
 
+        # A code confirmed in any region is still a valid mapping for the index
+        confirmed = {code for (code, _), status in self._region_checks.items() if status == QUOTA_OK}
+        for entry in list(self.error_entries):
+            if entry['quota_code'] in confirmed:
+                entry['quota_name'] = entry.get('previous_name') or 'N/A'
+                self.error_entries.remove(entry)
+
+    def _missing_in(self, code: str, region: str) -> bool:
+        key = (code, region)
+        if key not in self._region_checks:
+            self._region_checks[key] = check_quota(code, region)[0]
+        return self._region_checks[key] == QUOTA_MISSING
+
     def _cleanup_region_errors(self, region: str, stale):
-        """Null out stale codes in one region's fm-list (user copy, else bundled)"""
+        """Null out codes that Service Quotas reports missing in this region (user copy, else bundled)"""
+        if not hasattr(self, '_region_checks'):
+            self._region_checks = {}
         yaml_file = get_writable_path(f'fm-list-{region}.yml')
         data = load_yaml(get_data_path(f'fm-list-{region}.yml')) or {}
 
@@ -189,7 +209,7 @@ class QuotaIndexGenerator:
                 quotas = (endpoint_data or {}).get('quotas') or {}
                 for quota_type, quota in quotas.items():
                     code = quota.get('code') if isinstance(quota, dict) else None
-                    if (model['model_id'], endpoint, quota_type, code) in stale:
+                    if (model['model_id'], endpoint, quota_type, code) in stale and self._missing_in(code, region):
                         logger.info(f"  Removing {model['model_id']} -> {endpoint} -> {quota_type} ({code}) in {region}")
                         quotas[quota_type] = None
                         modified = True

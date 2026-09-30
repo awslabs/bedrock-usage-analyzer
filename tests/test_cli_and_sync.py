@@ -273,3 +273,22 @@ def test_load_bundled_yaml_reads_package_resources():
     assert 'us-gov-west-1' in load_bundled_yaml('regions.yml')['regions']
     assert load_bundled_yaml('missing.yml') is None
     assert get_bundled_file('missing.yml') is None
+
+
+def test_quota_index_keeps_code_where_it_exists(monkeypatch, tmp_path):
+    """Missing in the source region but present in another: removed only where missing."""
+    from bedrock_usage_analyzer.sync import quota_index
+    from bedrock_usage_analyzer.aws.servicequotas import QUOTA_OK, QUOTA_MISSING
+    _index_fixture(tmp_path, {'tpm': 'L-PEGASUS', 'rpm': 'L-OK'})
+    def check(code, region):
+        if code == 'L-PEGASUS' and region == 'us-east-1':
+            return QUOTA_MISSING, None
+        return QUOTA_OK, {'QuotaName': code}
+    monkeypatch.setattr(quota_index, 'check_quota', check)
+    gen = quota_index.QuotaIndexGenerator()
+    gen.run()
+    tpm = {r: load_yaml(str(tmp_path / 'data' / f'fm-list-{r}.yml'))['models'][0]['endpoints']['base']['quotas']['tpm']
+           for r in ('us-east-1', 'us-west-2')}
+    assert tpm['us-east-1'] is None and tpm['us-west-2']['code'] == 'L-PEGASUS'
+    assert gen.error_entries == []
+    assert 'L-PEGASUS' in (tmp_path / 'data' / 'quota-index.csv').read_text()
