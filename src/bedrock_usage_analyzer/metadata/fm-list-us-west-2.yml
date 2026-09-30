@@ -610,9 +610,13 @@ models:
     base:
       quotas:
         concurrent: null
-        rpm: null
+        rpm:
+          code: L-9E5BD0C6
+          name: On-demand model inference requests per minute for Cohere Embed Multilingual
         tpd: null
-        tpm: null
+        tpm:
+          code: L-C2F86908
+          name: On-demand model inference tokens per minute for Cohere Embed Multilingual
   inference_types:
   - ON_DEMAND
   model_id: cohere.embed-multilingual-v3
@@ -1589,9 +1593,15 @@ models:
     base:
       quotas:
         concurrent: null
-        rpm: null
+        rpm:
+          code: L-C4E013EF
+          name: On-demand model inference requests per minute for GPT OSS Safeguard
+            120B
         tpd: null
-        tpm: null
+        tpm:
+          code: L-594C7AC9
+          name: On-demand model inference tokens per minute for GPT OSS Safeguard
+            120B
   inference_types:
   - ON_DEMAND
   model_id: openai.gpt-oss-safeguard-120b
@@ -1772,7 +1782,10 @@ models:
     us:
       quotas:
         concurrent: null
-        rpm: null
+        rpm:
+          code: L-F335C1D6
+          name: Cross-region model inference requests per minute for Stable Image
+            Control Sketch
         tpd: null
         tpm: null
   inference_profiles:
@@ -1785,7 +1798,10 @@ models:
     us:
       quotas:
         concurrent: null
-        rpm: null
+        rpm:
+          code: L-9B65945A
+          name: Cross-region model inference requests per minute for Stable Image
+            Control Structure
         tpd: null
         tpm: null
   inference_profiles:
@@ -1798,7 +1814,10 @@ models:
     base:
       quotas:
         concurrent: null
-        rpm: null
+        rpm:
+          code: L-5D30A162
+          name: On-demand model inference requests per minute for Stability.ai Stable
+            Image Core
         tpd: null
         tpm: null
   inference_types:
@@ -1809,7 +1828,10 @@ models:
     us:
       quotas:
         concurrent: null
-        rpm: null
+        rpm:
+          code: L-14BB1F8E
+          name: Cross-region model inference requests per minute for Stable Image
+            Erase Object
         tpd: null
         tpm: null
   inference_profiles:
@@ -1822,7 +1844,10 @@ models:
     us:
       quotas:
         concurrent: null
-        rpm: null
+        rpm:
+          code: L-3CD80F9F
+          name: Cross-region model inference requests per minute for Stable Image
+            Inpaint
         tpd: null
         tpm: null
   inference_profiles:
@@ -1835,7 +1860,10 @@ models:
     us:
       quotas:
         concurrent: null
-        rpm: null
+        rpm:
+          code: L-E347CF0D
+          name: Cross-region model inference requests per minute for Stable Image
+            Remove Background
         tpd: null
         tpm: null
   inference_profiles:
@@ -1861,7 +1889,10 @@ models:
     us:
       quotas:
         concurrent: null
-        rpm: null
+        rpm:
+          code: L-AE5771D9
+          name: Cross-region model inference requests per minute for Stable Image
+            Search and Replace
         tpd: null
         tpm: null
   inference_profiles:
@@ -1874,7 +1905,10 @@ models:
     us:
       quotas:
         concurrent: null
-        rpm: null
+        rpm:
+          code: L-D15F5A64
+          name: Cross-region model inference requests per minute for Stable Image
+            Style Guide
         tpd: null
         tpm: null
   inference_profiles:
@@ -1887,7 +1921,10 @@ models:
     base:
       quotas:
         concurrent: null
-        rpm: null
+        rpm:
+          code: L-F192B1D7
+          name: On-demand model inference requests per minute for Stability.ai Stable
+            Image Ultra
         tpd: null
         tpm: null
   inference_types:

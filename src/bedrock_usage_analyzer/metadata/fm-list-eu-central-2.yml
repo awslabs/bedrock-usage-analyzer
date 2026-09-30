@@ -559,9 +559,7 @@ models:
     eu:
       quotas:
         concurrent: null
-        rpm:
-          code: L-6E046197
-          name: Cross-region model inference requests per minute for Twelve Labs Pegasus
+        rpm: null
         tpd: null
         tpm: null
     global:

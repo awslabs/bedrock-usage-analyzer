@@ -306,15 +306,9 @@ models:
     in:
       quotas:
         concurrent: null
-        rpm:
-          code: L-CCA5DF70
-          name: Cross-region model inference requests per minute for Anthropic Claude
-            Haiku 4.5
+        rpm: null
         tpd: null
-        tpm:
-          code: L-58BE175A
-          name: Cross-region model inference tokens per minute for Anthropic Claude
-            Haiku 4.5
+        tpm: null
   inference_profiles:
   - global
   - in
@@ -546,9 +540,13 @@ models:
     base:
       quotas:
         concurrent: null
-        rpm: null
+        rpm:
+          code: L-9E5BD0C6
+          name: On-demand model inference requests per minute for Cohere Embed Multilingual
         tpd: null
-        tpm: null
+        tpm:
+          code: L-C2F86908
+          name: On-demand model inference tokens per minute for Cohere Embed Multilingual
   inference_types:
   - ON_DEMAND
   model_id: cohere.embed-multilingual-v3
@@ -1211,9 +1209,15 @@ models:
     base:
       quotas:
         concurrent: null
-        rpm: null
+        rpm:
+          code: L-C4E013EF
+          name: On-demand model inference requests per minute for GPT OSS Safeguard
+            120B
         tpd: null
-        tpm: null
+        tpm:
+          code: L-594C7AC9
+          name: On-demand model inference tokens per minute for GPT OSS Safeguard
+            120B
   inference_types:
   - ON_DEMAND
   model_id: openai.gpt-oss-safeguard-120b

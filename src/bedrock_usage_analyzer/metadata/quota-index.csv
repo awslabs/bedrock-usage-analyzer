@@ -7,8 +7,6 @@ anthropic.claude-haiku-4-5-20251001-v1:0,global,rpm,L-E5084BBA,Global cross-regi
 anthropic.claude-haiku-4-5-20251001-v1:0,global,tpm,L-9A11C666,Global cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5
 anthropic.claude-haiku-4-5-20251001-v1:0,jp,rpm,L-CCA5DF70,Cross-region model inference requests per minute for Anthropic Claude Haiku 4.5
 anthropic.claude-haiku-4-5-20251001-v1:0,jp,tpm,L-58BE175A,Cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5
-anthropic.claude-haiku-4-5-20251001-v1:0,in,rpm,L-CCA5DF70,Cross-region model inference requests per minute for Anthropic Claude Haiku 4.5
-anthropic.claude-haiku-4-5-20251001-v1:0,in,tpm,L-58BE175A,Cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5
 anthropic.claude-haiku-4-5-20251001-v1:0,au,rpm,L-CCA5DF70,Cross-region model inference requests per minute for Anthropic Claude Haiku 4.5
 anthropic.claude-haiku-4-5-20251001-v1:0,au,tpm,L-58BE175A,Cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5
 anthropic.claude-haiku-4-5-20251001-v1:0,us,rpm,L-CCA5DF70,Cross-region model inference requests per minute for Anthropic Claude Haiku 4.5
@@ -165,6 +163,8 @@ amazon.titan-embed-text-v2:0,base,rpm,L-26C560CE,On-demand model inference reque
 amazon.titan-embed-text-v2:0,base,tpm,L-DE641971,On-demand model inference tokens per minute for Amazon Titan Text Embeddings V2
 cohere.embed-english-v3,base,rpm,L-FF8E7864,On-demand model inference requests per minute for Cohere Embed English
 cohere.embed-english-v3,base,tpm,L-A2BE277A,On-demand model inference tokens per minute for Cohere Embed English
+cohere.embed-multilingual-v3,base,rpm,L-9E5BD0C6,On-demand model inference requests per minute for Cohere Embed Multilingual
+cohere.embed-multilingual-v3,base,tpm,L-C2F86908,On-demand model inference tokens per minute for Cohere Embed Multilingual
 cohere.embed-v4:0,base,rpm,L-BE5FD99B,On-demand model inference requests per minute for Cohere Embed V4
 cohere.embed-v4:0,base,tpm,L-C47B85D5,On-demand model inference tokens per minute for Cohere Embed V4
 cohere.embed-v4:0,global,rpm,L-7089DC7D,Global cross-region model inference requests per minute for Cohere Embed V4
@@ -225,6 +225,8 @@ openai.gpt-oss-120b-1:0,base,rpm,L-25B50707,On-demand model inference requests p
 openai.gpt-oss-120b-1:0,base,tpm,L-9DC5F595,On-demand model inference tokens per minute for OpenAI GPT OSS 120B
 openai.gpt-oss-20b-1:0,base,rpm,L-AF7F0545,On-demand model inference requests per minute for OpenAI GPT OSS 20B
 openai.gpt-oss-20b-1:0,base,tpm,L-036E14D8,On-demand model inference tokens per minute for OpenAI GPT OSS 20B
+openai.gpt-oss-safeguard-120b,base,rpm,L-C4E013EF,On-demand model inference requests per minute for GPT OSS Safeguard 120B
+openai.gpt-oss-safeguard-120b,base,tpm,L-594C7AC9,On-demand model inference tokens per minute for GPT OSS Safeguard 120B
 openai.gpt-oss-safeguard-20b,base,rpm,L-65833D55,On-demand model inference requests per minute for GPT OSS Safeguard 20B
 openai.gpt-oss-safeguard-20b,base,tpm,L-5D8F2F54,On-demand model inference tokens per minute for GPT OSS Safeguard 20B
 qwen.qwen3-235b-a22b-2507-v1:0,base,rpm,L-548A1A32,On-demand model inference requests per minute for Qwen3 235B a22b 2507 V1
@@ -324,6 +326,13 @@ mistral.mistral-small-2402-v1:0,base,tpm,L-82C15FA8,On-demand model inference to
 stability.stable-conservative-upscale-v1:0,us,rpm,L-0C7F3C72,Cross-region model inference requests per minute for Stable Image Conservative Upscale
 stability.stable-creative-upscale-v1:0,us,rpm,L-DB8B3F46,Cross-region model inference requests per minute for Stable Image Creative Upscale
 stability.stable-fast-upscale-v1:0,us,rpm,L-D3D76E8D,Cross-region model inference requests per minute for Stable Image Fast Upscale
+stability.stable-image-control-sketch-v1:0,us,rpm,L-F335C1D6,Cross-region model inference requests per minute for Stable Image Control Sketch
+stability.stable-image-control-structure-v1:0,us,rpm,L-9B65945A,Cross-region model inference requests per minute for Stable Image Control Structure
+stability.stable-image-erase-object-v1:0,us,rpm,L-14BB1F8E,Cross-region model inference requests per minute for Stable Image Erase Object
+stability.stable-image-inpaint-v1:0,us,rpm,L-3CD80F9F,Cross-region model inference requests per minute for Stable Image Inpaint
+stability.stable-image-remove-background-v1:0,us,rpm,L-E347CF0D,Cross-region model inference requests per minute for Stable Image Remove Background
+stability.stable-image-search-replace-v1:0,us,rpm,L-AE5771D9,Cross-region model inference requests per minute for Stable Image Search and Replace
+stability.stable-image-style-guide-v1:0,us,rpm,L-D15F5A64,Cross-region model inference requests per minute for Stable Image Style Guide
 writer.palmyra-vision-7b,base,rpm,L-23BFF4A6,On-demand model inference requests per minute for Writer Palmyra Vision 7B
 writer.palmyra-vision-7b,base,tpm,L-C53E98ED,On-demand model inference tokens per minute for Writer Palmyra Vision 7B
 writer.palmyra-x4-v1:0,us,rpm,L-79AAC482,Cross-region model inference requests per minute for Writer AI Palmyra X4 V1
@@ -335,3 +344,5 @@ writer.palmyra-x5-v1:0,us,tpm,L-90DFE70F,Cross-region model inference tokens per
 luma.ray-v2:0,base,concurrent,L-3447D96F,On-demand model inference concurrent requests for Luma Ray V2
 mistral.mistral-large-2407-v1:0,base,rpm,L-1402869F,On-demand model inference requests per minute for Mistral Large 2407
 mistral.mistral-large-2407-v1:0,base,tpm,L-1C28E1AB,On-demand model inference tokens per minute for Mistral Large 2407
+stability.stable-image-core-v1:1,base,rpm,L-5D30A162,On-demand model inference requests per minute for Stability.ai Stable Image Core
+stability.stable-image-ultra-v1:1,base,rpm,L-F192B1D7,On-demand model inference requests per minute for Stability.ai Stable Image Ultra

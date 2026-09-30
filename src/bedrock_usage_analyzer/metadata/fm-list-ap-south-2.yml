@@ -68,15 +68,9 @@ models:
     in:
       quotas:
         concurrent: null
-        rpm:
-          code: L-CCA5DF70
-          name: Cross-region model inference requests per minute for Anthropic Claude
-            Haiku 4.5
+        rpm: null
         tpd: null
-        tpm:
-          code: L-58BE175A
-          name: Cross-region model inference tokens per minute for Anthropic Claude
-            Haiku 4.5
+        tpm: null
   inference_profiles:
   - global
   - in
