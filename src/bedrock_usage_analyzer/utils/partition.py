@@ -210,10 +210,44 @@ def get_caller_identity(region: Optional[str] = None, probe: bool = False) -> Di
     return result
 
 
+# STS answers these when it does not recognise the credentials at all. One partition's
+# STS answers the same for another partition's credentials, and so does the STS of an
+# opt-in region the account has not enabled.
+TOKEN_REJECTION_CODES = ('InvalidClientTokenId', 'UnrecognizedClient', 'SignatureDoesNotMatch')
+
+
+def is_token_rejection(error: Exception) -> bool:
+    """True when STS rejected the credentials themselves (not a network or permission error)."""
+    text = f"{type(error).__name__} {error}"
+    return any(code in text for code in TOKEN_REJECTION_CODES)
+
+
+def resolve_caller_identity(region: Optional[str] = None, lookup=None) -> Dict[str, str]:
+    """Caller identity via the configured (regional) STS endpoint, then the partition's home region.
+
+    The regional endpoint comes first because some hosts can only reach STS through a
+    regional VPC endpoint. If it rejects the token (typical for an opt-in region the
+    account has not enabled), the partition's home region is asked once. The original
+    error is raised when both fail.
+    """
+    lookup = lookup or get_caller_identity
+    key = region or region_hint()
+    try:
+        return lookup(key)
+    except Exception as e:
+        home = PARTITION_HOME_REGIONS.get(get_partition_for_region(key))
+        if not (is_token_rejection(e) and home and home != key):
+            raise
+        try:
+            return lookup(home)
+        except Exception:
+            raise e
+
+
 def detect_credentials_partition(region: Optional[str] = None) -> Optional[str]:
     """Partition of the current credentials, or None if it cannot be determined."""
     try:
-        return get_caller_identity(region)['Partition']
+        return resolve_caller_identity(region)['Partition']
     except Exception as e:
         logger.debug(f"Could not detect credentials partition: {e}")
         return None

@@ -168,3 +168,20 @@ def test_prefix_file_can_mark_a_known_prefix_not_regional(tmp_path):
     bedrock._prefix_mapping_cache = None
     prefixes = bedrock.get_regional_profile_prefixes()
     assert 'ca' not in prefixes and {'us', 'us-gov', 'in'} <= set(prefixes)
+
+
+def test_saved_conflicting_codes_are_dropped_on_refresh(monkeypatch, tmp_path):
+    """A wrong code written by an older version goes even if nothing replaces it."""
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1']})
+    wrong = {'code': 'L-GL46', 'name': 'Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6'}
+    save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [
+        {'model_id': SONNET4, 'provider': 'Anthropic', 'endpoints': {'us': {'quotas': {'tpd': wrong}}}}]})
+    monkeypatch.setattr(qm, 'fetch_service_quotas', lambda region: [])
+    monkeypatch.setattr(qm, 'extract_common_name', lambda *a: 'claude')
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws')
+    mapper = qm.QuotaMapper('us-east-1', 'model', 'us-east-1')
+    monkeypatch.setattr(mapper, '_get_quota_mapping', lambda *a: None)
+    mapper.run()
+    quotas = load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]['endpoints']['us']['quotas']
+    assert quotas['tpd'] is None

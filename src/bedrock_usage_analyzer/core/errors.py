@@ -5,10 +5,11 @@
 
 from typing import Optional
 
-from bedrock_usage_analyzer.utils.partition import (
+from bedrock_usage_analyzer.utils.partition import (  # noqa: F401  is_token_rejection re-exported
     COMMERCIAL,
     get_partition_display_name,
     get_partition_for_region,
+    is_token_rejection,
 )
 
 _CREDENTIAL_MARKERS = ('invalidclienttokenid', 'unrecognizedclient', 'security token',
@@ -19,19 +20,8 @@ _NETWORK_MARKERS = ('could not connect', 'endpoint url', 'connecttimeout', 'read
                     'connection was closed', 'name or service not known')
 
 
-# STS answers these when it does not recognise the credentials at all, which is also
-# what one partition's STS answers for another partition's credentials
-_TOKEN_REJECTION_CODES = ('InvalidClientTokenId', 'UnrecognizedClient', 'SignatureDoesNotMatch')
-
-
 def _error_text(error: Exception) -> str:
     return f"{type(error).__name__} {error}"
-
-
-def is_token_rejection(error: Exception) -> bool:
-    """True when STS rejected the credentials themselves (not a network or permission error)."""
-    text = _error_text(error)
-    return any(code in text for code in _TOKEN_REJECTION_CODES)
 
 
 def is_access_denied(error: Exception) -> bool:

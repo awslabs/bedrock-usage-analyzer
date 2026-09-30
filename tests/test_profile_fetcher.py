@@ -300,3 +300,13 @@ def test_transient_listing_failure_gives_up_after_two_attempts(sydney_bedrock):
         with pytest.raises(RuntimeError):
             fetcher.list_application_profiles()
     assert len(calls) == 2
+
+
+def test_unknown_geography_keeps_profile_listed_without_a_source():
+    """Two sa-* ARNs and no matching system profile: no invented 'sa.' endpoint."""
+    apps = [app_profile('sa000000001', 'brazil', [arn('sa-east-1', NOVA), arn('sa-west-1', NOVA)])]
+    fetcher = InferenceProfileFetcher(FakeBedrock(application=apps))
+    app = fetcher.list_application_profiles()[0]
+    assert app['source'] is None and app['sources'] == [] and app['model_id'] == NOVA
+    assert fetcher.find_profiles(NOVA, None)[0] == [NOVA]
+    assert fetcher.find_profiles(NOVA, 'unknown', application_profile_ids=['sa000000001'])[0] == ['sa000000001']

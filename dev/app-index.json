@@ -354,10 +354,6 @@
           "description": ""
         },
         {
-          "name": "is_token_rejection",
-          "description": "True when STS rejected the credentials themselves (not a network or permission error)."
-        },
-        {
           "name": "is_access_denied",
           "description": "True for permission errors, which do not go away when the call is retried."
         },
@@ -822,6 +818,10 @@
           "description": "Remove ERROR entries from YAML files"
         },
         {
+          "name": "_stale_slots_in",
+          "description": "(model, endpoint, type, code) slots of one region file that are in ``stale``."
+        },
+        {
           "name": "_missing_in",
           "description": ""
         },
@@ -1125,6 +1125,14 @@
           "description": "Return {'Account', 'Arn', 'Partition'} for the current credentials (cached)."
         },
         {
+          "name": "is_token_rejection",
+          "description": "True when STS rejected the credentials themselves (not a network or permission error)."
+        },
+        {
+          "name": "resolve_caller_identity",
+          "description": "Caller identity via the configured (regional) STS endpoint, then the partition's home region."
+        },
+        {
           "name": "detect_credentials_partition",
           "description": "Partition of the current credentials, or None if it cannot be determined."
         },
@@ -1270,6 +1278,7 @@
         "botocore",
         "conftest",
         "datetime",
+        "html",
         "json",
         "logging",
         "os",

@@ -167,3 +167,21 @@ def test_region_hint_caches_config_lookup(monkeypatch):
                                         (None, False), ('', False)])
 def test_is_valid_region_name(name, valid):
     assert p.is_valid_region_name(name) is valid
+
+
+def test_resolve_caller_identity_retries_home_region_only_on_token_rejection():
+    calls = []
+
+    def lookup(region):
+        calls.append(region)
+        if region == 'us-gov-east-1':
+            raise RuntimeError('UnrecognizedClientException')
+        if region == 'ap-east-2':
+            raise RuntimeError('Could not connect to the endpoint URL')
+        return {'Partition': p.get_partition_for_region(region)}
+
+    assert p.resolve_caller_identity('us-gov-east-1', lookup)['Partition'] == 'aws-us-gov'
+    assert calls == ['us-gov-east-1', 'us-gov-west-1']
+    with pytest.raises(RuntimeError, match='Could not connect'):
+        p.resolve_caller_identity('ap-east-2', lookup)
+    assert calls[-1] == 'ap-east-2'

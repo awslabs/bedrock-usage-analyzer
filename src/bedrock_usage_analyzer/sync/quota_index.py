@@ -202,11 +202,19 @@ class QuotaIndexGenerator:
         self._regional = set(get_regional_profile_prefixes())
         self._mismatched = {(e['model_id'], e['endpoint'], e['quota_type'], e['quota_code'])
                             for e in self.mismatch_entries}
-        # Every region file is also checked for mismatches by the quota name stored with each
-        # code, because the index itself samples only one source region per model endpoint
+        regions = []
         for fm_file in list_data_files('fm-list-*.yml'):
             filename = fm_file.name if hasattr(fm_file, 'name') else str(fm_file)
-            region = filename.replace('fm-list-', '').replace('.yml', '')
+            regions.append(filename.replace('fm-list-', '').replace('.yml', ''))
+        # Look up, in parallel, every (code, region) pair the cleanup will ask about
+        pending = sorted({(slot[3], region) for region in regions
+                          for slot in self._stale_slots_in(region, stale)} - set(self._region_checks))
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for key, result in zip(pending, pool.map(lambda k: check_quota(*k), pending)):
+                self._region_checks[key] = result[0]
+        # Every region file is also checked for mismatches by the quota name stored with each
+        # code, because the index itself samples only one source region per model endpoint
+        for region in regions:
             self._cleanup_region_errors(region, stale)
 
         # A code confirmed in any region is still a valid mapping for the index
@@ -215,6 +223,18 @@ class QuotaIndexGenerator:
             if entry['quota_code'] in confirmed:
                 entry['quota_name'] = entry.get('previous_name') or 'N/A'
                 self.error_entries.remove(entry)
+
+    @staticmethod
+    def _stale_slots_in(region: str, stale):
+        """(model, endpoint, type, code) slots of one region file that are in ``stale``."""
+        data = load_yaml(get_data_path(f'fm-list-{region}.yml')) or {}
+        for model in data.get('models', []):
+            for endpoint, endpoint_data in (model.get('endpoints') or {}).items():
+                for quota_type, quota in ((endpoint_data or {}).get('quotas') or {}).items():
+                    if isinstance(quota, dict):
+                        slot = (model['model_id'], endpoint, quota_type, quota.get('code'))
+                        if slot in stale:
+                            yield slot
 
     def _missing_in(self, code: str, region: str) -> bool:
         key = (code, region)

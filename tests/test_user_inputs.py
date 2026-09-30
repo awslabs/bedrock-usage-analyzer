@@ -295,8 +295,8 @@ def test_network_errors_do_not_trigger_partition_probes(monkeypatch):
     monkeypatch.setattr(ui_module, 'get_caller_identity', identity)
     with pytest.raises(SystemExit):
         UserInputs()._get_current_account('us-west-2')
-    # Account check goes to the partition's home region; no partition probes on network errors
-    assert calls == ['us-east-1']
+    # Regional STS first; a network error triggers neither the home-region retry nor probes
+    assert calls == ['us-west-2']
 
 
 def test_mismatch_uses_configured_region_when_no_flag(monkeypatch, caplog):
@@ -357,16 +357,20 @@ def test_partition_probes_use_fast_clients(monkeypatch):
     assert seen[0] == ('us-east-1', False) and all(p for _, p in seen[1:]) and len(seen) == 3
 
 
-def test_account_check_uses_partition_home_region(monkeypatch):
-    """A disabled opt-in region (ap-east-1) must not make valid credentials look invalid."""
+def test_account_check_falls_back_to_partition_home_region(monkeypatch):
+    """Regional STS first (VPC endpoints); a disabled opt-in region retries the home region."""
     seen = []
-    monkeypatch.setattr(ui_module, 'get_caller_identity',
-                        lambda region=None, **_: seen.append(region) or
-                        {'Account': '1', 'Arn': 'arn:aws:iam::1:user/a', 'Partition': 'aws'})
-    UserInputs()._get_current_account('ap-east-1')
-    UserInputs()._get_current_account('us-gov-east-1')
-    assert seen == ['us-east-1', 'us-gov-west-1']
 
+    def identity(region=None, **_):
+        seen.append(region)
+        if region == 'ap-east-1':
+            raise RuntimeError('InvalidClientTokenId: The security token included in the request is invalid')
+        return {'Account': '1', 'Arn': 'arn:aws:iam::1:user/a', 'Partition': 'aws'}
+
+    monkeypatch.setattr(ui_module, 'get_caller_identity', identity)
+    UserInputs()._get_current_account('ap-east-1')
+    UserInputs()._get_current_account('ap-southeast-1')
+    assert seen == ['ap-east-1', 'us-east-1', 'ap-southeast-1']
 
 def test_select_region_reuses_known_partition(monkeypatch):
     ui = UserInputs()
@@ -375,3 +379,26 @@ def test_select_region_reuses_known_partition(monkeypatch):
                         lambda *a, **k: pytest.fail('must not call STS again'))
     feed(monkeypatch, ['1'])
     assert ui._select_region() == 'us-gov-east-1'
+
+
+def test_interactive_rounds_merge_profiles_of_one_endpoint(inputs, monkeypatch):
+    from conftest import AU_ARNS, app_profile
+    inputs.profile_fetcher.bedrock_client.application.append(app_profile('auapp000002', 'team-f-au', AU_ARNS))
+    inputs.profile_fetcher._app_profiles = None
+    monkeypatch.setattr(ui_module, 'get_caller_identity',
+                        lambda region=None, **_: {'Account': '1', 'Arn': 'arn:aws:iam::1:user/a', 'Partition': 'aws'})
+    # round 1: profile #1 (auapp000001); round 2: profile #6 (auapp000002)
+    feed(monkeypatch, ['2', '1', 'y', '2', '6', 'n'])
+    inputs.collect(region='ap-southeast-2', granularity_config={p: 60 for p in
+                   ['1hour', '1day', '7days', '14days', '30days']}, skip_confirm=True)
+    assert inputs.models == [{'model_id': HAIKU, 'profile_prefix': 'au',
+                              'application_profile_ids': ['auapp000001', 'auapp000002']}]
+
+
+def test_fm_list_is_parsed_once(inputs, monkeypatch):
+    calls = []
+    real = ui_module.load_yaml
+    monkeypatch.setattr(ui_module, 'load_yaml', lambda path: calls.append(path) or real(path))
+    inputs._load_fm_list('us-east-1')
+    inputs._load_fm_list('us-east-1')
+    assert len(calls) == 1

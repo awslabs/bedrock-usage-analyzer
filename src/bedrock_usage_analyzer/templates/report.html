@@ -66,22 +66,13 @@
     {% if quotas.tpm or quotas.rpm or quotas.tpd or quotas.concurrent %}
     <div class="quota-section">
         <h4>Quota Limits</h4>
-        {% if quotas.tpm %}
-        <p><strong>TPM (Tokens Per Minute):</strong> {{ "{:,.0f}".format(quotas.tpm.value) }}<br>
-        <span style="font-size: 0.85em;">{% if quotas.tpm.url | https_url %}<a href="{{ quotas.tpm.url | https_url }}" target="_blank" rel="noopener noreferrer">[{{ quotas.tpm.code }}]</a>{% else %}[{{ quotas.tpm.code }}]{% endif %} {{ quotas.tpm.name }}</span></p><!-- nosemgrep: generic.html-templates.security.var-in-href.var-in-href (https_url filter allows only https:// links) -->
-        {% endif %}
-        {% if quotas.rpm %}
-        <p><strong>RPM (Requests Per Minute):</strong> {{ "{:,.0f}".format(quotas.rpm.value) }}<br>
-        <span style="font-size: 0.85em;">{% if quotas.rpm.url | https_url %}<a href="{{ quotas.rpm.url | https_url }}" target="_blank" rel="noopener noreferrer">[{{ quotas.rpm.code }}]</a>{% else %}[{{ quotas.rpm.code }}]{% endif %} {{ quotas.rpm.name }}</span></p><!-- nosemgrep: generic.html-templates.security.var-in-href.var-in-href (https_url filter allows only https:// links) -->
-        {% endif %}
-        {% if quotas.tpd %}
-        <p><strong>TPD (Tokens Per Day):</strong> {{ "{:,.0f}".format(quotas.tpd.value) }}<br>
-        <span style="font-size: 0.85em;">{% if quotas.tpd.url | https_url %}<a href="{{ quotas.tpd.url | https_url }}" target="_blank" rel="noopener noreferrer">[{{ quotas.tpd.code }}]</a>{% else %}[{{ quotas.tpd.code }}]{% endif %} {{ quotas.tpd.name }}</span></p><!-- nosemgrep: generic.html-templates.security.var-in-href.var-in-href (https_url filter allows only https:// links) -->
-        {% endif %}
-        {% if quotas.concurrent %}
-        <p><strong>Concurrent Requests:</strong> {{ "{:,.0f}".format(quotas.concurrent.value) }}<br>
-        <span style="font-size: 0.85em;">{% if quotas.concurrent.url | https_url %}<a href="{{ quotas.concurrent.url | https_url }}" target="_blank" rel="noopener noreferrer">[{{ quotas.concurrent.code }}]</a>{% else %}[{{ quotas.concurrent.code }}]{% endif %} {{ quotas.concurrent.name }}</span></p><!-- nosemgrep: generic.html-templates.security.var-in-href.var-in-href (https_url filter allows only https:// links) -->
-        {% endif %}
+        {%- macro quota_line(label, quota) %}
+        <p><strong>{{ label }}:</strong> {{ "{:,.0f}".format(quota.value) }}<br>
+        <span style="font-size: 0.85em;">{% if quota.url | https_url %}<a href="{{ quota.url | https_url }}" target="_blank" rel="noopener noreferrer">[{{ quota.code }}]</a>{% else %}[{{ quota.code }}]{% endif %} {{ quota.name }}</span></p><!-- nosemgrep: generic.html-templates.security.var-in-href.var-in-href (https_url filter allows only https:// links) -->
+        {%- endmacro %}
+        {% for key, label in [('tpm', 'TPM (Tokens Per Minute)'), ('rpm', 'RPM (Requests Per Minute)'), ('tpd', 'TPD (Tokens Per Day)'), ('concurrent', 'Concurrent Requests')] %}
+        {% if quotas[key] %}{{ quota_line(label, quotas[key]) }}{% endif %}
+        {% endfor %}
         <p><strong>IMPORTANT:</strong> These quotas (and those on the charts) were intelligently mapped with large language model. It is always good to crosscheck with {% if service_quotas_console_url | https_url %}<a href="{{ service_quotas_console_url | https_url }}" target="_blank" rel="noopener noreferrer">AWS service quotas</a>{% else %}AWS service quotas{% endif %}</p><!-- nosemgrep: generic.html-templates.security.var-in-href.var-in-href (https_url filter allows only https:// links) -->
     </div>
     {% endif %}

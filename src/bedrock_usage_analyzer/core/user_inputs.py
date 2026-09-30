@@ -26,6 +26,7 @@ from ..utils.partition import (
     is_govcloud_region,
     is_valid_region_name,
     region_hint,
+    resolve_caller_identity,
 )
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,7 @@ class UserInputs:
         self.region = None
         self.models = []
         self.profile_fetcher: Optional[InferenceProfileFetcher] = None
+        self._fm_lists: Dict[str, List[Dict]] = {}
         self.granularity_config = {  # The aggregation granularity for different metrics window/period
             '1hour': 300,   # 5 minutes
             '1day': 300,    # 5 minutes
@@ -170,6 +172,8 @@ class UserInputs:
                 add_more = input("\nAdd another model? (y/[n]): ").lower()
                 if add_more != 'y':
                     break
+            # Profiles of one endpoint picked in different rounds become one report, as with -m
+            self.models = merge_application_configs(self.models)
 
     def _add_models(self, configs):
         for config in configs or []:
@@ -188,11 +192,9 @@ class UserInputs:
         """Get current AWS account ID (and remember the credentials' partition)"""
 
         logger.info("Getting AWS account ID...")
-        # STS in the partition's home region, not in --region itself: an opt-in region the
-        # account has not enabled rejects the token there, which would look like bad credentials
-        sts_region = PARTITION_HOME_REGIONS.get(get_partition_for_region(region), region) if region else None
         try:
-            identity = get_caller_identity(sts_region)
+            # Regional STS first (VPC endpoints), then the partition's home region
+            identity = resolve_caller_identity(region, lookup=get_caller_identity)
         except Exception as e:
             if is_token_rejection(e):
                 self._explain_partition_mismatch(region or region_hint())
@@ -357,7 +359,7 @@ class UserInputs:
             logger.error(f"Application inference profile not found in {self.region}: {identifier}")
             sys.exit(1)
         logger.info(f"  Application inference profile {profile['name']} ({profile['id']}) "
-                    f"is based on {profile['source']}")
+                    f"is based on {profile['source'] or 'an unknown endpoint'}")
         return group_application_profiles([profile])[0]
 
     def _select_targets(self, region) -> List[Dict]:
@@ -386,7 +388,7 @@ class UserInputs:
         """Pick one or more application inference profiles by number."""
         print("\nApplication inference profiles:")
         for i, app in enumerate(app_profiles, 1):
-            print(f"  {i}. {app['name']} ({app['id']}) - based on {app['source']}")
+            print(f"  {i}. {app['name']} ({app['id']}) - based on {app['source'] or 'an unknown endpoint'}")
         while True:
             try:
                 text = input(f"\nSelect profiles (e.g. 1,3-4 or all): ")
@@ -593,11 +595,11 @@ class UserInputs:
             sys.exit(1)
     
     def _load_fm_list(self, region):
-        """Load foundation models for region"""
-        fm_file = get_data_path(f'fm-list-{region}.yml')
-        
-        data = load_yaml(fm_file) or {}
-        return data.get('models', []) or []
+        """Load foundation models for region (parsed once per region)"""
+        if region not in self._fm_lists:
+            data = load_yaml(get_data_path(f'fm-list-{region}.yml')) or {}
+            self._fm_lists[region] = data.get('models', []) or []
+        return self._fm_lists[region]
     
     def select_output_dir(self) -> str:
         """Prompt user to select output directory for results."""

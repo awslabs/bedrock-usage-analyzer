@@ -123,6 +123,14 @@ class QuotaMapper:
             # correct code is worse than keeping a stale one. `bua refresh quota-index` removes
             # codes that Service Quotas rejects or that contradict their model/endpoint.
             endpoints = fm.setdefault('endpoints', {})
+            regional = set(get_regional_profile_prefixes())
+            for endpoint_type, endpoint_value in list(endpoints.items()):
+                # Saved codes that contradict their model/endpoint (written by older versions)
+                # are dropped even when nothing new was found to replace them
+                saved = (endpoint_value or {}).get('quotas') or {}
+                for metric, value in list(saved.items()):
+                    if isinstance(value, dict) and mapping_conflict(model_id, endpoint_type, value.get('name'), regional):
+                        saved[metric] = None
             for endpoint_type, new in endpoints_data.items():
                 saved = (endpoints.get(endpoint_type) or {}).get('quotas') or {}
                 merged = dict(saved)

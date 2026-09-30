@@ -18,6 +18,10 @@ from bedrock_usage_analyzer.aws.bedrock import (
 
 logger = logging.getLogger(__name__)
 
+# profile_prefix of an application profile whose source endpoint cannot be determined;
+# no fm-list endpoint has this key, so no quota is attached to it
+UNKNOWN_SOURCE = 'unknown'
+
 # Attempts at listing application profiles per run before giving up on transient errors
 MAX_LISTING_ATTEMPTS = 2
 
@@ -99,10 +103,17 @@ class InferenceProfileFetcher:
             for profile in raw:
                 arns = [m.get('modelArn', '') for m in profile.get('models', [])]
                 sources = self.resolve_sources(arns)
-                if not sources:
-                    continue
-                source = sources[0]
-                model_id, prefix = split_profile_id(source)
+                if sources:
+                    source = sources[0]
+                    model_id, prefix = split_profile_id(source)
+                else:
+                    # Still listed (it can be analyzed by ID), but no endpoint or quotas are implied
+                    model_ids = sorted({m for m in (model_id_from_arn(a) for a in arns) if m})
+                    if not model_ids:
+                        continue
+                    source, model_id, prefix = None, model_ids[0], UNKNOWN_SOURCE
+                    logger.info(f"  Note: could not tell which endpoint {profile['inferenceProfileId']} "
+                                f"was copied from")
                 profiles.append({
                     'id': profile['inferenceProfileId'],
                     'name': profile.get('inferenceProfileName', profile['inferenceProfileId']),
@@ -162,9 +173,10 @@ class InferenceProfileFetcher:
         if best:
             return _specific_first(best)
 
-        return [self._infer_from_regions(arns, model_id)]
+        inferred = self._infer_from_regions(arns, model_id)
+        return [inferred] if inferred else []
 
-    def _infer_from_regions(self, model_arns: List[str], model_id: str) -> str:
+    def _infer_from_regions(self, model_arns: List[str], model_id: str) -> Optional[str]:
         """Fallback when no system profile matches: guess from the ARN regions."""
         regions = [region_from_arn(a) for a in model_arns]
         if any(not r for r in regions):
@@ -185,7 +197,11 @@ class InferenceProfileFetcher:
         groups = {region_group(r) for r in regions}
         if len(groups) == 1:
             group = groups.pop()
-            return f"{self.prefix_map.get(group, group)}.{model_id}"
+            if group not in self.prefix_map:
+                # No system profile family for this geography (sa, me, mx, ...): an ID like
+                # 'sa.<model>' would not exist, so leave the source unknown
+                return None
+            return f"{self.prefix_map[group]}.{model_id}"
         return f"global.{model_id}"
 
     def resolve_application_profile(self, identifier: str) -> Optional[Dict]:
