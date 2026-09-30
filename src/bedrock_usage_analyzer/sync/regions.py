@@ -1,16 +1,24 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""AWS regions management with GovCloud support"""
+"""AWS regions management across partitions (commercial, GovCloud, China)"""
 
-import boto3
 import logging
-from typing import List
 import sys
+from typing import Iterable, List, Optional
 
-from bedrock_usage_analyzer.metadata.regions import refresh_regions
-from bedrock_usage_analyzer.utils.yaml_handler import save_yaml
-from bedrock_usage_analyzer.utils.paths import get_writable_path
+from bedrock_usage_analyzer.aws.client_factory import create_client
+from bedrock_usage_analyzer.utils.partition import (
+    COMMERCIAL,
+    detect_credentials_partition,
+    filter_regions_by_partition,
+    get_partition_display_name,
+    get_partition_for_region,
+    partition_regions,
+    region_hint,
+)
+from bedrock_usage_analyzer.utils.paths import get_data_path
+from bedrock_usage_analyzer.utils.yaml_handler import load_yaml
 
 logger = logging.getLogger(__name__)
 
@@ -18,48 +26,145 @@ logger = logging.getLogger(__name__)
 SKIP_REGIONS = {'me-south-1', 'me-central-1'}
 
 
-def fetch_enabled_regions() -> List[str]:
-    """Fetch enabled AWS regions for the account (legacy function for compatibility)
-    
-    Returns:
-        List of enabled region names
+def _region_name(entry) -> Optional[str]:
+    """Accept both plain names and {'name': ...} entries in regions.yml."""
+    if isinstance(entry, dict):
+        return entry.get('name')
+    if isinstance(entry, str):
+        return entry
+    return None
+
+
+def normalize_region_names(entries: Iterable) -> List[str]:
+    """Return a sorted, de-duplicated list of region names from regions.yml entries."""
+    names = {_region_name(e) for e in (entries or [])}
+    return sorted(n for n in names if n)
+
+
+def load_region_names() -> List[str]:
+    """Load all region names from regions.yml (user copy first, then bundled)."""
+    data = load_yaml(get_data_path('regions.yml')) or {}
+    return normalize_region_names(data.get('regions', []))
+
+
+def regions_for_credentials(regions: Iterable[str], region: Optional[str] = None):
+    """Filter regions to the partition of the current credentials.
+
+    Returns (regions, partition). When the partition cannot be detected the list
+    is returned unfiltered and partition is None.
     """
-    # Use the enhanced regions functionality
-    regions_data = refresh_regions()
-    regions = regions_data.get('regions', [])
-    
-    # Extract just the region names for backward compatibility
-    if regions and isinstance(regions[0], dict):
-        return [r['name'] for r in regions]
-    else:
-        return regions
+    partition = detect_credentials_partition(region or region_hint())
+    filtered = filter_regions_by_partition(regions, partition)
+    if partition and not filtered:
+        logger.warning(f"No {get_partition_display_name(partition)} regions in regions.yml; "
+                       f"run: bua refresh regions")
+    return (filtered if partition else list(regions)), partition
 
 
-def refresh_regions_legacy():
-    """Legacy refresh function that saves to file
-    
+def _home_region(partition: str, hint: Optional[str]) -> Optional[str]:
+    """A region in ``partition`` to pin regional API calls to."""
+    if hint and get_partition_for_region(hint) == partition:
+        return hint
+    candidates = partition_regions(partition)
+    preferred = {COMMERCIAL: 'us-east-1', 'aws-us-gov': 'us-gov-west-1', 'aws-cn': 'cn-north-1'}
+    if preferred.get(partition) in candidates:
+        return preferred[partition]
+    return candidates[0] if candidates else None
+
+
+def _fetch_via_account_api(region: Optional[str]) -> List[str]:
+    client = create_client('account', region)
+    regions = []
+    paginator = client.get_paginator('list_regions')
+    for page in paginator.paginate(RegionOptStatusContains=['ENABLED', 'ENABLED_BY_DEFAULT']):
+        regions.extend(r['RegionName'] for r in page.get('Regions', []))
+    return regions
+
+
+def _fetch_via_ec2(region: Optional[str]) -> List[str]:
+    # DescribeRegions without AllRegions returns only regions enabled for the account
+    response = create_client('ec2', region).describe_regions()
+    return [r['RegionName'] for r in response.get('Regions', [])]
+
+
+def fetch_enabled_regions(partition: Optional[str] = None, region: Optional[str] = None) -> List[str]:
+    """Fetch the regions enabled for the account in the credentials' partition.
+
+    Tries the Account Management API first, then EC2 DescribeRegions, then
+    botocore's static region list for Bedrock in that partition.
+    """
+    hint = region or region_hint()
+    partition = partition or detect_credentials_partition(hint) or get_partition_for_region(hint)
+    home = _home_region(partition, hint)
+
+    errors = []
+    for name, fetch in (('account:ListRegions', _fetch_via_account_api),
+                        ('ec2:DescribeRegions', _fetch_via_ec2)):
+        try:
+            regions = filter_regions_by_partition(fetch(home), partition)
+            if regions:
+                return sorted(set(regions))
+        except Exception as e:
+            errors.append(f"{name}: {e}")
+            logger.debug(f"{name} failed: {e}")
+
+    import boto3
+    static = boto3.session.Session().get_available_regions('bedrock', partition)
+    if static:
+        for err in errors:
+            logger.warning(f"  Could not list enabled regions via {err}")
+        logger.warning(f"  Using the {len(static)} Bedrock regions botocore knows for {partition}")
+        return sorted(static)
+
+    for err in errors:
+        logger.error(f"Error fetching regions via {err}")
+    sys.exit(1)
+
+
+def merge_regions(existing: Iterable, fresh: Iterable[str], partition: str) -> List[str]:
+    """Replace the regions of ``partition`` in ``existing`` with ``fresh``.
+
+    Regions of other partitions are kept, so refreshing with commercial
+    credentials does not drop the GovCloud regions (and vice versa).
+    """
+    kept = [r for r in normalize_region_names(existing) if get_partition_for_region(r) != partition]
+    return sorted(set(kept) | set(fresh))
+
+
+def refresh_regions(existing: Optional[Iterable] = None):
+    """Refresh the regions list for the partition of the current credentials.
+
+    Args:
+        existing: Current regions.yml entries; regions of other partitions are kept.
+
     Returns:
         dict: Regions data {'regions': [...]}
     """
-    logger.info("Fetching enabled AWS regions (including GovCloud)...")
-    
-    # Use the enhanced regions functionality
-    regions_data = refresh_regions()
-    regions_data['regions'] = [r for r in regions_data.get('regions', []) if (r['name'] if isinstance(r, dict) else r) not in SKIP_REGIONS]
-    if SKIP_REGIONS:
-        logger.info(f"Skipping regions: {', '.join(sorted(SKIP_REGIONS))}")
-    
-    # Save to file
-    regions_file = get_writable_path('regions.yml')
-    save_yaml(regions_file, regions_data)
-    logger.info(f"Saved regions to: {regions_file}")
-    
-    return regions_data
+    hint = region_hint()
+    partition = detect_credentials_partition(hint) or get_partition_for_region(hint)
+    logger.info(f"Fetching enabled regions ({get_partition_display_name(partition)})...")
+
+    regions = fetch_enabled_regions(partition, hint)
+    skipped = sorted(set(regions) & SKIP_REGIONS)
+    regions = [r for r in regions if r not in SKIP_REGIONS]
+    if skipped:
+        logger.info(f"Skipping regions: {', '.join(skipped)}")
+
+    if not regions:
+        logger.error("No regions found")
+        sys.exit(1)
+
+    logger.info(f"Found {len(regions)} enabled regions")
+    merged = merge_regions(existing or [], regions, partition)
+    other = len(merged) - len(regions)
+    if other:
+        logger.info(f"Kept {other} region(s) from other partitions")
+    return {'regions': merged}
 
 
 def main():
     """Main entry point"""
-    refresh_regions_legacy()
+    refresh_regions()
 
 
 if __name__ == "__main__":

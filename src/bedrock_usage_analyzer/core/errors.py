@@ -1,0 +1,45 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+"""Troubleshooting hints for common AWS errors, aware of the partition in use."""
+
+from typing import Optional
+
+from bedrock_usage_analyzer.utils.partition import (
+    COMMERCIAL,
+    get_partition_display_name,
+    get_partition_for_region,
+)
+
+_CREDENTIAL_MARKERS = ('invalidclienttokenid', 'unrecognizedclient', 'security token',
+                       'unable to locate credentials', 'nocredentials', 'expiredtoken',
+                       'expired token', 'credentials')
+_ACCESS_MARKERS = ('accessdenied', 'access denied', 'not authorized', 'unauthorizedoperation')
+_NETWORK_MARKERS = ('could not connect', 'endpoint url', 'connecttimeout', 'read timeout',
+                    'connection was closed', 'name or service not known')
+
+
+def troubleshooting_hint(error: Exception, region: Optional[str] = None) -> Optional[str]:
+    """Return a short hint for ``error``, or None when there is nothing useful to add."""
+    text = f"{type(error).__name__} {error}".lower()
+    partition = get_partition_for_region(region) if region else None
+    partition_name = get_partition_display_name(partition) if partition else None
+
+    if any(m in text for m in _CREDENTIAL_MARKERS):
+        hint = "Check your AWS credentials: run 'aws sts get-caller-identity'"
+        if region:
+            hint += f" --region {region}"
+        hint += "."
+        if partition and partition != COMMERCIAL:
+            hint += (f" {partition_name} uses separate accounts and credentials from"
+                     f" commercial AWS; use a profile for that partition (AWS_PROFILE=...)"
+                     f" and pass --region {region}.")
+        return hint
+    if any(m in text for m in _ACCESS_MARKERS):
+        return ("The credentials lack a required permission. See the IAM permissions"
+                " section of the README for the actions this tool needs.")
+    if any(m in text for m in _NETWORK_MARKERS):
+        target = f" for {region}" if region else ""
+        return (f"Could not reach the AWS endpoint{target}. Check network or proxy access,"
+                " and that the region name is correct.")
+    return None

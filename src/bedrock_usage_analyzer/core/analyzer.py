@@ -3,23 +3,19 @@
 
 """Main orchestrator for Bedrock token usage analysis"""
 
-import boto3
 import numpy as np
 import logging
 import traceback
-import os
 import yaml
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
-from bedrock_usage_analyzer.core.user_inputs import UserInputs
 from bedrock_usage_analyzer.core.profile_fetcher import InferenceProfileFetcher
 from bedrock_usage_analyzer.core.metrics_fetcher import CloudWatchMetricsFetcher
 from bedrock_usage_analyzer.core.output_generator import OutputGenerator
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
-from bedrock_usage_analyzer.aws.client_factory import EnhancedClientFactory
-from bedrock_usage_analyzer.core.govcloud_errors import create_govcloud_error_handler
+from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.utils.paths import get_data_path
-from bedrock_usage_analyzer.utils.partition import get_service_quota_url
+from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
 
 logger = logging.getLogger(__name__)
 
@@ -28,33 +24,23 @@ class BedrockAnalyzer:
     
     TIME_PERIODS = ["1hour", "1day", "7days", "14days", "30days"]
     
-    def __init__(self, region, granularity_config):
+    def __init__(self, region, granularity_config, profile_fetcher=None):
         self.region = region
         self.granularity_config = granularity_config
-        
+
         # Get local timezone - use system's local timezone
         local_dt = datetime.now().astimezone()
         self.local_tz = local_dt.tzinfo
         offset = local_dt.strftime('%z')
         self.tz_offset = f"{offset[:3]}:{offset[3:]}"  # +08:00 format
         self.tz_api_format = offset[:5]  # +0800 format for API
-        
-        # Initialize enhanced client factory with GovCloud support
-        self.client_factory = EnhancedClientFactory(region)
-        self.error_handler = create_govcloud_error_handler(region)
-        
-        # Initialize clients using the enhanced factory
-        try:
-            self.bedrock_client = self.client_factory.create_bedrock_client()
-            self.cloudwatch_client = self.client_factory.create_cloudwatch_client()
-            self.sq_client = self.client_factory.create_service_quotas_client()
-        except Exception as e:
-            context = {'service': 'initialization', 'operation': 'client_creation'}
-            enhanced_error = self.error_handler.enhance_error_message(e, context)
-            logger.error(enhanced_error)
-            raise
-        
-        self.profile_fetcher = InferenceProfileFetcher(self.bedrock_client)
+
+        # botocore picks the endpoint for the region's partition (commercial, GovCloud, China)
+        self.bedrock_client = create_client('bedrock', region)
+        self.cloudwatch_client = create_client('cloudwatch', region)
+        self.sq_client = create_client('service-quotas', region)
+        # Reuse the fetcher from input collection so profiles are listed only once
+        self.profile_fetcher = profile_fetcher or InferenceProfileFetcher(self.bedrock_client)
         self.metrics_fetcher = CloudWatchMetricsFetcher(self.cloudwatch_client, self.tz_api_format)
         self.output_generator = None  # Initialized in analyze() with output_dir
     
@@ -206,102 +192,129 @@ class BedrockAnalyzer:
         
         return contributions
     
+    @staticmethod
+    def _scope_key(model_config):
+        """Cache key for one analysis target (model, endpoint and optional profile subset)."""
+        app_ids = tuple(sorted(model_config.get('application_profile_ids') or ()))
+        return (model_config['model_id'], model_config.get('profile_prefix'), app_ids)
+
+    def _warn_other_sources(self, model_id, profile_prefix, final_model_ids, profile_names):
+        """Tell the user when their application profiles sit under a different endpoint."""
+        if len(final_model_ids) > 1:
+            return
+        others = self.profile_fetcher.other_sources_for_model(model_id, profile_prefix)
+        if others:
+            where = ', '.join(f"{count} on '{key}'" for key, count in sorted(others.items()))
+            logger.info(f"  Note: no application inference profile of {model_id} is based on "
+                        f"'{profile_prefix or 'base'}', but {where}. Select that endpoint, or "
+                        f"pass the application profile ID/ARN with -m to analyze it directly.")
+
     def analyze(self, models, output_dir: str = 'results'):
         """Analyze token usage for given models
-        
+
         Args:
-            models: List of model configurations
+            models: List of model configurations. Each has 'model_id' and
+                'profile_prefix', and optionally 'application_profile_ids' to
+                analyze only those application inference profiles.
             output_dir: Directory to save results
         """
         self.output_generator = OutputGenerator(output_dir)
-        
+
         # Step 0: Discover all profiles once for all models
         logger.info(f"\n{'='*80}")
         logger.info(f"Discovering inference profiles for {len(models)} model(s)...")
         logger.info(f"{'='*80}")
-        
-        all_profiles_map = {}  # {model_id: {profile_prefix: (final_model_ids, profile_names, profile_metadata)}}
-        
+
+        all_profiles_map = {}  # {scope_key: (final_model_ids, profile_names, profile_metadata)}
+
         for model_config in models:
-            model_id = model_config['model_id']
-            profile_prefix = model_config['profile_prefix']
-            
-            if model_id not in all_profiles_map:
-                all_profiles_map[model_id] = {}
-            
-            if profile_prefix not in all_profiles_map[model_id]:
-                final_model_ids, profile_names, profile_metadata = self.profile_fetcher.find_profiles(model_id, profile_prefix)
-                all_profiles_map[model_id][profile_prefix] = (final_model_ids, profile_names, profile_metadata)
-                
-                # Display profiles for this model
-                profile_list = [profile_names.get(pid, pid) for pid in final_model_ids]
-                logger.info(f"  {model_id} ({profile_prefix or 'base'}): {len(final_model_ids)} profile(s) - {', '.join(profile_list)}")
-        
+            key = self._scope_key(model_config)
+            if key in all_profiles_map:
+                continue
+            model_id, profile_prefix, app_ids = key
+            final_model_ids, profile_names, profile_metadata = self.profile_fetcher.find_profiles(
+                model_id, profile_prefix, application_profile_ids=list(app_ids) or None)
+            all_profiles_map[key] = (final_model_ids, profile_names, profile_metadata)
+
+            profile_list = [profile_names.get(pid, pid) for pid in final_model_ids]
+            logger.info(f"  {model_id} ({profile_prefix or 'base'}): {len(final_model_ids)} profile(s) - {', '.join(profile_list)}")
+            if not app_ids:
+                self._warn_other_sources(model_id, profile_prefix, final_model_ids, profile_names)
+
         logger.info(f"Profile discovery complete.\n")
-        
+
+        region_info = get_region_info(self.region)
+        processed = set()
+
         # Process each model
         for model_config in models:
-            model_id = model_config['model_id']
-            profile_prefix = model_config['profile_prefix']
-            
+            key = self._scope_key(model_config)
+            if key in processed:
+                continue
+            processed.add(key)
+            model_id, profile_prefix, app_ids = key
+
             logger.info(f"\n{'='*80}")
             logger.info(f"Processing model: {model_id}")
             logger.info(f"{'='*80}")
-            
+
             # Step 1: Get profiles from cache
-            final_model_ids, profile_names, profile_metadata = all_profiles_map[model_id][profile_prefix]
+            final_model_ids, profile_names, profile_metadata = all_profiles_map[key]
             logger.info(f"Using {len(final_model_ids)} profile(s)")
-            
+            if not final_model_ids:
+                logger.info("  No matching profiles; skipping.")
+                continue
+
             # Step 2: Fetch quotas
             quota_codes = self._load_quota_codes(model_id, profile_prefix)
             quotas = self._fetch_quotas(model_id, quota_codes, profile_prefix)
             if any(quotas.values()):
                 logger.info(f"  Quotas: TPM={quotas['tpm']}, RPM={quotas['rpm']}, TPD={quotas['tpd']}")
-            
+
             # Step 3: Fetch all data upfront with configured granularities
             # Data reuse optimization: if all periods use same granularity, only fetch once
             # If granularities differ, fetch separately for each unique granularity
             logger.info(f"  Fetching data with configured granularities (parallel)...")
             fetched_data_all_profiles = self.metrics_fetcher.fetch_all_data_mixed_granularity(
-                final_model_ids, 
+                final_model_ids,
                 self.granularity_config
             )
-            
+
             model_results = {}
             time_series_data = {}
-            
+
             # Step 4: Process each time period
             for time_period in self.TIME_PERIODS:
                 logger.info(f"  Processing {time_period}...")
-                
+
                 period_stats = {}
                 period_time_series = {}
-                
+
                 try:
                     for final_model_id in final_model_ids:
                         # Slice data from fetched datasets
                         if final_model_id in fetched_data_all_profiles:
                             ts_data = self.metrics_fetcher.slice_and_process_data(
-                                fetched_data_all_profiles[final_model_id], 
+                                fetched_data_all_profiles[final_model_id],
                                 time_period,
                                 self.granularity_config
                             )
                             period_time_series[final_model_id] = ts_data
-                            
+
                             # Calculate statistics from time series data
                             stats = self._calculate_stats_from_time_series(ts_data, time_period)
                             period_stats[final_model_id] = stats
-                    
+
                     # Always create aggregated metrics for consistent template behavior
                     agg_stats = self.metrics_fetcher.aggregate_statistics(period_stats, time_period)
                     agg_ts = self.metrics_fetcher.aggregate_time_series(period_time_series, time_period)
-                    
+
                     period_stats['__AGGREGATED__'] = agg_stats
                     period_time_series['__AGGREGATED__'] = agg_ts
-                    
+
                     model_results[time_period] = period_stats
                     time_series_data[time_period] = period_time_series
-                    
+
                 except Exception as e:
                     logger.info(f"\n  ERROR in {time_period} processing:")
                     logger.info(f"  Error type: {type(e).__name__}")
@@ -309,17 +322,16 @@ class BedrockAnalyzer:
                     logger.info(f"  Traceback:")
                     traceback.print_exc()
                     raise
-            
+
             # Step 5: Calculate contributions
             contributions = self._calculate_contributions(model_results, time_series_data, profile_names, profile_metadata)
-            
+
             # Step 6: Generate output
             logger.info(f"  Generating output files...")
             end_time_local = datetime.now(self.local_tz)
-            
-            # Get region info for output
-            region_info = self.client_factory.get_region_info()
-            
+            endpoint = f"{profile_prefix}.{model_id}" if profile_prefix else model_id
+            scope = [profile_names.get(pid, pid) for pid in final_model_ids] if app_ids else []
+
             self.output_generator.generate({
                 model_id: {
                     'stats': model_results,
@@ -331,26 +343,17 @@ class BedrockAnalyzer:
                     'end_time': end_time_local,
                     'tz_offset': self.tz_offset,
                     'region': self.region,
-                    'region_info': region_info
+                    'region_info': region_info,
+                    'endpoint': endpoint,
+                    'profile_prefix': profile_prefix,
+                    'application_profile_scope': scope,
+                    'file_label': self._file_label(endpoint, app_ids),
                 }
             })
 
-
-def main():
-    try:
-        user_inputs = UserInputs()
-        user_inputs.collect()
-        
-        analyzer = BedrockAnalyzer(user_inputs.region, user_inputs.granularity_config)
-        analyzer.analyze(user_inputs.models)
-        
-        logger.info(f"\nCompleted! Check the 'results' directory for output files.")
-        
-    except KeyboardInterrupt:
-        logger.info("\nOperation cancelled by user.")
-    except Exception as e:
-        logger.info(f"Error: {e}")
-
-
-if __name__ == "__main__":
-    main()
+    @staticmethod
+    def _file_label(endpoint, app_ids):
+        """Distinct output name per target, so two endpoints of one model do not overwrite each other."""
+        if app_ids:
+            return f"{endpoint}-app-{'-'.join(app_ids)}" if len(app_ids) <= 3 else f"{endpoint}-app-{len(app_ids)}profiles"
+        return endpoint

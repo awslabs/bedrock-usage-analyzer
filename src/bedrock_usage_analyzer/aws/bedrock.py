@@ -3,11 +3,11 @@
 
 """AWS Bedrock service operations"""
 
-import boto3
 import sys
-import os
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
+
+from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.utils.partition import build_arn
 
 logger = logging.getLogger(__name__)
@@ -17,6 +17,10 @@ logger = logging.getLogger(__name__)
 QUOTA_KEYWORD_ON_DEMAND = 'on-demand'
 QUOTA_KEYWORD_CROSS_REGION = 'cross-region'
 QUOTA_KEYWORD_GLOBAL = 'global'
+
+# System inference profile prefixes known to exist. prefix-mapping.yml adds any
+# prefix discovered later; this set keeps parsing working without the file.
+KNOWN_PROFILE_PREFIXES = frozenset({'us', 'eu', 'apac', 'jp', 'au', 'ca', 'us-gov', 'global'})
 
 # Cache for prefix mapping to avoid repeated file reads
 _prefix_mapping_cache = None
@@ -94,6 +98,64 @@ def get_default_region_prefix_map() -> Dict[str, str]:
     return result
 
 
+def get_profile_prefixes() -> frozenset:
+    """All system inference profile prefixes (known defaults plus prefix-mapping.yml)."""
+    try:
+        mapped = {m['prefix'] for m in _load_prefix_mapping() if m.get('prefix') != 'base'}
+    except FileNotFoundError:
+        mapped = set()
+    return KNOWN_PROFILE_PREFIXES | mapped
+
+
+def split_profile_id(endpoint_id: str) -> Tuple[str, Optional[str]]:
+    """Split an endpoint ID into (model_id, prefix).
+
+    'us.amazon.nova-pro-v1:0' -> ('amazon.nova-pro-v1:0', 'us')
+    'deepseek.v3.2'           -> ('deepseek.v3.2', None)   # base model, not a prefix
+    """
+    if '.' in endpoint_id:
+        first, rest = endpoint_id.split('.', 1)
+        if first in get_profile_prefixes():
+            return rest, first
+    return endpoint_id, None
+
+
+def region_group(region: str) -> str:
+    """Region family used to guess a profile prefix: 'us-gov-west-1' -> 'us-gov', 'eu-west-1' -> 'eu'."""
+    if region.startswith('us-gov-'):
+        return 'us-gov'
+    return region.split('-')[0]
+
+
+def model_id_from_arn(arn: str) -> Optional[str]:
+    """'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0' -> 'amazon.nova-pro-v1:0'."""
+    if ':foundation-model/' in arn:
+        return arn.split(':foundation-model/', 1)[1]
+    return None
+
+
+def region_from_arn(arn: str) -> str:
+    """Region field of an ARN ('' for region-less ARNs such as global routing targets)."""
+    parts = arn.split(':')
+    return parts[3] if len(parts) > 3 else ''
+
+
+def list_inference_profiles(bedrock_client, type_equals: str) -> List[Dict]:
+    """List all inference profiles of one type ('SYSTEM_DEFINED' or 'APPLICATION')."""
+    if not hasattr(bedrock_client, 'list_inference_profiles'):
+        return []
+    profiles = []
+    params = {'maxResults': 1000, 'typeEquals': type_equals}
+    while True:
+        response = bedrock_client.list_inference_profiles(**params)
+        profiles.extend(response.get('inferenceProfileSummaries', []))
+        token = response.get('nextToken')
+        if not token:
+            break
+        params['nextToken'] = token
+    return profiles
+
+
 def discover_prefix_mapping(region: str) -> List[Dict]:
     """Discover system profile prefixes from Bedrock API
     
@@ -118,21 +180,9 @@ def discover_prefix_mapping(region: str) -> List[Dict]:
         ]
     """
     try:
-        bedrock = boto3.client('bedrock', region_name=region)
-        response = bedrock.list_inference_profiles(maxResults=1000)
-        
-        # Collect all profiles with pagination
-        all_profiles = []
-        while True:
-            all_profiles.extend(response['inferenceProfileSummaries'])
-            if 'nextToken' in response:
-                response = bedrock.list_inference_profiles(
-                    maxResults=1000,
-                    nextToken=response['nextToken']
-                )
-            else:
-                break
-        
+        bedrock = create_client('bedrock', region)
+        all_profiles = list_inference_profiles(bedrock, 'SYSTEM_DEFINED')
+
         # Extract system profile prefixes
         discovered = []
         seen_prefixes = set()
@@ -149,8 +199,8 @@ def discover_prefix_mapping(region: str) -> List[Dict]:
                 
                 # Classify as regional if multiple ARNs in same region prefix
                 if len(model_arns) > 1:
-                    regions = [arn.split(':')[3] for arn in model_arns]
-                    region_prefixes = set(r.split('-')[0] for r in regions)
+                    regions = [region_from_arn(arn) for arn in model_arns]
+                    region_prefixes = set(region_group(r) for r in regions)
                     
                     # Regional: all ARNs in same region prefix (us-*, eu-*, etc.)
                     if len(region_prefixes) == 1:
@@ -181,7 +231,7 @@ def fetch_foundation_models(region: str) -> Optional[List[Dict]]:
         List of model dictionaries or None if access denied
     """
     try:
-        bedrock = boto3.client('bedrock', region_name=region)
+        bedrock = create_client('bedrock', region)
         response = bedrock.list_foundation_models()
         
         models = []
@@ -215,19 +265,10 @@ def fetch_all_inference_profiles(region: str) -> List[Dict]:
         List of inference profile dictionaries
     """
     try:
-        bedrock = boto3.client('bedrock', region_name=region)
-        
-        # Use paginator to handle large result sets
-        paginator = bedrock.get_paginator('list_inference_profiles')
-        all_profiles = []
-        
-        for page in paginator.paginate():
-            all_profiles.extend(page.get('inferenceProfileSummaries', []))
-        
-        return all_profiles
-    
+        return list_inference_profiles(create_client('bedrock', region), 'SYSTEM_DEFINED')
     except Exception as e:
         # Inference profiles might not be available in all regions
+        logger.warning(f"  Could not list inference profiles in {region}: {e}")
         return []
 
 

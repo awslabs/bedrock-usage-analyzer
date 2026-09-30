@@ -5,7 +5,7 @@
 
 import os
 from pathlib import Path
-from typing import Union, Optional
+from typing import List, Optional
 
 try:
     from importlib.resources import files, as_file
@@ -76,7 +76,7 @@ def get_bundle_path() -> Optional[Path]:
     return None
 
 
-def list_data_files(pattern: str = "*.yml") -> list[Path]:
+def list_data_files(pattern: str = "*.yml") -> List[Path]:
     """List metadata files matching pattern.
     
     Returns files from user data dir if exists, else bundled.

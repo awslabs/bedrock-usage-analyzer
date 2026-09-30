@@ -4,29 +4,81 @@
 """User input collection for Bedrock usage analysis"""
 
 import os
+import re
 import sys
 import logging
-import boto3
+from typing import Dict, List, Optional, Sequence, Union
 
+from ..aws.bedrock import split_profile_id
+from ..aws.client_factory import create_client
+from ..core.errors import troubleshooting_hint
+from ..core.profile_fetcher import InferenceProfileFetcher
+from ..sync.regions import load_region_names, regions_for_credentials
 from ..utils.yaml_handler import load_yaml
 from ..utils.ui import select_from_list
 from ..utils.paths import get_data_path
-from ..utils.aws_partition import (
-    PartitionDetector,
-    normalize_regions,
-    normalize_region
+from ..utils.partition import (
+    get_caller_identity,
+    get_partition_display_name,
+    get_partition_for_region,
+    get_region_display_name,
+    is_govcloud_region,
+    region_hint,
 )
 
 logger = logging.getLogger(__name__)
 
+# AWS region names: 'us-west-2', 'us-gov-west-1', 'cn-north-1', 'eusc-de-east-1'
+REGION_PATTERN = re.compile(r'^[a-z]{2,5}(-[a-z0-9]+){1,3}-\d{1,2}$')
+
+
+def parse_selection(text: str, count: int) -> List[int]:
+    """Parse '1,3-5' or 'all' into sorted 0-based indices; raises ValueError on bad input."""
+    text = text.strip().lower()
+    if text == 'all':
+        return list(range(count))
+    indices = set()
+    for part in text.split(','):
+        part = part.strip()
+        if not part:
+            continue
+        if '-' in part:
+            start_s, end_s = part.split('-', 1)
+            start, end = int(start_s), int(end_s)
+            if start > end:
+                raise ValueError(f"Invalid range: {part}")
+            indices.update(range(start, end + 1))
+        else:
+            indices.add(int(part))
+    if not indices or min(indices) < 1 or max(indices) > count:
+        raise ValueError(f"Choose numbers between 1 and {count}")
+    return sorted(i - 1 for i in indices)
+
+
+def group_application_profiles(profiles: Sequence[Dict]) -> List[Dict]:
+    """Turn selected application profiles into one model config per source endpoint."""
+    groups: Dict[tuple, Dict] = {}
+    for app in profiles:
+        key = (app['model_id'], app['profile_prefix'])
+        config = groups.setdefault(key, {
+            'model_id': app['model_id'],
+            'profile_prefix': app['profile_prefix'],
+            'application_profile_ids': [],
+        })
+        if app['id'] not in config['application_profile_ids']:
+            config['application_profile_ids'].append(app['id'])
+    return list(groups.values())
+
 
 class UserInputs:
     """Handles interactive user input collection"""
-    
+
     def __init__(self):
         self.account = None
+        self.partition = None
         self.region = None
         self.models = []
+        self.profile_fetcher: Optional[InferenceProfileFetcher] = None
         self.granularity_config = {  # The aggregation granularity for different metrics window/period
             '1hour': 300,   # 5 minutes
             '1day': 300,    # 5 minutes
@@ -34,13 +86,15 @@ class UserInputs:
             '14days': 300,  # 5 minutes
             '30days': 300   # 5 minutes
         }
-    
-    def collect(self, region=None, model_id=None, granularity_config=None, skip_confirm=False):
+
+    def collect(self, region=None, model_id: Union[None, str, Sequence[str]] = None,
+                granularity_config=None, skip_confirm=False):
         """Interactive dialog to collect user inputs, skipping prompts for provided values.
-        
+
         Args:
             region: AWS region (skip region prompt if provided)
-            model_id: Model ID with optional prefix (skip model prompt if provided)
+            model_id: One or more model IDs, system profile IDs, or application
+                inference profile IDs/ARNs (skip model prompt if provided)
             granularity_config: Dict of time period to seconds (skip granularity prompt if provided)
             skip_confirm: Skip account confirmation prompt (for scripted usage)
         """
@@ -48,190 +102,241 @@ class UserInputs:
         logger.info("Statistics will be generated for: 1 hour, 1 day, 7 days, 14 days, and 30 days.")
         print()
 
-        self.account = self._get_current_account()
+        if region:
+            self._validate_region(region)
+
+        self.account = self._get_current_account(region)
         if not skip_confirm:
             confirm = input(f"AWS account: {self.account} - Continue? ([y]/n): ").lower()
-            if confirm not in ['','y']:
+            if confirm not in ['', 'y']:
                 sys.exit(1)
         else:
             logger.info(f"AWS account: {self.account}")
-        
+
         # Region selection (skip if provided via CLI)
         if region:
+            self._check_region_partition(region)
             self.region = region
             logger.info(f"\nUsing region: {region}")
         else:
             self.region = self._select_region()
-        
+
         # Ensure FM list exists for selected region
         self._ensure_fm_list(self.region)
-        
+
         # Granularity configuration (skip if provided via CLI)
         if granularity_config:
             self.granularity_config = granularity_config
             logger.info(f"\nUsing granularity config from CLI")
         else:
             self._configure_granularity()
-        
+
         # Model selection (skip if provided via CLI)
         if model_id:
-            model_config = self._parse_model_id(model_id)
-            self.models.append(model_config)
-            logger.info(f"\nUsing model: {model_id}")
+            values = [model_id] if isinstance(model_id, str) else list(model_id)
+            for value in values:
+                self._add_models([self._parse_model_id(value)])
+                logger.info(f"\nUsing model: {value}")
         else:
             # Model selection loop
             while True:
-                model_config = self._select_model(self.region)
-                if model_config is not None:  
-                    self.models.append(model_config)
-                
+                self._add_models(self._select_targets(self.region))
+
                 add_more = input("\nAdd another model? (y/[n]): ").lower()
                 if add_more != 'y':
                     break
-    
-    def _parse_model_id(self, model_id):
-        """Parse model ID from CLI argument.
-        
-        Model ID formats:
-        - Base model: 'amazon.nova-premier-v1:0', 'anthropic.claude-3-sonnet-20240229-v1:0'
-        - Cross-region: 'us.amazon.nova-premier-v1:0', 'eu.anthropic.claude-3-sonnet-20240229-v1:0'
-        
-        The prefix (us, eu, apac, global, etc.) indicates cross-region inference profile.
-        Provider names (amazon, anthropic, meta, etc.) are NOT prefixes.
-        
-        Args:
-            model_id: Model ID with optional prefix
-            
-        Returns:
-            dict: Model config with model_id and profile_prefix
-        """
-        # Known cross-region prefixes
-        CROSS_REGION_PREFIXES = {'us', 'eu', 'apac', 'global', 'jp', 'au'}
-        
-        # Check for cross-region prefix
-        if '.' in model_id:
-            first_part = model_id.split('.', 1)[0]
-            if first_part in CROSS_REGION_PREFIXES:
-                # Cross-region model: 'us.amazon.nova-premier-v1:0'
-                return {
-                    'model_id': model_id.split('.', 1)[1],  # 'amazon.nova-premier-v1:0'
-                    'profile_prefix': first_part  # 'us'
-                }
-        
-        # Base model: 'amazon.nova-premier-v1:0'
-        return {
-            'model_id': model_id,
-            'profile_prefix': None
-        }
-    
-    def _get_current_account(self):
-        """Get current AWS account ID"""
+
+    def _add_models(self, configs):
+        for config in configs or []:
+            if config and config not in self.models:
+                self.models.append(config)
+
+    # ------------------------------------------------------------ account/region
+
+    @staticmethod
+    def _validate_region(region):
+        if not REGION_PATTERN.match(region or ''):
+            logger.error(f"Invalid region format: {region!r} (expected e.g. us-west-2 or us-gov-west-1)")
+            sys.exit(1)
+
+    def _get_current_account(self, region=None):
+        """Get current AWS account ID (and remember the credentials' partition)"""
 
         logger.info("Getting AWS account ID...")
         try:
-            sts = boto3.client('sts')
-            account = sts.get_caller_identity()['Account']
-            logger.info(f"  Account: {account}")
-            return account
+            identity = get_caller_identity(region)
         except Exception as e:
             logger.error(f"Failed to get AWS account ID: {e}")
-            logger.error("Please configure AWS credentials in your current machine.")
+            hint = troubleshooting_hint(e, region or region_hint())
+            logger.error(hint or "Please configure AWS credentials in your current machine.")
+            if not region and not region_hint():
+                logger.error("For GovCloud or China credentials, pass --region (e.g. --region us-gov-west-1) "
+                             "or set AWS_REGION.")
             sys.exit(1)
-    
+        self.partition = identity['Partition']
+        logger.info(f"  Account: {identity['Account']}")
+        if self.partition != 'aws':
+            logger.info(f"  Partition: {get_partition_display_name(self.partition)}")
+        return identity['Account']
+
+    def _check_region_partition(self, region):
+        """Stop early when the region belongs to a different partition than the credentials."""
+        region_partition = get_partition_for_region(region)
+        if self.partition and region_partition != self.partition:
+            logger.error(f"\nRegion {region} is in {get_partition_display_name(region_partition)}, but the "
+                         f"credentials are for {get_partition_display_name(self.partition)}.")
+            logger.error("Use credentials for that partition (e.g. AWS_PROFILE=...) or pick a region in "
+                         "the credentials' partition.")
+            sys.exit(1)
+
     def _select_region(self):
-        """Select region with automatic partition detection and filtering"""
-        
-        # Detect AWS partition
-        print("\n🔍 Detecting AWS partition...")
-        partition_result = PartitionDetector.detect_current_partition()
-        
-        # Display detection result
-        detection_summary = PartitionDetector.get_detection_summary(partition_result)
-        print(f"   {detection_summary}")
-        
-        # Load and normalize regions
-        regions_data = self._load_regions()
-        regions = normalize_regions(regions_data)
-        
-        # Filter regions based on partition detection
-        if PartitionDetector.should_auto_filter(partition_result):
-            filtered_regions = PartitionDetector.filter_regions_by_partition(
-                regions, 
-                partition_result['partition']
-            )
-            
-            if filtered_regions:
-                regions = filtered_regions
-                partition_info = PartitionDetector.get_partition_display_info(partition_result)
-                print(f"   📋 Showing {len(regions)} {partition_info['name']} regions")
-            else:
-                print(f"   ⚠️  No regions found for detected partition - showing all regions")
-        else:
-            print(f"   📋 Showing all regions")
-        
-        # Create display list with GovCloud indicators
-        display_regions = []
-        for region in regions:
-            display_name = region['display_name']
-            if region['is_govcloud']:
-                display_name = f"🏛️ {display_name}"
-            display_regions.append(display_name)
-        
-        # Show hints and warnings
-        logger.info("\nHint: If your region is not listed, run: bedrock-usage-analyzer refresh regions")
-        if any(r['is_govcloud'] for r in regions):
-            logger.info("🏛️ = GovCloud regions (require separate credentials)")
-        
-        # Region selection
-        selected_index = select_from_list(
+        """Select a region, showing only regions in the credentials' partition"""
+        regions, partition = regions_for_credentials(self._load_regions())
+        if not regions:
+            logger.error("No regions available for these credentials.")
+            logger.error("Please run: bua refresh regions")
+            sys.exit(1)
+        if partition:
+            logger.info(f"\nShowing {len(regions)} {get_partition_display_name(partition)} regions "
+                        f"(detected from your credentials)")
+
+        logger.info("Hint: If your region is not listed, run: bua refresh regions")
+        return select_from_list(
             "Available regions:",
-            display_regions,
+            regions,
             allow_cancel=False,
-            input_prompt=f"\nSelect region (1-{len(display_regions)}): ",
-            return_index=True
+            display_fn=self._region_label,
+            input_prompt=f"\nSelect region (1-{len(regions)}): "
         )
-        
-        selected_region = regions[selected_index]
-        region_name = selected_region['name']
-        
-        # Show confirmation for GovCloud regions
-        if selected_region['is_govcloud']:
-            logger.info(f"\n🏛️ You selected a GovCloud region: {region_name}")
-            logger.info("GovCloud regions require:")
-            logger.info("  • Separate AWS credentials from standard AWS")
-            logger.info("  • Appropriate security clearance")
-            logger.info("  • Different service endpoints")
-            
-            confirm = input("\nContinue with GovCloud region? ([y]/n): ").lower()
-            if confirm not in ['', 'y']:
-                logger.info("Please select a different region or configure GovCloud credentials.")
-                return self._select_region()  # Recursive call to select again
-        
-        return region_name
-    
+
+    @staticmethod
+    def _region_label(region):
+        name = get_region_display_name(region)
+        label = region if name == region else f"{region} ({name})"
+        return f"{label} [GovCloud]" if is_govcloud_region(region) and 'GovCloud' not in label else label
+
+    # ------------------------------------------------------------------ models
+
+    def _get_profile_fetcher(self) -> InferenceProfileFetcher:
+        if self.profile_fetcher is None:
+            self.profile_fetcher = InferenceProfileFetcher(create_client('bedrock', self.region))
+        return self.profile_fetcher
+
+    def _parse_model_id(self, model_id):
+        """Parse model ID from CLI argument.
+
+        Accepted formats:
+        - Base model: 'amazon.nova-premier-v1:0'
+        - System inference profile: 'us.amazon.nova-premier-v1:0', 'us-gov.anthropic...'
+          or its ARN
+        - Application inference profile: its ID (e.g. 'tqab5jqtywp7') or ARN; only
+          that profile is analyzed
+
+        The prefix (us, eu, apac, global, etc.) indicates cross-region inference profile.
+        Provider names (amazon, anthropic, meta, etc.) are NOT prefixes.
+
+        Args:
+            model_id: Model ID with optional prefix
+
+        Returns:
+            dict: Model config with model_id and profile_prefix (and
+                application_profile_ids for an application profile)
+        """
+        value = model_id.strip()
+
+        if value.startswith('arn:'):
+            resource = value.split(':', 5)[-1] if value.count(':') >= 5 else ''
+            kind, _, ident = resource.partition('/')
+            arn_region = value.split(':')[3] if value.count(':') >= 3 else ''
+            if arn_region and self.region and arn_region != self.region:
+                logger.error(f"ARN region {arn_region} does not match the analysis region {self.region}")
+                sys.exit(1)
+            if kind == 'application-inference-profile':
+                return self._application_profile_config(value)
+            if kind in ('inference-profile', 'foundation-model') and ident:
+                value = ident
+            else:
+                logger.error(f"Unsupported ARN: {model_id}")
+                sys.exit(1)
+        elif '.' not in value and ':' not in value:
+            # No provider prefix: an application inference profile ID (or name)
+            return self._application_profile_config(value)
+
+        base_model_id, prefix = split_profile_id(value)
+        return {
+            'model_id': base_model_id,
+            'profile_prefix': prefix
+        }
+
+    def _application_profile_config(self, identifier):
+        profile = self._get_profile_fetcher().resolve_application_profile(identifier)
+        if profile is None:
+            logger.error(f"Application inference profile not found in {self.region}: {identifier}")
+            sys.exit(1)
+        logger.info(f"  Application inference profile {profile['name']} ({profile['id']}) "
+                    f"is based on {profile['source']}")
+        return group_application_profiles([profile])[0]
+
+    def _select_targets(self, region) -> List[Dict]:
+        """Ask whether to analyze a foundation model or specific application profiles."""
+        try:
+            app_profiles = self._get_profile_fetcher().list_application_profiles()
+        except Exception as e:
+            logger.info(f"  Could not list application inference profiles: {e}")
+            app_profiles = []
+
+        if app_profiles:
+            mode = select_from_list(
+                "What do you want to analyze?",
+                ['A foundation model (includes the application inference profiles created from it)',
+                 f'Specific application inference profiles ({len(app_profiles)} in {region})'],
+                allow_cancel=False,
+                input_prompt="\nSelect (1-2): "
+            )
+            if mode.startswith('Specific'):
+                return self._select_application_profiles(app_profiles)
+
+        config = self._select_model(region)
+        return [config] if config else []
+
+    def _select_application_profiles(self, app_profiles) -> List[Dict]:
+        """Pick one or more application inference profiles by number."""
+        print("\nApplication inference profiles:")
+        for i, app in enumerate(app_profiles, 1):
+            print(f"  {i}. {app['name']} ({app['id']}) - based on {app['source']}")
+        while True:
+            try:
+                text = input(f"\nSelect profiles (e.g. 1,3-4 or all): ")
+                indices = parse_selection(text, len(app_profiles))
+                break
+            except ValueError as e:
+                print(f"Please enter valid numbers: {e}")
+        return group_application_profiles([app_profiles[i] for i in indices])
+
     def _select_model(self, region):
         """Select model with numbered lists"""
         fm_list = self._load_fm_list(region)
-        
+        if not fm_list:
+            logger.error(f"No foundation models listed for {region}. Run: bua refresh fm-list {region}")
+            return None
+
         # Get unique providers
         providers = sorted(set(m['provider'] for m in fm_list))
-        
+
         # Select provider
-        logger.info(f"\nHint: To refresh models, run: bedrock-usage-analyzer refresh fm-list {region}")
-        logger.info(f"      then: bedrock-usage-analyzer refresh fm-quotas {region}")
+        logger.info(f"\nHint: To refresh models, run: bua refresh fm-list {region}")
+        logger.info(f"      then: bua refresh fm-quotas {region}")
         provider = select_from_list(
             "Available providers:",
             providers,
             allow_cancel=False,
             input_prompt=f"\nSelect provider (1-{len(providers)}): "
         )
-        
+
         # Filter models by provider
         provider_models = [m for m in fm_list if m['provider'] == provider]
-        
+
         # Select model
-        logger.info(f"\nHint: To refresh models, run: bedrock-usage-analyzer refresh fm-list {region}")
-        logger.info(f"      then: bedrock-usage-analyzer refresh fm-quotas {region}")
         selected_model = select_from_list(
             f"Available {provider} models:",
             provider_models,
@@ -240,62 +345,56 @@ class UserInputs:
             input_prompt=f"\nSelect model (1-{len(provider_models)}): "
         )
         model_id = selected_model['model_id']
-        
+
         # Get endpoints for selected model
-        endpoints = selected_model.get('endpoints', {})  
-        
-        # Derive inference profiles from endpoints (exclude 'base')  
-        inference_profiles = sorted([k for k in endpoints.keys() if k != 'base'])  
-        
-        # Determine profile prefix
+        endpoints = selected_model.get('endpoints', {}) or {}
+
+        # Derive inference profiles from endpoints (exclude 'base')
+        inference_profiles = sorted([k for k in endpoints.keys() if k != 'base'])
+
+        if not endpoints:
+            return self._manual_model_entry()
+
         profile_prefix = self._select_profile_prefix(endpoints, inference_profiles)
-        
-        # Handle skipped model  
-        if profile_prefix is None and not endpoints:  
-            logger.info("Skipping this model.")  
-            return None  
-        
         return {
             'model_id': model_id,
             'profile_prefix': profile_prefix
         }
-    
-    def _select_profile_prefix(self, endpoints, inference_profiles):  
+
+    def _manual_model_entry(self):
+        """Fallback when a model has no endpoints in metadata."""
+        logger.error("\n⚠️  ERROR: This model has no on-demand or inference profile endpoints in metadata.")
+        logger.error("This may indicate incomplete metadata or the model is only available via provisioned throughput.")
+        logger.info("\nYou can either:")
+        logger.info("  1. Skip this model (press Enter)")
+        logger.info("  2. Manually enter the full model ID with prefix (e.g., 'us.anthropic.claude-haiku-4-5-20251001-v1:0' or 'anthropic.claude-haiku-4-5-20251001-v1:0' for base)")
+        manual_input = input("\nEnter model ID (or press Enter to skip): ").strip()
+        if not manual_input:
+            logger.info("Skipping this model.")
+            return None
+        return self._parse_model_id(manual_input)
+
+    def _select_profile_prefix(self, endpoints, inference_profiles):
         """Select inference profile prefix based on supported types"""
         # Check if base model is available
-        has_base = 'base' in endpoints  
-        
-        if not has_base:  
+        has_base = 'base' in endpoints
+
+        if not has_base:
             # Only inference profiles available
             logger.info("\nThis model only supports inference profiles.")
-            choices = inference_profiles if inference_profiles else []  
+            choices = list(inference_profiles)
         else:
             # Add base model option if available
-            choices = inference_profiles + ['None (base model)'] if inference_profiles else ['None (base model)']
-        
-        # Handle empty endpoints case  
-        if not choices:  
-            logger.error("\n⚠️  ERROR: This model has no on-demand or inference profile endpoints in metadata.")  
-            logger.error("This may indicate incomplete metadata or the model is only available via provisioned throughput.")  
-            logger.info("\nYou can either:")  
-            logger.info("  1. Skip this model (press Enter)")  
-            logger.info("  2. Manually enter the full model ID with prefix (e.g., 'us.claude-haiku-4-5-20251001-v1:0' or just 'claude-haiku-4-5-20251001-v1:0' for base)")  
-            manual_input = input("\nEnter model ID (or press Enter to skip): ").strip()  
-            if not manual_input:  
-                return None  
-            # Parse manual input  
-            if '.' in manual_input:  
-                return manual_input.split('.')[0]  # Return prefix  
-            return None  # Return None for base model  
-        
+            choices = list(inference_profiles) + ['None (base model)']
+
         choice = select_from_list(
             "Available inference profile prefixes:",
             choices,
             allow_cancel=False,
             input_prompt=f"\nSelect profile prefix (1-{len(choices)}): "
         )
-        return None if 'None' in choice else choice
-    
+        return None if choice == 'None (base model)' else choice
+
     def _configure_granularity(self):
         """Configure data granularity for each time period"""
         logger.info("\n" + "="*60)
@@ -387,36 +486,30 @@ class UserInputs:
                 logger.info("Please enter a valid number")
     
     def _load_regions(self):
-        """Load regions from yml, refresh if needed"""
-        try:
-            regions_file = get_data_path('regions.yml')
-        except FileNotFoundError:
+        """Load region names from regions.yml (user copy, else bundled)"""
+        if not os.path.exists(get_data_path('regions.yml')):
             logger.error("Regions list not found")
-            logger.error("Please run: ./bin/refresh-regions or python -m bedrock_usage_analyzer.cli.refresh regions")
+            logger.error("Please run: bua refresh regions")
             sys.exit(1)
-        
-        data = load_yaml(regions_file)
-        return data.get('regions', [])
-    
+        return load_region_names()
+
     def _ensure_fm_list(self, region):
         """Ensure FM list exists for region"""
-        # Validate region format (AWS regions are alphanumeric with hyphens)
-        if not region or not all(c.isalnum() or c == '-' for c in region):
+        # Validate region format before using it in a file name
+        if not region or not REGION_PATTERN.match(region):
             raise ValueError(f"Invalid region format: {region}")
-        
-        try:
-            get_data_path(f'fm-list-{region}.yml')
-        except FileNotFoundError:
+
+        if not os.path.exists(get_data_path(f'fm-list-{region}.yml')):
             logger.error(f"Foundation model list not found for region: {region}")
-            logger.error(f"Please run: ./bin/refresh-fm-list {region}")
+            logger.error(f"Please run: bua refresh fm-list {region}")
             sys.exit(1)
     
     def _load_fm_list(self, region):
         """Load foundation models for region"""
         fm_file = get_data_path(f'fm-list-{region}.yml')
         
-        data = load_yaml(fm_file)
-        return data.get('models', [])
+        data = load_yaml(fm_file) or {}
+        return data.get('models', []) or []
     
     def select_output_dir(self) -> str:
         """Prompt user to select output directory for results."""
@@ -439,7 +532,7 @@ class UserInputs:
             elif choice == "3":
                 custom_path = input("Enter custom path: ").strip()
                 if custom_path:
-                    return custom_path
+                    return os.path.expanduser(custom_path)
                 print("Please enter a valid path")
             else:
                 print("Please enter 1, 2, or 3")

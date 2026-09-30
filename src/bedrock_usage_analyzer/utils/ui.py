@@ -6,8 +6,6 @@
 import sys
 from typing import Tuple
 
-from bedrock_usage_analyzer.utils.yaml_handler import load_yaml
-from bedrock_usage_analyzer.utils.paths import get_data_path
 
 
 def select_from_list(
@@ -80,11 +78,11 @@ def select_quota_mapping_params(target_region: str = None, bedrock_region: str =
     if target_region is not None:
         print(f"\n✓ Using target region '{target_region}' as per input")
     
-    # Load regions
-    regions_file = get_data_path('regions.yml')
-    regions_data = load_yaml(regions_file)
-    all_regions = regions_data.get('regions', [])
-    
+    # Load regions the current credentials can call (commercial or GovCloud, etc.)
+    from bedrock_usage_analyzer.sync.regions import load_region_names, regions_for_credentials
+    from bedrock_usage_analyzer.utils.partition import GOVCLOUD, get_partition_for_region
+    all_regions, _ = regions_for_credentials(load_region_names(), bedrock_region)
+
     # Step 1: Select Bedrock API region (skip if provided)
     if not bedrock_region:
         bedrock_region = select_from_list(
@@ -92,18 +90,24 @@ def select_quota_mapping_params(target_region: str = None, bedrock_region: str =
             all_regions
         )
     print(f"\n✓ Bedrock calls will use region: {bedrock_region}")
-    
+
     # Step 2: Select model for mapping (skip if provided)
     if not model_id:
-        model_options = [
-            "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-            "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
-            "au.anthropic.claude-haiku-4-5-20251001-v1:0",
-            "jp.anthropic.claude-haiku-4-5-20251001-v1:0",
-            "global.anthropic.claude-haiku-4-5-20251001-v1:0",
-            "anthropic.claude-3-5-sonnet-20241022-v2:0",
-            "anthropic.claude-3-5-haiku-20241022-v1:0"
-        ]
+        if get_partition_for_region(bedrock_region) == GOVCLOUD:
+            model_options = [
+                "us-gov.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                "anthropic.claude-3-5-sonnet-20240620-v1:0",
+            ]
+        else:
+            model_options = [
+                "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+                "au.anthropic.claude-haiku-4-5-20251001-v1:0",
+                "jp.anthropic.claude-haiku-4-5-20251001-v1:0",
+                "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+                "anthropic.claude-3-5-sonnet-20241022-v2:0",
+                "anthropic.claude-3-5-haiku-20241022-v1:0"
+            ]
         
         model_id = select_from_list(
             "Step 2: Select Claude model to use for intelligent mapping:",

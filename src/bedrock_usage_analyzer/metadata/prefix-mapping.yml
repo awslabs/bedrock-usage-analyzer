@@ -39,3 +39,8 @@ prefixes:
   prefix: us
   quota_keyword: cross-region
   source: discovered
+- description: cross-region inference profile
+  is_regional: true
+  prefix: us-gov
+  quota_keyword: cross-region
+  source: discovered

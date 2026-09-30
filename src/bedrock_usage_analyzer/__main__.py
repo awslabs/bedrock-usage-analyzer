@@ -101,11 +101,16 @@ def cmd_analyze(args):
         granularity_config=granularity_config,
         skip_confirm=args.yes
     )
-    
+
+    if not user_inputs.models:
+        logger.error("No model selected; nothing to analyze.")
+        sys.exit(1)
+
     # Get output directory (from arg, prompt, or default)
     output_dir = args.output_dir if args.output_dir else user_inputs.select_output_dir()
-    
-    analyzer = BedrockAnalyzer(user_inputs.region, user_inputs.granularity_config)
+
+    analyzer = BedrockAnalyzer(user_inputs.region, user_inputs.granularity_config,
+                               profile_fetcher=user_inputs.profile_fetcher)
     analyzer.analyze(user_inputs.models, output_dir=output_dir)
     
     logger.info(f"\nCompleted! Results saved to: {output_dir}")
@@ -113,49 +118,69 @@ def cmd_analyze(args):
 
 def cmd_refresh_regions(args):
     """Refresh regions list."""
-    from bedrock_usage_analyzer.sync.regions import refresh_regions
-    from bedrock_usage_analyzer.utils.yaml_handler import save_yaml
-    
+    import os
+    from bedrock_usage_analyzer.sync.regions import refresh_regions, merge_regions
+    from bedrock_usage_analyzer.utils.partition import get_partition_for_region
+    from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
+
     print(get_refresh_location_message())
     print()
-    
-    data = refresh_regions()
+
+    def existing_entries(path):
+        if path and os.path.exists(path):
+            return (load_yaml(str(path)) or {}).get('regions', [])
+        return []
+
+    # Keep regions of other partitions (e.g. GovCloud when refreshing with commercial credentials)
+    data = refresh_regions(existing=existing_entries(get_data_path('regions.yml')))
     output_path = get_writable_path("regions.yml")
     save_yaml(str(output_path), data)
     logger.info(f"✓ Saved: {output_path}")
-    
+
+    bundle_path = get_bundle_path() if getattr(args, 'update_bundle', False) else None
+    if bundle_path is not None:
+        bundle_file = bundle_path / "regions.yml"
+        refreshed = data['regions']
+        partitions = {get_partition_for_region(r) for r in refreshed}
+        merged = existing_entries(bundle_file)
+        for partition in partitions:
+            merged = merge_regions(merged, [r for r in refreshed if get_partition_for_region(r) == partition], partition)
+        data = {'regions': merged}
     _maybe_update_bundle(args, "regions.yml", data)
 
 
 def cmd_refresh_fm_list(args):
     """Refresh FM lists."""
     from bedrock_usage_analyzer.sync.fm_list import refresh_region, refresh_all_regions
-    from bedrock_usage_analyzer.utils.yaml_handler import load_yaml
     
     print(get_refresh_location_message())
     print()
     
+    from bedrock_usage_analyzer.sync.regions import load_region_names, regions_for_credentials
+    from bedrock_usage_analyzer.core.user_inputs import REGION_PATTERN
+
     if args.region:
+        if not REGION_PATTERN.match(args.region):
+            logger.error(f"Invalid region format: {args.region}")
+            sys.exit(1)
         refresh_region(args.region, update_bundle=args.update_bundle)
     else:
         try:
-            regions_file = get_data_path('regions.yml')
-            regions_data = load_yaml(regions_file)
-            regions = regions_data.get('regions', [])
-            
-            if not regions:
-                logger.error("No regions found in regions.yml")
-                logger.error("Please run: bua refresh regions")
-                sys.exit(1)
-            
-            logger.info(f"Refreshing {len(regions)} regions...")
-            refresh_all_regions(regions, update_bundle=args.update_bundle)
-            logger.info("\n✓ All regions refreshed")
-            
+            # Only the regions the current credentials can call
+            regions, _ = regions_for_credentials(load_region_names())
         except FileNotFoundError:
             logger.error("Regions file not found")
             logger.error("Please run: bua refresh regions")
             sys.exit(1)
+
+        if not regions:
+            logger.error("No regions found in regions.yml")
+            logger.error("Please run: bua refresh regions")
+            sys.exit(1)
+
+        logger.info(f"Refreshing {len(regions)} regions...")
+        refresh_all_regions(regions, update_bundle=args.update_bundle)
+        logger.info("\n✓ All regions refreshed")
 
 
 def cmd_refresh_fm_quotas(args):
@@ -229,8 +254,11 @@ def main():
                           help='Directory to save results (default: prompt user)')
     p_analyze.add_argument('-r', '--region',
                           help='AWS region (e.g., us-west-2)')
-    p_analyze.add_argument('-m', '--model-id',
-                          help='Model ID or inference profile ID (e.g., amazon.nova-premier-v1:0 or us.amazon.nova-premier-v1:0)')
+    p_analyze.add_argument('-m', '--model-id', action='append',
+                          help='Model ID, system inference profile ID, or application inference profile '
+                               'ID/ARN (e.g., amazon.nova-premier-v1:0, us.amazon.nova-premier-v1:0, '
+                               'or arn:aws:bedrock:us-west-2:111122223333:application-inference-profile/abc123). '
+                               'Repeat to analyze several.')
     p_analyze.add_argument('-g', '--granularity',
                           help='Aggregation granularity: single value (1min, 5min, 1hour) for all periods, '
                                'or JSON for per-period config (e.g., \'{"1hour":"1min","1day":"5min","7days":"1hour","14days":"1hour","30days":"1hour"}\')')
@@ -286,7 +314,11 @@ def main():
         logger.info("\nOperation cancelled by user.")
         sys.exit(1)
     except Exception as e:
+        from bedrock_usage_analyzer.core.errors import troubleshooting_hint
         logger.error(f"Error: {e}")
+        hint = troubleshooting_hint(e, getattr(args, 'region', None) or getattr(args, 'bedrock_region', None))
+        if hint:
+            logger.error(f"Hint: {hint}")
         traceback.print_exc()
         sys.exit(1)
 

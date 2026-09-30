@@ -4,8 +4,7 @@
 
 This CLI tool visualizes foundation model (FM) usage in [Amazon Bedrock](https://aws.amazon.com/bedrock/). It calculates the  tokens-per-minute/TPM and requests-per-minute/RPM. It also aggregates the FM usage across Bedrock application inference profiles and provides visibility on current usage gap towards the service quotas.
 
-**✨ Now with AWS GovCloud and multi-partition support!** Works seamlessly across commercial AWS, GovCloud (us-gov-*), China (cn-*), and ISO partitions.
-**🏛️ AWS GovCloud Support**: This tool now supports AWS GovCloud (US) regions (`us-gov-east-1`, `us-gov-west-1`) for government agencies and contractors with compliance requirements.
+The tool works in commercial AWS regions and in AWS GovCloud (US) (`us-gov-east-1`, `us-gov-west-1`); see [AWS GovCloud (US) and other partitions](#aws-govcloud-us-and-other-partitions). You can analyze a whole foundation model or pick specific [application inference profiles](#analyzing-application-inference-profiles).
 
 While [Amazon CloudWatch](https://aws.amazon.com/cloudwatch/) already provides metrics for the FMs used in Bedrock, it might not be straightforward to calculate TPM & RPM, to aggregate token usage across application inference profiles, and see how each profile contributes to usage. Also, the quota lookup needs to be done separately via [AWS service quotas](https://docs.aws.amazon.com/general/latest/gr/aws_service_limits.html). With this tool, you can specify the region and model to analyze and it will fetch the usage across last 1 hour, 1 day, 7 days, 14 days, and 30 days, each with aggregated data across the application inference profiles. It will generate HTML report containing the statistics table and time series data.
 
@@ -46,7 +45,7 @@ The tool generates HTML report showing token usage over time with quota limits. 
 ### AWS Account Requirements
 - **Bedrock Access**: Enabled foundation models in your AWS account
 - **IAM Permissions**: See detailed permission requirements below
-- **Supported Partitions**: Works in AWS Commercial, GovCloud (us-gov-*), China (cn-*), and ISO partitions
+- **Supported Partitions**: AWS commercial and AWS GovCloud (US). ARNs, endpoints and console links are derived from the region, so other partitions work wherever Bedrock and CloudWatch are available
 
 ### Network Requirements
 - **Endpoint Access**: For accessing APIs from Amazon CloudWatch and Amazon Bedrock, either via the internet or via-VPC access.
@@ -218,17 +217,16 @@ export AWS_PROFILE=govcloud
 ```
 
 **Important GovCloud Notes:**
-- GovCloud credentials are separate from standard AWS credentials
-- Standard AWS credentials cannot access GovCloud regions
-- GovCloud credentials cannot access standard AWS regions
-- You need appropriate security clearance and authorization for GovCloud access
+- GovCloud accounts and credentials are separate from commercial AWS ones
+- Commercial credentials cannot call GovCloud regions, and GovCloud credentials cannot call commercial regions
+- If no region is configured for the profile, pass `--region us-gov-west-1` (or set `AWS_REGION`) so the account check uses the GovCloud STS endpoint
 
 ### Step 3: Refresh Foundation Model Lists (Optional)
 
 Before analyzing usage, you may want to refresh the foundation model lists:
 
 ```bash
-# Refresh regions list (discovers both standard and GovCloud regions)
+# Refresh regions list (regions of the credentials' partition; other partitions are kept)
 bedrock-usage-analyzer refresh regions
 # Or: ./bin/refresh-regions
 
@@ -261,11 +259,26 @@ AWS_PROFILE=govcloud bedrock-usage-analyzer analyze
 ```
 
 The script will prompt you to:
-1. **Select AWS region** - Choose the region where you have Bedrock usage
+1. **Select AWS region** - Only regions of your credentials' partition are listed (commercial or GovCloud)
 2. **Select granularity** - Choose the time granularity to aggregate usage across (e.g. 1 min, 5 mins, 1 hour)
-2. **Select model provider** - Filter by provider (Amazon, Anthropic, etc.)
-3. **Select model** - Choose the specific model to analyze
-4. **Select inference profile** (if applicable) - Choose base model or cross-region profile
+3. **Choose what to analyze** (only asked when the region has application inference profiles) - a foundation model, or specific application inference profiles
+4. **Select model provider** - Filter by provider (Amazon, Anthropic, etc.)
+5. **Select model** - Choose the specific model to analyze
+6. **Select inference profile** (if applicable) - Choose base model or cross-region profile
+
+### Analyzing application inference profiles
+
+When you analyze a foundation model endpoint (for example `au.anthropic.claude-haiku-4-5-20251001-v1:0`), the report includes that endpoint plus every [application inference profile](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-create.html) created from it, with a per-profile breakdown and tags. The tool finds the source of each application profile by matching its routing targets against the system-defined profiles, so a copy of `au.*` is not confused with `apac.*` or `jp.*`.
+
+To analyze only some application profiles, choose "Specific application inference profiles" at step 3 and enter their numbers (for example `1,3-4` or `all`), or pass the profile ID or ARN with `--model-id`:
+
+```bash
+bedrock-usage-analyzer analyze -r ap-southeast-2 -y -g 5min -o ./results \
+  -m arn:aws:bedrock:ap-southeast-2:111122223333:application-inference-profile/abc123def456 \
+  -m abc987zyx654
+```
+
+If you analyze an endpoint that has no application profiles while the account has profiles for the same model under another endpoint, the tool prints which endpoint they are on.
 
 ### Step 4b: Scripted/Non-Interactive Usage
 
@@ -285,6 +298,10 @@ bedrock-usage-analyzer analyze \
   --model-id us.amazon.nova-premier-v1:0 \
   --granularity 5min
 
+# Several targets in one run (repeat --model-id)
+bedrock-usage-analyzer analyze -r us-west-2 -y -g 5min -o ./results \
+  -m us.amazon.nova-premier-v1:0 -m amazon.nova-premier-v1:0
+
 # Partial arguments (prompts only for missing values)
 bedrock-usage-analyzer analyze --region us-west-2 --granularity 1hour
 # → prompts for model selection only
@@ -295,7 +312,7 @@ bedrock-usage-analyzer analyze --region us-west-2 --granularity 1hour
 | Argument | Short | Description |
 |----------|-------|-------------|
 | `--region` | `-r` | AWS region (e.g., `us-west-2`, `eu-west-1`) |
-| `--model-id` | `-m` | Model ID with optional prefix (e.g., `amazon.nova-premier-v1:0` for base, `us.amazon.nova-premier-v1:0` for cross-region) |
+| `--model-id` | `-m` | Model ID with optional prefix (e.g., `amazon.nova-premier-v1:0` for base, `us.amazon.nova-premier-v1:0` for cross-region, `us-gov.` for GovCloud), or an application inference profile ID/ARN. Repeat to analyze several |
 | `--granularity` | `-g` | Aggregation granularity (see below) |
 | `--output-dir` | `-o` | Directory to save results |
 | `--yes` | `-y` | Skip account confirmation prompt |
@@ -616,24 +633,10 @@ A: CloudWatch queries can take time for large time ranges. To speed up:
 ### Advanced scenarios
 
 **Q: How do I use this tool with AWS GovCloud?**
-A: The tool automatically detects GovCloud and other AWS partitions. Simply configure your GovCloud credentials:
-```bash
-# Using AWS profile
-AWS_PROFILE=my-govcloud-profile bedrock-usage-analyzer analyze --region us-gov-west-1
+A: Use GovCloud credentials and a GovCloud region; see [AWS GovCloud (US) and other partitions](#aws-govcloud-us-and-other-partitions).
 
-# Or set credentials directly
-export AWS_REGION=us-gov-west-1
-export AWS_ACCESS_KEY_ID=...
-export AWS_SECRET_ACCESS_KEY=...
-bedrock-usage-analyzer analyze
-```
-
-The tool will automatically:
-- Use correct ARN format (`arn:aws-us-gov:...` instead of `arn:aws:...`)
-- Generate console URLs pointing to `console.amazonaws-us-gov.com`
-- Handle GovCloud-specific service quotas
-
-See [GOVCLOUD_SUPPORT.md](GOVCLOUD_SUPPORT.md) for detailed documentation on multi-partition support.
+**Q: My application inference profiles show no data**
+A: Check the endpoint you selected. Profiles are grouped under the endpoint they were copied from (`au`, `apac`, `global`, base model, ...). The tool prints a note when your profiles are under a different endpoint, or you can pick them directly as described in [Analyzing application inference profiles](#analyzing-application-inference-profiles).
 
 **Q: How do I switch to different AWS accounts when using this tool?**
 A: You can use different AWS profile as shown in the following code snippet:
@@ -642,63 +645,29 @@ AWS_PROFILE=<YOUR AWS PROFILE NAME> bedrock-usage-analyzer analyze
 # Or: AWS_PROFILE=<YOUR AWS PROFILE NAME> ./bin/analyze-bedrock-usage
 ```
 
-## AWS GovCloud (US) Support
+## AWS GovCloud (US) and other partitions
 
-This tool supports AWS GovCloud (US) regions for government agencies and contractors with compliance requirements.
+The tool supports AWS GovCloud (US) (`us-gov-east-1`, `us-gov-west-1`) next to commercial regions. No setting is needed; it works from the region and the credentials:
 
-### GovCloud Regions Supported
-- **us-gov-east-1**: AWS GovCloud (US-East)
-- **us-gov-west-1**: AWS GovCloud (US-West)
-
-### GovCloud Setup Requirements
-
-1. **Separate Credentials**: GovCloud requires separate AWS credentials from standard regions
-2. **Security Clearance**: Appropriate security clearance and authorization
-3. **Account Access**: Your AWS account must have GovCloud access enabled
-4. **Service Availability**: Some services may have limited availability in GovCloud
-
-### GovCloud Configuration
+- **Region picker**: the partition of your credentials is read from the STS caller identity, and only regions of that partition are listed. The bundled region list contains both commercial and GovCloud regions.
+- **Endpoints**: boto3 resolves the endpoint for the region's partition, so your `AWS_ENDPOINT_URL_*`, FIPS and VPC endpoint settings still apply.
+- **ARNs and console links**: built for the region's partition (`arn:aws-us-gov:...`, `console.amazonaws-us-gov.com`) without extra API calls.
+- **Inference profiles**: GovCloud cross-region profiles use the `us-gov.` prefix, e.g. `us-gov.anthropic.claude-sonnet-4-5-20250929-v1:0`.
+- **Metadata refresh**: `refresh regions` updates only the regions of the credentials' partition and keeps the others, so commercial and GovCloud users can share one metadata directory. `refresh fm-list` and `refresh fm-quotas` process only the regions your credentials can call.
 
 ```bash
-# Configure GovCloud profile
-aws configure --profile govcloud
-# Enter GovCloud Access Key ID: AKIA...
-# Enter GovCloud Secret Access Key: ...
-# Default region: us-gov-east-1 or us-gov-west-1
-# Default output format: json
-
 # Verify GovCloud access
-aws sts get-caller-identity --profile govcloud
-```
+aws sts get-caller-identity --profile govcloud --region us-gov-west-1
 
-### Using GovCloud Regions
-
-```bash
-# Discover GovCloud regions
+# Refresh GovCloud metadata (optional; GovCloud model lists are bundled)
 AWS_PROFILE=govcloud bedrock-usage-analyzer refresh regions
+AWS_PROFILE=govcloud bedrock-usage-analyzer refresh fm-list us-gov-west-1
 
-# Refresh GovCloud foundation models
-AWS_PROFILE=govcloud bedrock-usage-analyzer refresh fm-list us-gov-east-1
-
-# Analyze GovCloud Bedrock usage
-AWS_PROFILE=govcloud bedrock-usage-analyzer analyze
+# Analyze
+AWS_PROFILE=govcloud bedrock-usage-analyzer analyze --region us-gov-west-1
 ```
 
-### GovCloud Considerations
-
-- **Model Availability**: GovCloud may have different foundation models available
-- **Quota Structures**: Service quotas may differ from standard regions
-- **Cross-Region Profiles**: Limited cross-region inference capabilities
-- **Compliance**: Models in GovCloud may have FedRAMP and IL4/5 authorization
-- **Network Access**: Different service endpoints than standard regions
-
-### GovCloud Visual Indicators
-
-When using the tool with GovCloud regions, you'll see:
-- 🏛️ symbols next to GovCloud regions in the selection menu
-- Confirmation dialogs when selecting GovCloud regions
-- "GovCloud" indicators in generated reports
-- Enhanced error messages with GovCloud-specific troubleshooting
+If you pass a region from another partition than your credentials (for example `--region us-gov-west-1` with commercial credentials), the tool stops with an explanation instead of failing on the first API call. Model availability and quotas in GovCloud differ from commercial regions; check the [AWS GovCloud (US) user guide](https://docs.aws.amazon.com/govcloud-us/latest/UserGuide/welcome.html).
 
 ## Security Considerations
 

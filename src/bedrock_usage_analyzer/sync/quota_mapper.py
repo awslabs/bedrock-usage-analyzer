@@ -54,10 +54,10 @@ class QuotaMapper:
     
     def _get_regions_to_process(self) -> List[str]:
         """Get list of regions to process"""
-        regions_file = get_data_path('regions.yml')
-        regions_data = load_yaml(regions_file)
-        all_regions = regions_data.get('regions', [])
-        
+        from bedrock_usage_analyzer.sync.regions import load_region_names, regions_for_credentials
+        # Quota codes are cached across regions, so stay inside the credentials' partition
+        all_regions, _ = regions_for_credentials(load_region_names(), self.bedrock_region)
+
         if self.target_region:
             if self.target_region not in all_regions:
                 logger.error(f"Region '{self.target_region}' not found")
@@ -109,7 +109,8 @@ class QuotaMapper:
                     endpoints_data[endpoint_type] = {'quotas': quota_mapping}
             
             if endpoints_data:
-                fm['endpoints'] = endpoints_data
+                # Update mapped endpoints only; endpoints without a quota match stay selectable
+                fm.setdefault('endpoints', {}).update(endpoints_data)
                 updated_count += 1
                 endpoint_summary = ', '.join(endpoints_data.keys())
                 logger.info(f"✓ ({endpoint_summary})")

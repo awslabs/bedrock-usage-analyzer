@@ -3,23 +3,19 @@
 
 """AWS STS (Security Token Service) operations"""
 
-import boto3
-from bedrock_usage_analyzer.utils.partition import get_account_id as _get_account_id, get_partition
+from typing import Optional
+
+from bedrock_usage_analyzer.utils.partition import get_caller_identity
 
 
-def get_account_id():
-    """Get current AWS account ID
+def get_account_id(region: Optional[str] = None) -> str:
+    """Get current AWS account ID (cached per STS region).
 
-    Returns:
-        str: AWS account ID
+    Args:
+        region: Region whose STS endpoint to use; required for GovCloud or
+            China credentials when no region is configured.
 
     Raises:
         Exception: If unable to get account ID
     """
-    # Use cached value from partition module to avoid duplicate API calls
-    account_id = _get_account_id()
-    if account_id is None:
-        # Fallback to direct call if not cached
-        sts = boto3.client('sts')
-        account_id = sts.get_caller_identity()['Account']
-    return account_id
+    return get_caller_identity(region)['Account']

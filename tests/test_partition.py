@@ -1,139 +1,146 @@
-#!/usr/bin/env python3
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for partition detection and cross-partition support"""
+"""Partition helpers: offline resolution, ARNs, console links, caller identity."""
 
-import sys
-import os
+import pytest
 
-# Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-from bedrock_usage_analyzer.utils.partition import (
-    build_arn,
-    get_console_domain,
-    get_service_quota_url,
-    is_govcloud_region,
-    is_china_region
-)
+from bedrock_usage_analyzer.aws.client_factory import create_client
+from bedrock_usage_analyzer.utils import partition as p
 
 
-def test_arn_construction():
-    """Test ARN construction with different partitions"""
-    print("\n=== Testing ARN Construction ===")
-
-    # Mock different partitions
-    test_cases = [
-        {
-            'partition': 'aws',
-            'expected_arn': 'arn:aws:bedrock:us-west-2::foundation-model/amazon.titan-text-express-v1',
-            'expected_console': 'console.aws.amazon.com',
-            'expected_quota_url': 'https://us-west-2.console.aws.amazon.com/servicequotas/home/services/bedrock/quotas/L-1234'
-        },
-        {
-            'partition': 'aws-us-gov',
-            'expected_arn': 'arn:aws-us-gov:bedrock:us-gov-west-1::foundation-model/amazon.titan-text-express-v1',
-            'expected_console': 'console.amazonaws-us-gov.com',
-            'expected_quota_url': 'https://us-gov-west-1.console.amazonaws-us-gov.com/servicequotas/home/services/bedrock/quotas/L-1234'
-        },
-        {
-            'partition': 'aws-cn',
-            'expected_arn': 'arn:aws-cn:bedrock:cn-north-1::foundation-model/amazon.titan-text-express-v1',
-            'expected_console': 'console.amazonaws.cn',
-            'expected_quota_url': 'https://cn-north-1.console.amazonaws.cn/servicequotas/home/services/bedrock/quotas/L-1234'
-        }
-    ]
-
-    for case in test_cases:
-        print(f"\nTesting partition: {case['partition']}")
-
-        # Note: We can't actually change the cached partition during runtime tests
-        # This is more of a documentation of expected behavior
-        print(f"  Expected ARN pattern: {case['expected_arn']}")
-        print(f"  Expected console: {case['expected_console']}")
-        print(f"  Expected quota URL: {case['expected_quota_url']}")
-
-    print("\n✓ ARN construction patterns validated")
+@pytest.mark.parametrize('region,expected', [
+    ('us-west-2', 'aws'),
+    ('ap-southeast-7', 'aws'),
+    ('us-gov-west-1', 'aws-us-gov'),
+    ('us-gov-east-1', 'aws-us-gov'),
+    ('cn-north-1', 'aws-cn'),
+    ('cn-northwest-1', 'aws-cn'),
+    ('us-iso-east-1', 'aws-iso'),
+    ('us-isob-east-1', 'aws-iso-b'),
+    ('us-gov-future-9', 'aws-us-gov'),   # unknown to botocore: prefix fallback
+    ('cn-future-9', 'aws-cn'),
+    ('xx-future-9', 'aws'),
+    (None, 'aws'),
+    ('', 'aws'),
+])
+def test_partition_for_region(region, expected):
+    assert p.get_partition_for_region(region) == expected
 
 
-def test_region_detection():
-    """Test region type detection"""
-    print("\n=== Testing Region Detection ===")
-
-    # Test GovCloud regions
-    govcloud_regions = ['us-gov-west-1', 'us-gov-east-1']
-    for region in govcloud_regions:
-        assert is_govcloud_region(region), f"{region} should be detected as GovCloud"
-        print(f"  ✓ {region} detected as GovCloud")
-
-    # Test China regions
-    china_regions = ['cn-north-1', 'cn-northwest-1']
-    for region in china_regions:
-        assert is_china_region(region), f"{region} should be detected as China"
-        print(f"  ✓ {region} detected as China")
-
-    # Test commercial regions
-    commercial_regions = ['us-west-2', 'us-east-1', 'eu-west-1']
-    for region in commercial_regions:
-        assert not is_govcloud_region(region), f"{region} should not be GovCloud"
-        assert not is_china_region(region), f"{region} should not be China"
-        print(f"  ✓ {region} detected as commercial")
-
-    print("\n✓ Region detection working correctly")
+def test_region_predicates():
+    assert p.is_govcloud_region('us-gov-west-1')
+    assert not p.is_govcloud_region('us-west-2')
+    assert p.is_china_region('cn-north-1')
+    assert not p.is_china_region('ca-central-1')
 
 
-def test_current_partition():
-    """Test current partition detection"""
-    print("\n=== Testing Current Partition ===")
-
-    # This will actually detect the partition from the current AWS credentials
-    from bedrock_usage_analyzer.utils.partition import get_partition
-
-    try:
-        partition = get_partition()
-        console = get_console_domain()
-
-        print(f"  Current partition: {partition}")
-        print(f"  Console domain: {console}")
-
-        # Test ARN construction with current partition
-        test_arn = build_arn('bedrock', 'us-west-2', '', 'foundation-model/test-model')
-        print(f"  Sample ARN: {test_arn}")
-
-        # Test quota URL construction
-        test_url = get_service_quota_url('us-west-2', 'bedrock', 'L-1234')
-        print(f"  Sample quota URL: {test_url}")
-
-        print("\n✓ Current partition detection successful")
-        return True
-    except Exception as e:
-        print(f"\n✗ Partition detection failed: {e}")
-        print("  This is expected if AWS credentials are not configured")
-        return False
+def test_display_names_come_from_botocore():
+    assert p.get_region_display_name('us-gov-west-1') == 'AWS GovCloud (US-West)'
+    assert p.get_region_display_name('ap-southeast-2') == 'Asia Pacific (Sydney)'
+    assert p.get_region_display_name('xx-nowhere-1') == 'xx-nowhere-1'
+    assert p.get_region_display_name(None) == 'Unknown Region'
 
 
-def main():
-    """Run all tests"""
-    print("=" * 60)
-    print("Partition Support Tests")
-    print("=" * 60)
-
-    test_arn_construction()
-    test_region_detection()
-    has_credentials = test_current_partition()
-
-    print("\n" + "=" * 60)
-    print("Test Summary")
-    print("=" * 60)
-    print("✓ ARN construction patterns validated")
-    print("✓ Region detection working")
-    if has_credentials:
-        print("✓ Partition detection working with current credentials")
-    else:
-        print("⚠ Partition detection not tested (no AWS credentials)")
-    print("\nAll partition support tests passed!")
+def test_region_info():
+    info = p.get_region_info('us-gov-east-1')
+    assert info == {
+        'name': 'us-gov-east-1',
+        'display_name': 'AWS GovCloud (US-East)',
+        'partition': 'aws-us-gov',
+        'partition_name': 'AWS GovCloud (US)',
+        'is_govcloud': True,
+    }
+    assert p.get_region_info('us-east-1')['is_govcloud'] is False
 
 
-if __name__ == '__main__':
-    main()
+def test_build_arn_uses_region_partition_without_api_calls():
+    assert p.build_arn('bedrock', 'us-west-2', '', 'foundation-model/m') == \
+        'arn:aws:bedrock:us-west-2::foundation-model/m'
+    assert p.build_arn('bedrock', 'us-gov-west-1', '', 'foundation-model/m') == \
+        'arn:aws-us-gov:bedrock:us-gov-west-1::foundation-model/m'
+    assert p.build_arn('bedrock', 'cn-north-1', '1', 'x') == 'arn:aws-cn:bedrock:cn-north-1:1:x'
+
+
+def test_console_urls_per_partition():
+    assert p.get_service_quota_url('us-west-2', 'bedrock', 'L-1') == \
+        'https://console.aws.amazon.com/servicequotas/home/services/bedrock/quotas/L-1?region=us-west-2'
+    assert p.get_service_quota_url('us-gov-west-1', 'bedrock', 'L-1') == \
+        'https://console.amazonaws-us-gov.com/servicequotas/home/services/bedrock/quotas/L-1?region=us-gov-west-1'
+    assert p.get_service_quota_url('cn-north-1', 'bedrock', 'L-1').startswith('https://console.amazonaws.cn/')
+    # No public console for ISO partitions: no link rather than a wrong one
+    assert p.get_service_quota_url('us-iso-east-1', 'bedrock', 'L-1') is None
+    assert p.get_service_quotas_console_url('us-gov-east-1') == \
+        'https://console.amazonaws-us-gov.com/servicequotas/home?region=us-gov-east-1'
+    assert p.get_service_quotas_console_url() == 'https://console.aws.amazon.com/servicequotas/home'
+
+
+def test_filter_regions_by_partition():
+    regions = ['us-east-1', 'us-gov-west-1', 'cn-north-1', 'us-gov-east-1']
+    assert p.filter_regions_by_partition(regions, 'aws-us-gov') == ['us-gov-west-1', 'us-gov-east-1']
+    assert p.filter_regions_by_partition(regions, 'aws') == ['us-east-1']
+    assert p.filter_regions_by_partition(regions, None) == regions
+
+
+def test_partition_regions_static_list():
+    assert p.partition_regions('aws-us-gov') == ['us-gov-east-1', 'us-gov-west-1']
+    assert p.partition_regions('nope') == []
+
+
+class FakeSts:
+    def __init__(self, arn_value, account='111122223333'):
+        self.arn = arn_value
+        self.account = account
+        self.calls = 0
+
+    def get_caller_identity(self):
+        self.calls += 1
+        return {'Account': self.account, 'Arn': self.arn, 'UserId': 'X'}
+
+
+def test_caller_identity_is_cached_per_region(monkeypatch):
+    sts = FakeSts('arn:aws-us-gov:iam::111122223333:user/alice')
+    created = []
+
+    def fake_create(service, region=None, **_):
+        created.append((service, region))
+        return sts
+
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.client_factory.create_client', fake_create)
+    first = p.get_caller_identity('us-gov-west-1')
+    second = p.get_caller_identity('us-gov-west-1')
+    assert first == second == {'Account': '111122223333',
+                               'Arn': 'arn:aws-us-gov:iam::111122223333:user/alice',
+                               'Partition': 'aws-us-gov'}
+    assert sts.calls == 1
+    assert created == [('sts', 'us-gov-west-1')]
+    assert p.detect_credentials_partition('us-gov-west-1') == 'aws-us-gov'
+
+
+def test_detect_partition_returns_none_on_error(monkeypatch):
+    def boom(*_, **__):
+        raise RuntimeError('no credentials')
+
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.client_factory.create_client', boom)
+    assert p.detect_credentials_partition('us-east-1') is None
+
+
+def test_region_hint_prefers_env(monkeypatch):
+    monkeypatch.setenv('AWS_REGION', 'us-gov-east-1')
+    assert p.region_hint() == 'us-gov-east-1'
+
+
+@pytest.mark.parametrize('service,region,url', [
+    ('bedrock', 'us-gov-west-1', 'https://bedrock.us-gov-west-1.amazonaws.com'),
+    ('cloudwatch', 'us-gov-west-1', 'https://monitoring.us-gov-west-1.amazonaws.com'),
+    ('service-quotas', 'us-gov-east-1', 'https://servicequotas.us-gov-east-1.amazonaws.com'),
+    ('sts', 'us-gov-west-1', 'https://sts.us-gov-west-1.amazonaws.com'),
+    ('bedrock', 'cn-north-1', 'https://bedrock.cn-north-1.amazonaws.com.cn'),
+    ('bedrock-runtime', 'us-west-2', 'https://bedrock-runtime.us-west-2.amazonaws.com'),
+])
+def test_client_factory_resolves_partition_endpoints(service, region, url):
+    client = create_client(service, region)
+    assert client.meta.endpoint_url == url
+    assert client.meta.region_name == region
+    assert client.meta.config.retries['mode'] == 'adaptive'
+    assert client.meta.config.max_pool_connections >= 16
