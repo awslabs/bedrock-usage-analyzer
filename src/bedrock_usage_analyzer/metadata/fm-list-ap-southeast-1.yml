@@ -86,14 +86,17 @@ models:
       quotas:
         concurrent: null
         rpm:
-          code: L-1D3E59A3
-          name: Cross-Region model inference requests per minute for Anthropic Claude
-            3.5 Sonnet V2
-        tpd: null
+          code: L-F457545D
+          name: Cross-region model inference requests per minute for Anthropic Claude
+            3.5 Sonnet
+        tpd:
+          code: L-E7D41161
+          name: Model invocation max tokens per day for Anthropic Claude 3.5 Sonnet
+            V1 (doubled for cross-region calls)
         tpm:
-          code: L-FF8B4E28
-          name: Cross-Region model inference tokens per minute for Anthropic Claude
-            3.5 Sonnet V2
+          code: L-479B647F
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            3.5 Sonnet
     base:
       quotas:
         concurrent: null
@@ -130,28 +133,6 @@ models:
   inference_types:
   - INFERENCE_PROFILE
   model_id: anthropic.claude-3-5-sonnet-20241022-v2:0
-  provider: Anthropic
-- endpoints:
-    apac:
-      quotas:
-        concurrent: null
-        rpm:
-          code: L-3D8CC480
-          name: Cross-region model inference requests per minute for Anthropic Claude
-            3.7 Sonnet V1
-        tpd:
-          code: L-9EB71894
-          name: Model invocation max tokens per day for Anthropic Claude 3.7 Sonnet
-            V1 (doubled for cross-region calls)
-        tpm:
-          code: L-6E888CC2
-          name: Cross-region model inference tokens per minute for Anthropic Claude
-            3.7 Sonnet V1
-  inference_profiles:
-  - apac
-  inference_types:
-  - INFERENCE_PROFILE
-  model_id: anthropic.claude-3-7-sonnet-20250219-v1:0
   provider: Anthropic
 - endpoints:
     apac:
@@ -218,14 +199,43 @@ models:
     global:
       quotas:
         concurrent: null
+        rpm: null
+        tpd: null
+        tpm:
+          code: L-D06938E7
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Fable 5
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-fable-5
+  provider: Anthropic
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm:
+          code: L-50CC5674
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Fable 5.1
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-fable-5-1
+  provider: Anthropic
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
         rpm:
           code: L-E5084BBA
           name: Global cross-region model inference requests per minute for Anthropic
             Claude Haiku 4.5
-        tpd:
-          code: L-B5C049AE
-          name: Global cross-region model inference tokens per day for Anthropic Claude
-            Haiku 4.5
+        tpd: null
         tpm:
           code: L-9A11C666
           name: Global cross-region model inference tokens per minute for Anthropic
@@ -240,9 +250,18 @@ models:
     global:
       quotas:
         concurrent: null
-        rpm: null
-        tpd: null
-        tpm: null
+        rpm:
+          code: L-58424D95
+          name: Global cross-region model inference requests per minute for Anthropic
+            Claude Opus 4.5
+        tpd:
+          code: L-E2985A8E
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Opus 4.5
+        tpm:
+          code: L-3ABF6ACC
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Opus 4.5
   inference_profiles:
   - global
   inference_types:
@@ -257,10 +276,7 @@ models:
           code: L-3DD46812
           name: Global cross-region model inference requests per minute for Anthropic
             Claude Opus 4.6 V1
-        tpd:
-          code: L-ED2BADF9
-          name: Global cross-region model inference tokens per day for Anthropic Claude
-            Opus 4.6 V1
+        tpd: null
         tpm:
           code: L-3DCCFAA4
           name: Global cross-region model inference tokens per minute for Anthropic
@@ -288,12 +304,66 @@ models:
   model_id: anthropic.claude-opus-4-7
   provider: Anthropic
 - endpoints:
-    apac:
+    global:
       quotas:
         concurrent: null
         rpm: null
         tpd: null
-        tpm: null
+        tpm:
+          code: L-4FCE27C7
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Opus 4.8
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-opus-4-8
+  provider: Anthropic
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm:
+          code: L-D73B1244
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Opus 5
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-opus-5
+  provider: Anthropic
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm:
+          code: L-A103A344
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Opus 5.5
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-opus-5-5
+  provider: Anthropic
+- endpoints:
+    apac:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-F6E116D7
+          name: Global cross-region model inference requests per minute for Anthropic
+            Claude Sonnet 4.6
+        tpd: null
+        tpm:
+          code: L-7BEE40FB
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Sonnet 4.6
   inference_profiles:
   - apac
   inference_types:
@@ -304,18 +374,9 @@ models:
     global:
       quotas:
         concurrent: null
-        rpm:
-          code: L-F6E116D7
-          name: Global cross-region model inference requests per minute for Anthropic
-            Claude Sonnet 4.6
-        tpd:
-          code: L-248E47B7
-          name: Global cross-region model inference tokens per day for Anthropic Claude
-            Sonnet 4.6
-        tpm:
-          code: L-7BEE40FB
-          name: Global cross-region model inference tokens per minute for Anthropic
-            Claude Sonnet 4.6
+        rpm: null
+        tpd: null
+        tpm: null
   inference_profiles:
   - global
   inference_types:
@@ -330,10 +391,7 @@ models:
           code: L-F6E116D7
           name: Global cross-region model inference requests per minute for Anthropic
             Claude Sonnet 4.6
-        tpd:
-          code: L-248E47B7
-          name: Global cross-region model inference tokens per day for Anthropic Claude
-            Sonnet 4.6
+        tpd: null
         tpm:
           code: L-7BEE40FB
           name: Global cross-region model inference tokens per minute for Anthropic
@@ -343,6 +401,48 @@ models:
   inference_types:
   - INFERENCE_PROFILE
   model_id: anthropic.claude-sonnet-4-6
+  provider: Anthropic
+- endpoints:
+    base:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-254CACF4
+          name: On-demand model inference requests per minute for Anthropic Claude
+            3.5 Sonnet
+        tpd: null
+        tpm:
+          code: L-A50569E5
+          name: On-demand model inference tokens per minute for Anthropic Claude 3.5
+            Sonnet
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm:
+          code: L-DD84E5CA
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Sonnet 5
+  inference_profiles:
+  - global
+  inference_types:
+  - ON_DEMAND
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-sonnet-5
+  provider: Anthropic
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-sonnet-5-5
   provider: Anthropic
 - endpoints:
     base:
@@ -397,6 +497,167 @@ models:
       quotas:
         concurrent: null
         rpm: null
+        tpd:
+          code: L-0EDA3E92
+          name: Global cross-region model inference tokens per day for Moonshot AI
+            Kimi K3
+        tpm:
+          code: L-2B5A3FA2
+          name: Global cross-region model inference tokens per minute for Moonshot
+            AI Kimi K3
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: moonshotai.kimi-k3
+  provider: Moonshot AI
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: openai.gpt-5.4
+  provider: OpenAI
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: openai.gpt-5.5
+  provider: OpenAI
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm:
+          code: L-D983F7C0
+          name: Global cross-region model inference tokens per minute for GPT-5.6
+            Luna
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: openai.gpt-5.6-luna
+  provider: OpenAI
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd:
+          code: L-685F85F7
+          name: Global cross-region model inference tokens per day for GPT-6 Sol
+        tpm:
+          code: L-4D7537CF
+          name: Global cross-region model inference tokens per minute for GPT-5.6
+            Sol
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: openai.gpt-5.6-sol
+  provider: OpenAI
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm:
+          code: L-8E752C84
+          name: Global cross-region model inference tokens per minute for GPT-5.6
+            Terra
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: openai.gpt-5.6-terra
+  provider: OpenAI
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm:
+          code: L-B38B530A
+          name: Global cross-region model inference tokens per minute for GPT-6 Astra
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: openai.gpt-6-astra
+  provider: OpenAI
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd:
+          code: L-C0FA489B
+          name: Global cross-region model inference tokens per day for GPT-6 Luna
+        tpm:
+          code: L-CCC92354
+          name: Global cross-region model inference tokens per minute for GPT-6 Luna
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: openai.gpt-6-luna
+  provider: OpenAI
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd:
+          code: L-685F85F7
+          name: Global cross-region model inference tokens per day for GPT-6 Sol
+        tpm:
+          code: L-039AF68B
+          name: Global cross-region model inference tokens per minute for GPT-6 Sol
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: openai.gpt-6-sol
+  provider: OpenAI
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd:
+          code: L-685F85F7
+          name: Global cross-region model inference tokens per day for GPT-6 Sol
+        tpm:
+          code: L-039AF68B
+          name: Global cross-region model inference tokens per minute for GPT-6 Sol
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: openai.gpt-6.1-sol
+  provider: OpenAI
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
         tpd: null
         tpm: null
   inference_profiles:
@@ -405,3 +666,31 @@ models:
   - INFERENCE_PROFILE
   model_id: twelvelabs.pegasus-1-2-v1:0
   provider: TwelveLabs
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm:
+          code: L-2AD735F5
+          name: Global cross-region model inference tokens per minute for Grok 4.6
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: xai.grok-4.6
+  provider: xAI
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: xai.grok-4.7
+  provider: xAI

@@ -31,6 +31,11 @@ prefixes:
   source: manual
 - description: cross-region inference profile
   is_regional: true
+  prefix: in
+  quota_keyword: cross-region
+  source: discovered
+- description: cross-region inference profile
+  is_regional: true
   prefix: jp
   quota_keyword: cross-region
   source: discovered
