@@ -239,7 +239,7 @@ class QuotaIndexGenerator:
                 lambda region: list_quota_codes(region, quiet_denied=True), regions)))
             cache = dict(zip(keys, pool.map(lambda key: self._lookup(*key), keys)))
 
-        unverified = 0
+        unverified = not_enabled = 0
         for entry in self.entries:
             if entry['partition'] != self._partition:
                 # Another partition: kept in the index with its stored name, not validated,
@@ -263,10 +263,16 @@ class QuotaIndexGenerator:
                 entry['quota_name'] = 'ERROR'
                 self.error_entries.append(entry)
             elif status != QUOTA_OK:
-                unverified += 1
+                if entry['source_region'] in self._checked_regions:
+                    unverified += 1
+                else:
+                    not_enabled += 1  # never looked up
                 entry['quota_name'] = entry.get('quota_name') or 'N/A'
         if unverified:
             logger.info(f"  {unverified} mapping(s) could not be verified (API errors); kept as is")
+        if not_enabled:
+            logger.info(f"  {not_enabled} mapping(s) are in regions not enabled for this account; "
+                        f"kept as is, not checked")
 
     def _cleanup_errors(self):
         """Remove quota codes that do not exist, or belong to another model/endpoint, from every fm-list"""

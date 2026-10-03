@@ -458,3 +458,15 @@ def test_llm_pick_of_another_metric_is_rejected():
     picked = {'tpm': {'code': 'L-RPM', 'name': ''}, 'rpm': {'code': 'L-RPM', 'name': ''}}
     cleaned = qm.QuotaMapper._drop_invalid_choices(picked, candidates, 'x.m', 'us')
     assert cleaned['tpm'] is None and cleaned['rpm']['code'] == 'L-RPM'
+
+
+def test_quota_index_tells_unchecked_regions_from_api_errors(monkeypatch, tmp_path, no_bundle, commercial_creds, caplog):
+    import logging
+    caplog.set_level(logging.INFO)
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'fm-list-ap-southeast-7.yml'), {'models': [
+        {'model_id': 'amazon.nova-lite-v1:0', 'endpoints': {'base': {'quotas': {
+            'tpm': {'code': 'L-7', 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
+    monkeypatch.setattr(quota_index, '_account_regions', lambda partition: ['us-east-1'])
+    quota_index.QuotaIndexGenerator().run()
+    assert 'not enabled for this account' in caplog.text and 'API errors' not in caplog.text
