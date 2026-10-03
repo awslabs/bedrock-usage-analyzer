@@ -29,16 +29,36 @@ _prefix_mapping_cache = None
 _profile_prefixes_cache = None  # (mapping it was built from, frozenset)
 
 
+def _valid_prefix_entries(data, source) -> List[Dict]:
+    """The usable entries of parsed prefix-mapping.yml ``data``: mappings with a string
+    'prefix' and 'quota_keyword'. Anything else in a hand-edited file is skipped with a
+    warning, so the other layer (or the fallback set) still applies."""
+    if not data:
+        return []  # empty file
+    entries = data.get('prefixes') if isinstance(data, dict) else None
+    if not isinstance(entries, list):
+        if entries is not None or not isinstance(data, dict):
+            logger.warning(f"Ignoring {source}: expected 'prefixes:' with a list of entries")
+        return []
+    valid = [e for e in entries if isinstance(e, dict) and isinstance(e.get('prefix'), str)
+             and isinstance(e.get('quota_keyword'), str)]
+    if len(valid) != len(entries):
+        logger.warning(f"Ignoring {len(entries) - len(valid)} malformed entr(ies) in {source} "
+                       f"(each needs 'prefix' and 'quota_keyword')")
+    return valid
+
+
 def _read_prefixes(path) -> List[Dict]:
     from bedrock_usage_analyzer.utils.yaml_handler import load_yaml
     try:
-        return (load_yaml(str(path)) or {}).get('prefixes', []) or []
+        data = load_yaml(str(path))
     except (FileNotFoundError, OSError):
         return []
     except yaml.YAMLError as e:
         # A hand-edited file with a syntax error: use the other layer (or the fallback set)
         logger.warning(f"Ignoring unreadable {path}: {e}")
         return []
+    return _valid_prefix_entries(data, path)
 
 
 def _load_prefix_mapping() -> List[Dict]:
@@ -77,7 +97,7 @@ def _load_prefix_mapping() -> List[Dict]:
 def prefix_mapping_layers():
     """(bundled entries, user entries) of prefix-mapping.yml, each read once."""
     from bedrock_usage_analyzer.utils.paths import get_user_data_dir, load_bundled_yaml
-    bundled = list((load_bundled_yaml('prefix-mapping.yml') or {}).get('prefixes', []) or [])
+    bundled = _valid_prefix_entries(load_bundled_yaml('prefix-mapping.yml'), 'bundled prefix-mapping.yml')
     return bundled, list(_read_prefixes(get_user_data_dir() / 'prefix-mapping.yml'))
 
 
@@ -109,7 +129,7 @@ def get_endpoint_descriptions() -> Dict[str, str]:
         Dict mapping prefix to description (e.g., {'base': 'on-demand', 'us': 'cross-region inference profile'})
     """
     mapping = _load_prefix_mapping()
-    return {m['prefix']: m['description'] for m in mapping}
+    return {m['prefix']: m.get('description') or m['prefix'] for m in mapping}
 
 
 def get_regional_profile_prefixes() -> List[str]:
@@ -245,14 +265,15 @@ def discover_prefix_mapping(region: str, profiles: Optional[List[Dict]] = None) 
         seen_prefixes = set()
         
         for profile in all_profiles:
-            if profile['type'] == 'SYSTEM_DEFINED' and '.' in profile['inferenceProfileId']:
-                system_prefix = profile['inferenceProfileId'].split('.')[0]
+            profile_id = profile.get('inferenceProfileId') or ''
+            if profile.get('type') == 'SYSTEM_DEFINED' and '.' in profile_id:
+                system_prefix = profile_id.split('.')[0]
                 
                 # Skip if already processed or if it's 'global'
                 if system_prefix in seen_prefixes or system_prefix == 'global':
                     continue
                 
-                model_arns = [m['modelArn'] for m in profile['models']]
+                model_arns = [m.get('modelArn', '') for m in profile.get('models') or []]
                 
                 # Classify as regional if multiple ARNs in same region prefix
                 if len(model_arns) > 1:
@@ -351,7 +372,7 @@ def build_profile_map(profiles: List[Dict]) -> Dict[str, List[str]]:
         prefix = profile_id.split('.')[0]
 
         # Add this prefix to all models in this profile
-        for model in profile.get('models', []):
+        for model in profile.get('models') or []:
             model_id = model_id_from_arn(model.get('modelArn', ''))
             if model_id:
                 if model_id not in profile_map:

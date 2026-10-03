@@ -137,17 +137,23 @@ def fetch_enabled_regions(partition: Optional[str] = None, region: Optional[str]
     # replace the list with every region, including ones never enabled
     partition = partition or credentials_partition_or_exit(hint)
     home = _home_region(partition, hint)
+    # The configured region first (an SCP may allow only it), then the partition's home
+    # region, which is always enabled (the configured one may be an opt-in region the
+    # account has not enabled, which rejects the call)
+    fallback = _home_region(partition, None)
+    pinned = [home] + ([fallback] if fallback and fallback != home else [])
 
     errors = []
     for name, fetch in (('account:ListRegions', _fetch_via_account_api),
                         ('ec2:DescribeRegions', _fetch_via_ec2)):
-        try:
-            regions = filter_regions_by_partition(fetch(home), partition)
-            if regions:
-                return sorted(set(regions))
-        except Exception as e:
-            errors.append(f"{name}: {e}")
-            logger.debug(f"{name} failed: {e}")
+        for where in pinned:
+            try:
+                regions = filter_regions_by_partition(fetch(where), partition)
+                if regions:
+                    return sorted(set(regions))
+            except Exception as e:
+                errors.append(f"{name} in {where}: {e}")
+                logger.debug(f"{name} in {where} failed: {e}")
 
     if not static_fallback:
         for err in errors:

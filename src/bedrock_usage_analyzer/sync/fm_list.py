@@ -46,6 +46,11 @@ def save_models(filepath: str, models: List[Dict]):
     save_yaml(filepath, {'models': sorted_models})
 
 
+def _empty_endpoint() -> Dict:
+    """A new endpoint entry: every quota slot, unmapped (fm-quotas fills them in)."""
+    return {'quotas': {'concurrent': None, 'rpm': None, 'tpd': None, 'tpm': None}}
+
+
 def refresh_region(region_name: str, update_bundle: bool = False):
     """Refresh foundation models for a region
 
@@ -161,8 +166,7 @@ def refresh_region(region_name: str, update_bundle: bool = False):
             for prefix in [p for p in endpoints if p != 'base' and p not in listed]:
                 del endpoints[prefix]
         if 'ON_DEMAND' in model.get('inference_types', []):
-            endpoints.setdefault(
-                'base', {'quotas': {'concurrent': None, 'rpm': None, 'tpd': None, 'tpm': None}})
+            endpoints.setdefault('base', _empty_endpoint())
         
         # Add inference profiles if available
         if model_id in profile_map:
@@ -170,15 +174,7 @@ def refresh_region(region_name: str, update_bundle: bool = False):
             
             # Initialize endpoint structures for each profile prefix
             for prefix in profile_map[model_id]:
-                if prefix not in endpoints:
-                    endpoints[prefix] = {
-                        'quotas': {
-                            'concurrent': None,
-                            'rpm': None,
-                            'tpd': None,
-                            'tpm': None
-                        }
-                    }
+                endpoints.setdefault(prefix, _empty_endpoint())
         
         updated_models.append(model)
     

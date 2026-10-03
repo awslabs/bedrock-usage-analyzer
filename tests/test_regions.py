@@ -177,3 +177,24 @@ def test_account_region_listing_without_static_fallback(monkeypatch):
     monkeypatch.setattr(r, '_fetch_via_account_api', lambda region: (_ for _ in ()).throw(RuntimeError('denied')))
     monkeypatch.setattr(r, '_fetch_via_ec2', lambda region: (_ for _ in ()).throw(RuntimeError('denied')))
     assert r.fetch_enabled_regions('aws', 'us-east-1', static_fallback=False) == []
+
+
+def test_fetch_retries_in_the_home_region_when_the_configured_one_is_not_enabled(monkeypatch):
+    calls = []
+
+    class Ec2InHomeOnly(FakeEc2):
+        def __init__(self):
+            super().__init__(['us-east-1', 'eu-west-1'])
+
+    ec2 = Ec2InHomeOnly()
+
+    def fake_create(service, region=None, **_):
+        calls.append((service, region))
+        if service == 'account':
+            return FakeAccount(error=RuntimeError('AccessDeniedException'))
+        if region == 'ap-east-2':
+            return FakeEc2(error=RuntimeError('AuthFailure: region not enabled'))
+        return ec2
+    monkeypatch.setattr(r, 'create_client', fake_create)
+    assert r.fetch_enabled_regions('aws', 'ap-east-2') == ['eu-west-1', 'us-east-1']
+    assert calls[-1] == ('ec2', 'us-east-1')

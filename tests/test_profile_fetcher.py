@@ -541,3 +541,26 @@ def test_summary_with_null_models_is_skipped():
         system=[{'inferenceProfileId': f"us.{HAIKU}", 'models': None}, system_profile(f"au.{HAIKU}", AU_ARNS)],
         application=[{'inferenceProfileId': 'nullmodels1', 'models': None}, app_profile('auapp000011', 'a', AU_ARNS)]))
     assert [p['id'] for p in fetcher.list_application_profiles()] == ['auapp000011']
+
+
+@pytest.mark.parametrize('content', ['prefixes: [kr]\n', '- prefix: kr\n', 'prefixes:\n  - {description: x}\n'])
+def test_malformed_user_prefix_mapping_falls_back_to_bundled(content, tmp_path, monkeypatch):
+    from bedrock_usage_analyzer.aws import bedrock
+    from bedrock_usage_analyzer.utils import paths
+    monkeypatch.setattr(paths, 'get_user_data_dir', lambda: tmp_path)
+    (tmp_path / 'prefix-mapping.yml').write_text(content)
+    bedrock.load_prefix_mapping(refresh=True)
+    try:
+        assert 'us' in bedrock.get_profile_prefixes()
+        assert split_profile_id(f"us.{HAIKU}") == (HAIKU, 'us')
+    finally:
+        monkeypatch.undo()
+        bedrock.load_prefix_mapping(refresh=True)
+
+
+def test_profile_map_tolerates_null_models():
+    from bedrock_usage_analyzer.aws.bedrock import build_profile_map, discover_prefix_mapping
+    profiles = [{'inferenceProfileId': f"us.{HAIKU}", 'type': 'SYSTEM_DEFINED', 'models': None},
+                system_profile(f"au.{HAIKU}", AU_ARNS)]
+    assert build_profile_map(profiles) == {HAIKU: ['au']}
+    assert [d['prefix'] for d in discover_prefix_mapping('ap-southeast-2', profiles)] == ['au']

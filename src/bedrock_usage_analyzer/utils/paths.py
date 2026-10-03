@@ -127,8 +127,9 @@ def list_data_names(pattern: str = "*.yml") -> List[str]:
     file path; read them with yaml_handler.load_data_file.
     """
     import fnmatch
-    names = {p.name for p in list_data_files(pattern)}
-    try:
+    user_dir = get_user_data_dir()
+    names = {p.name for p in user_dir.glob(pattern)} if user_dir.exists() else set()
+    try:  # the bundled directory once, also inside a zipped package
         names.update(r.name for r in get_bundled_data_dir().iterdir() if fnmatch.fnmatch(r.name, pattern))
     except (TypeError, FileNotFoundError, ModuleNotFoundError, OSError):
         pass

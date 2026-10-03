@@ -400,7 +400,6 @@ class BedrockAnalyzer:
                     'region': self.region,
                     'region_info': region_info,
                     'endpoint': endpoint,
-                    'profile_prefix': profile_prefix,
                     'application_profile_scope': scope,
                     'file_label': self._file_label(endpoint, app_ids),
                 }
