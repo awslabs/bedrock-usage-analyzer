@@ -283,3 +283,22 @@ def test_endpoint_listed_tells_missing_endpoint_from_unmapped_one():
     assert analyzer._endpoint_listed('m', None) and analyzer._endpoint_listed('m', 'us')
     assert not analyzer._endpoint_listed('m', 'eu')
     assert not analyzer._endpoint_listed('new-model', None)
+
+
+def test_shared_tpd_quota_is_allowed_on_base():
+    name = 'Model invocation max tokens per day for Amazon Nova Lite (doubled for cross-region calls)'
+    assert mapping_conflict('amazon.nova-lite-v1:0', 'base', name, {'us', 'eu', 'apac'}) is None
+    assert mapping_conflict('amazon.nova-lite-v1:0', 'base',
+                            'Cross-region model inference tokens per minute for Amazon Nova Lite',
+                            {'us', 'eu', 'apac'})
+
+
+def test_quota_index_tolerates_null_endpoints():
+    from bedrock_usage_analyzer.sync.quota_index import QuotaIndexGenerator
+    gen = QuotaIndexGenerator.__new__(QuotaIndexGenerator)
+    gen.models, gen.entries = {}, []
+    key = ('aws', 'm')
+    gen.models[key] = {'model_id': 'm', 'partition': 'aws', 'endpoints': {}}
+    gen._merge_endpoints(key, {'endpoints': {'us': None, 'base': {'quotas': None}}}, 'us-east-1')
+    gen._extract_quota_entries()
+    assert gen.entries == []

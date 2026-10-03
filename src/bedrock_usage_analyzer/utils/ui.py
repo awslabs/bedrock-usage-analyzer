@@ -79,6 +79,19 @@ def _claude_endpoints_in(region: str, limit: int = 12) -> list:
     return sorted(options, key=newest_first, reverse=True)[:limit]
 
 
+def require_credentials_partition(bedrock_region: str, credential_regions: list) -> None:
+    """Exit when ``bedrock_region`` is outside the partition of ``credential_regions``.
+
+    e.g. GovCloud credentials with a commercial Bedrock region: every LLM call would fail.
+    """
+    from bedrock_usage_analyzer.utils.partition import get_partition_for_region
+    if credential_regions and \
+            get_partition_for_region(bedrock_region) != get_partition_for_region(credential_regions[0]):
+        print(f"\nBedrock region {bedrock_region} is not in the credentials' partition "
+              f"(regions available: {', '.join(credential_regions)}).", file=sys.stderr)
+        sys.exit(1)
+
+
 def select_quota_mapping_params(target_region: str = None, bedrock_region: str = None, model_id: str = None) -> Tuple[str, str, str]:
     """Interactive selection for quota mapping parameters
     
@@ -118,11 +131,8 @@ def select_quota_mapping_params(target_region: str = None, bedrock_region: str =
             "Step 1: Select AWS region to use for Bedrock API calls:",
             all_regions
         )
-    elif get_partition_for_region(bedrock_region) != get_partition_for_region(all_regions[0]):
-        # e.g. GovCloud credentials with a commercial Bedrock region: every LLM call would fail
-        print(f"\nBedrock region {bedrock_region} is not in the credentials' partition "
-              f"(regions available: {', '.join(all_regions)}).", file=sys.stderr)
-        sys.exit(1)
+    else:
+        require_credentials_partition(bedrock_region, all_regions)
     print(f"\n✓ Bedrock calls will use region: {bedrock_region}")
 
     # Step 2: Select model for mapping (skip if provided)

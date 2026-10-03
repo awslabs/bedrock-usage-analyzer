@@ -71,7 +71,9 @@ def mapping_conflict(model_id: str, endpoint_type: str, quota_name: Optional[str
     """Return why ``quota_name`` cannot be a quota of this model endpoint, or None."""
     if not quota_name:
         return None
-    name = quota_name.lower()
+    # The shared tokens-per-day quota ('... (doubled for cross-region calls)') is also the
+    # on-demand limit, so that note does not make it a cross-region quota
+    name = quota_name.lower().replace('(doubled for cross-region calls)', '')
     if endpoint_type in regional_prefixes and 'global' in name:
         return "global quota for a regional (geographic) cross-region endpoint"
     if endpoint_type == 'base' and 'cross-region' in name:

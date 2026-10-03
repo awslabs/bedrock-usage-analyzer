@@ -367,3 +367,24 @@ def test_unlisted_country_copy_also_shows_under_closest_endpoint():
     app = fetcher.list_application_profiles()[0]
     assert app['sources'] == [f"jp.{HAIKU}", f"apac.{HAIKU}"]
     assert fetcher.find_profiles(HAIKU, 'apac')[0][1:] == ['jponly00001']      # not lost from apac
+
+
+def test_copy_goes_to_narrowest_listed_profile_containing_it():
+    """A routing set grown since the copy: the narrowest listed superset is the source."""
+    jp_now = [arn(r, HAIKU) for r in ('ap-northeast-1', 'ap-northeast-3', 'ap-northeast-9')]
+    apac_now = jp_now + [arn('ap-southeast-1', HAIKU), arn('ap-south-1', HAIKU)]
+    fetcher = InferenceProfileFetcher(FakeBedrock(
+        system=[system_profile(f"jp.{HAIKU}", jp_now), system_profile(f"apac.{HAIKU}", apac_now)],
+        application=[app_profile('jpold000001', 'j', JP_ARNS)]))
+    assert fetcher.list_application_profiles()[0]['sources'] == [f"jp.{HAIKU}"]
+
+
+def test_kr_copy_resolves_without_a_country_table():
+    kr = [arn('ap-northeast-2', HAIKU), arn('ap-northeast-9', HAIKU)]
+    kr_now = kr + [arn('ap-northeast-8', HAIKU)]
+    apac = kr_now + [arn('ap-southeast-1', HAIKU), arn('ap-south-1', HAIKU)]
+    fetcher = InferenceProfileFetcher(FakeBedrock(
+        system=[system_profile(f"kr.{HAIKU}", kr_now), system_profile(f"apac.{HAIKU}", apac)],
+        application=[app_profile('kr000000001', 'k', kr)]))
+    app = fetcher.list_application_profiles()[0]
+    assert (app['source'], app['profile_prefix']) == (f"kr.{HAIKU}", 'kr')

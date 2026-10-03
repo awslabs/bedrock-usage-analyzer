@@ -385,3 +385,16 @@ def test_quota_mapping_rejects_bedrock_region_of_other_partition(monkeypatch):
                         lambda regions, region=None: (['us-gov-east-1', 'us-gov-west-1'], 'aws-us-gov'))
     with pytest.raises(SystemExit):
         ui.select_quota_mapping_params(target_region='us-gov-west-1', bedrock_region='us-east-1', model_id='m')
+
+
+def test_fm_quotas_with_all_args_still_checks_bedrock_partition(monkeypatch):
+    import argparse
+    from bedrock_usage_analyzer import __main__ as cli
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.regions_for_credentials',
+                        lambda regions, region=None: (['us-gov-east-1', 'us-gov-west-1'], 'aws-us-gov'))
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.quota_mapper.QuotaMapper',
+                        lambda *a, **k: pytest.fail('mapper must not start'))
+    args = argparse.Namespace(target_region='us-gov-west-1', bedrock_region='us-east-1',
+                              model_id='m', update_bundle=False)
+    with pytest.raises(SystemExit):
+        cli.cmd_refresh_fm_quotas(args)

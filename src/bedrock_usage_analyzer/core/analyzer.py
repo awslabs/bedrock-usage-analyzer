@@ -52,6 +52,13 @@ class BedrockAnalyzer:
         self.output_generator = None  # Initialized in analyze() with output_dir
         self._fm_models = None  # Region's fm-list, loaded on first quota lookup
     
+    def _system_profile_listed(self, profile_id) -> bool:
+        """True unless the region's system profiles were listed and do not include it."""
+        try:
+            return self.profile_fetcher.is_system_profile(profile_id)
+        except Exception:
+            return True  # cannot tell; keep the refresh hint
+
     def _endpoint_listed(self, model_id, profile_prefix) -> bool:
         """True when the region's fm-list has this model with this endpoint."""
         self._load_quota_codes(model_id, profile_prefix)  # loads the list once
@@ -286,7 +293,12 @@ class BedrockAnalyzer:
 
             # Step 2: Fetch quotas
             quota_codes = self._load_quota_codes(model_id, profile_prefix)
-            if not any(quota_codes.values()) and profile_prefix != UNKNOWN_SOURCE:
+            if not any(quota_codes.values()) and profile_prefix not in (None, UNKNOWN_SOURCE) and \
+                    not self._system_profile_listed(f"{profile_prefix}.{model_id}"):
+                # e.g. a copy of a retired au.* profile: no quota exists to map
+                logger.info(f"  {profile_prefix}.{model_id} is not offered in {self.region}; "
+                            f"the report will show usage without limits")
+            elif not any(quota_codes.values()) and profile_prefix != UNKNOWN_SOURCE:
                 if self._endpoint_listed(model_id, profile_prefix):
                     fix = f"bua refresh fm-quotas {self.region}"
                 else:

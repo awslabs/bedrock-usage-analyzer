@@ -186,7 +186,12 @@ def cmd_refresh_fm_quotas(args):
             bedrock_region=bedrock_region,
             model_id=model_id
         )
-    
+    else:
+        from bedrock_usage_analyzer.sync.regions import load_region_names, regions_for_credentials
+        from bedrock_usage_analyzer.utils.ui import require_credentials_partition
+        credential_regions, _ = regions_for_credentials(load_region_names(), target_region)
+        require_credentials_partition(bedrock_region, credential_regions)
+
     mapper = QuotaMapper(bedrock_region, model_id, target_region)
     mapper.run(update_bundle=args.update_bundle)
     
