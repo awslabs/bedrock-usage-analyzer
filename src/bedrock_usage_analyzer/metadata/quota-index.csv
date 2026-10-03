@@ -19,8 +19,8 @@ amazon.nova-2-multimodal-embeddings-v1:0,base,concurrent,L-44704E61,On-demand In
 amazon.nova-2-multimodal-embeddings-v1:0,base,rpm,L-29E17D48,On-demand model inference requests per minute for Amazon Nova 2 Multimodal Embeddings V1,aws
 amazon.nova-2-sonic-v1:0,base,concurrent,L-995EBD81,On-demand InvokeModel concurrent requests for Amazon Nova 2 Sonic,aws
 amazon.nova-lite-v1:0,base,rpm,L-E386A278,On-demand model inference requests per minute for Amazon Nova Lite,aws
-amazon.nova-lite-v1:0,base,tpm,L-70423BF8,On-demand model inference tokens per minute for Amazon Nova Lite,aws
 amazon.nova-lite-v1:0,base,tpd,L-45E0AD92,Model invocation max tokens per day for Amazon Nova Lite (doubled for cross-region calls),aws
+amazon.nova-lite-v1:0,base,tpm,L-70423BF8,On-demand model inference tokens per minute for Amazon Nova Lite,aws
 amazon.nova-lite-v1:0,us,rpm,L-89F8391A,Cross-region model inference requests per minute for Amazon Nova Lite,aws
 amazon.nova-lite-v1:0,us,tpd,L-45E0AD92,Model invocation max tokens per day for Amazon Nova Lite (doubled for cross-region calls),aws
 amazon.nova-lite-v1:0,us,tpm,L-7C42E72A,Cross-region model inference tokens per minute for Amazon Nova Lite,aws
@@ -34,8 +34,8 @@ amazon.nova-lite-v1:0,eu,rpm,L-89F8391A,Cross-region model inference requests pe
 amazon.nova-lite-v1:0,eu,tpd,L-45E0AD92,Model invocation max tokens per day for Amazon Nova Lite (doubled for cross-region calls),aws
 amazon.nova-lite-v1:0,eu,tpm,L-7C42E72A,Cross-region model inference tokens per minute for Amazon Nova Lite,aws
 amazon.nova-micro-v1:0,base,rpm,L-E118F160,On-demand model inference requests per minute for Amazon Nova Micro,aws
-amazon.nova-micro-v1:0,base,tpm,L-CFA4FA0D,On-demand model inference tokens per minute for Amazon Nova Micro,aws
 amazon.nova-micro-v1:0,base,tpd,L-D2912E70,Model invocation max tokens per day for Amazon Nova Micro (doubled for cross-region calls),aws
+amazon.nova-micro-v1:0,base,tpm,L-CFA4FA0D,On-demand model inference tokens per minute for Amazon Nova Micro,aws
 amazon.nova-micro-v1:0,us,rpm,L-3F110E0F,Cross-region model inference requests per minute for Amazon Nova Micro,aws
 amazon.nova-micro-v1:0,us,tpd,L-D2912E70,Model invocation max tokens per day for Amazon Nova Micro (doubled for cross-region calls),aws
 amazon.nova-micro-v1:0,us,tpm,L-DC7FF66C,Cross-region model inference tokens per minute for Amazon Nova Micro,aws
@@ -46,8 +46,8 @@ amazon.nova-micro-v1:0,eu,rpm,L-3F110E0F,Cross-region model inference requests p
 amazon.nova-micro-v1:0,eu,tpd,L-D2912E70,Model invocation max tokens per day for Amazon Nova Micro (doubled for cross-region calls),aws
 amazon.nova-micro-v1:0,eu,tpm,L-DC7FF66C,Cross-region model inference tokens per minute for Amazon Nova Micro,aws
 amazon.nova-pro-v1:0,base,rpm,L-F2717A44,On-demand model inference requests per minute for Amazon Nova Pro,aws
-amazon.nova-pro-v1:0,base,tpm,L-CE33604C,On-demand model inference tokens per minute for Amazon Nova Pro,aws
 amazon.nova-pro-v1:0,base,tpd,L-D690997B,Model invocation max tokens per day for Amazon Nova Pro (doubled for cross-region calls),aws
+amazon.nova-pro-v1:0,base,tpm,L-CE33604C,On-demand model inference tokens per minute for Amazon Nova Pro,aws
 amazon.nova-pro-v1:0,us,rpm,L-ED46B8C5,Cross-region model inference requests per minute for Amazon Nova Pro,aws
 amazon.nova-pro-v1:0,us,tpd,L-D690997B,Model invocation max tokens per day for Amazon Nova Pro (doubled for cross-region calls),aws
 amazon.nova-pro-v1:0,us,tpm,L-C0326783,Cross-region model inference tokens per minute for Amazon Nova Pro,aws
@@ -148,8 +148,8 @@ cohere.embed-english-v3,base,tpm,L-A2BE277A,On-demand model inference tokens per
 cohere.embed-multilingual-v3,base,rpm,L-9E5BD0C6,On-demand model inference requests per minute for Cohere Embed Multilingual,aws
 cohere.embed-multilingual-v3,base,tpm,L-C2F86908,On-demand model inference tokens per minute for Cohere Embed Multilingual,aws
 cohere.embed-v4:0,base,rpm,L-BE5FD99B,On-demand model inference requests per minute for Cohere Embed V4,aws
-cohere.embed-v4:0,base,tpm,L-C47B85D5,On-demand model inference tokens per minute for Cohere Embed V4,aws
 cohere.embed-v4:0,base,tpd,L-F1BB08BB,Model invocation max tokens per day for Cohere Embed V4 (doubled for cross-region calls),aws
+cohere.embed-v4:0,base,tpm,L-C47B85D5,On-demand model inference tokens per minute for Cohere Embed V4,aws
 cohere.embed-v4:0,global,rpm,L-7089DC7D,Global cross-region model inference requests per minute for Cohere Embed V4,aws
 cohere.embed-v4:0,global,tpd,L-795ADAB0,Global cross-region model inference tokens per day for Cohere Embed V4,aws
 cohere.embed-v4:0,global,tpm,L-02DFBB76,Global cross-region model inference tokens per minute for Cohere Embed V4,aws
@@ -327,16 +327,16 @@ anthropic.claude-3-5-sonnet-20240620-v1:0,apac,rpm,L-F457545D,Cross-region model
 anthropic.claude-3-5-sonnet-20240620-v1:0,apac,tpd,L-E7D41161,Model invocation max tokens per day for Anthropic Claude 3.5 Sonnet V1 (doubled for cross-region calls),aws
 anthropic.claude-3-5-sonnet-20240620-v1:0,apac,tpm,L-479B647F,Cross-region model inference tokens per minute for Anthropic Claude 3.5 Sonnet,aws
 anthropic.claude-3-5-sonnet-20240620-v1:0,base,rpm,L-254CACF4,On-demand model inference requests per minute for Anthropic Claude 3.5 Sonnet,aws
-anthropic.claude-3-5-sonnet-20240620-v1:0,base,tpm,L-A50569E5,On-demand model inference tokens per minute for Anthropic Claude 3.5 Sonnet,aws
 anthropic.claude-3-5-sonnet-20240620-v1:0,base,tpd,L-E7D41161,Model invocation max tokens per day for Anthropic Claude 3.5 Sonnet V1 (doubled for cross-region calls),aws
+anthropic.claude-3-5-sonnet-20240620-v1:0,base,tpm,L-A50569E5,On-demand model inference tokens per minute for Anthropic Claude 3.5 Sonnet,aws
 anthropic.claude-3-5-sonnet-20241022-v2:0,apac,rpm,L-1D3E59A3,Cross-Region model inference requests per minute for Anthropic Claude 3.5 Sonnet V2,aws
 anthropic.claude-3-5-sonnet-20241022-v2:0,apac,tpm,L-FF8B4E28,Cross-Region model inference tokens per minute for Anthropic Claude 3.5 Sonnet V2,aws
 anthropic.claude-3-haiku-20240307-v1:0,apac,rpm,L-616A3F5B,Cross-region model inference requests per minute for Anthropic Claude 3 Haiku,aws
 anthropic.claude-3-haiku-20240307-v1:0,apac,tpd,L-A60EE1AF,Model invocation max tokens per day for Anthropic Claude 3 Haiku (doubled for cross-region calls),aws
 anthropic.claude-3-haiku-20240307-v1:0,apac,tpm,L-DCADBC78,Cross-region model inference tokens per minute for Anthropic Claude 3 Haiku,aws
 anthropic.claude-3-haiku-20240307-v1:0,base,rpm,L-2DC80978,On-demand model inference requests per minute for Anthropic Claude 3 Haiku,aws
-anthropic.claude-3-haiku-20240307-v1:0,base,tpm,L-8CE99163,On-demand model inference tokens per minute for Anthropic Claude 3 Haiku,aws
 anthropic.claude-3-haiku-20240307-v1:0,base,tpd,L-A60EE1AF,Model invocation max tokens per day for Anthropic Claude 3 Haiku (doubled for cross-region calls),aws
+anthropic.claude-3-haiku-20240307-v1:0,base,tpm,L-8CE99163,On-demand model inference tokens per minute for Anthropic Claude 3 Haiku,aws
 anthropic.claude-3-7-sonnet-20250219-v1:0,apac,rpm,L-3D8CC480,Cross-region model inference requests per minute for Anthropic Claude 3.7 Sonnet V1,aws
 anthropic.claude-3-7-sonnet-20250219-v1:0,apac,tpd,L-9EB71894,Model invocation max tokens per day for Anthropic Claude 3.7 Sonnet V1 (doubled for cross-region calls),aws
 anthropic.claude-3-7-sonnet-20250219-v1:0,apac,tpm,L-6E888CC2,Cross-region model inference tokens per minute for Anthropic Claude 3.7 Sonnet V1,aws

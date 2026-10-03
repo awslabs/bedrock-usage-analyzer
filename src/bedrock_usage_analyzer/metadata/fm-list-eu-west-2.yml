@@ -558,14 +558,9 @@ models:
     eu:
       quotas:
         concurrent: null
-        rpm:
-          code: L-EB8C1F30
-          name: Cross-region model inference requests per minute for Cohere Embed
-            V4
+        rpm: null
         tpd: null
-        tpm:
-          code: L-4C3F0FE6
-          name: Cross-region model inference tokens per minute for Cohere Embed V4
+        tpm: null
     global:
       quotas:
         concurrent: null

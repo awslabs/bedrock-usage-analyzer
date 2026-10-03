@@ -127,15 +127,9 @@ models:
     base:
       quotas:
         concurrent: null
-        rpm:
-          code: L-26C560CE
-          name: On-demand model inference requests per minute for Amazon Titan Text
-            Embeddings V2
+        rpm: null
         tpd: null
-        tpm:
-          code: L-DE641971
-          name: On-demand model inference tokens per minute for Amazon Titan Text
-            Embeddings V2
+        tpm: null
   inference_types:
   - ON_DEMAND
   model_id: amazon.titan-embed-text-v2:0
