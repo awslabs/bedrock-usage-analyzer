@@ -5,18 +5,20 @@
 
 import logging
 import copy
+import functools
 import sys
 from typing import Dict, List, Optional
 
 from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list, save_yaml
 from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
-from bedrock_usage_analyzer.aws.servicequotas import fetch_service_quotas
+from bedrock_usage_analyzer.aws.servicequotas import QUOTA_MISSING, check_quota, fetch_service_quotas
 from bedrock_usage_analyzer.aws.bedrock_llm import extract_common_name, extract_quota_codes
 from bedrock_usage_analyzer.aws.bedrock import get_endpoint_quota_keywords, get_regional_profile_prefixes
 from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict
 
 logger = logging.getLogger(__name__)
 
+@functools.lru_cache(maxsize=None)
 def _normalize(text: str) -> str:
     """Lower-case and collapse '-', '_' and spaces so model IDs match quota names."""
     return ' '.join(text.lower().replace('-', ' ').replace('_', ' ').split())
@@ -38,6 +40,7 @@ class QuotaMapper:
         self.target_region = target_region
         self.common_name_cache = {}
         self.lcode_cache = {}
+        self._listed_codes = {}  # region -> quota codes of its listing
         
     def run(self, update_bundle: bool = False):
         """Execute quota mapping for all regions
@@ -96,6 +99,7 @@ class QuotaMapper:
         updated_count = 0
         regional = set(get_regional_profile_prefixes())
         listed_codes = {q.get('QuotaCode') for q in quotas}
+        self._listed_codes[region] = listed_codes  # reused for every model and endpoint
         for i, fm in enumerate(fm_list, 1):
             model_id = fm['model_id']
             logger.info(f"    [{i}/{len(fm_list)}] {model_id}... ", extra={'end': ''})
@@ -152,15 +156,20 @@ class QuotaMapper:
     
     @staticmethod
     def _drop_unlisted_saved_codes(fm: Dict, listed_codes, region: str) -> None:
-        """Null saved codes that the region's (successful) quota listing does not contain."""
+        """Null saved codes that the region's quota listing lacks and Service Quotas confirms missing.
+
+        A listing can leave out a quota whose applied value is unavailable, so a code absent
+        from it is looked up before it is dropped (as `bua refresh quota-index` does).
+        """
         if not listed_codes:
             return
         for endpoint_type, endpoint in (fm.get('endpoints') or {}).items():
             quotas = (endpoint or {}).get('quotas') or {}
             for metric, value in quotas.items():
-                if isinstance(value, dict) and value.get('code') and value['code'] not in listed_codes:
-                    logger.debug(f"Dropping {value['code']} for {fm['model_id']} ({endpoint_type}): "
-                                 f"not listed in {region}")
+                if isinstance(value, dict) and value.get('code') and value['code'] not in listed_codes \
+                        and check_quota(value['code'], region)[0] == QUOTA_MISSING:
+                    logger.info(f"  Dropping {value['code']} for {fm['model_id']} ({endpoint_type}): "
+                                f"does not exist in {region}")
                     quotas[metric] = None
 
     @staticmethod
@@ -180,7 +189,7 @@ class QuotaMapper:
                           endpoint_type: str, quotas: List[Dict]) -> Optional[Dict]:
         """Get quota mapping for a specific endpoint"""
         cache_key = (model_id, endpoint_type if endpoint_type in ['base', 'cross-region', 'global'] else 'cross-region')
-        region_codes = {q.get('QuotaCode') for q in quotas}
+        region_codes = self._listed_codes.get(region) or {q.get('QuotaCode') for q in quotas}
         cached = self.lcode_cache.get(cache_key)
         # Codes are shared across regions, but a region may lack a quota: reuse the cached
         # mapping only when every code in it exists in this region

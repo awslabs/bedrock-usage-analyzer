@@ -369,10 +369,15 @@ def test_quota_index_ignores_regions_file_of_another_partition(monkeypatch, tmp_
     assert 'us-gov-east-1' in asked                          # not dropped by a commercial regions.yml
 
 
-def test_fm_quotas_drops_saved_codes_missing_from_the_listing():
+def test_fm_quotas_drops_saved_codes_missing_from_the_listing(monkeypatch):
     fm = {'model_id': 'm', 'endpoints': {'base': {'quotas': {
-        'tpm': {'code': 'L-GONE', 'name': 'x'}, 'rpm': {'code': 'L-OK', 'name': 'y'}}}}}
+        'tpm': {'code': 'L-GONE', 'name': 'x'}, 'rpm': {'code': 'L-OK', 'name': 'y'},
+        'tpd': {'code': 'L-UNLISTED', 'name': 'z'}}}}}
+    # Absent from the listing: dropped only when GetServiceQuota confirms it is missing
+    monkeypatch.setattr(qm, 'check_quota', lambda code, region:
+                        ('missing', None) if code == 'L-GONE' else ('ok', {}))
     qm.QuotaMapper._drop_unlisted_saved_codes(fm, {'L-OK'}, 'us-east-1')
-    assert fm['endpoints']['base']['quotas'] == {'tpm': None, 'rpm': {'code': 'L-OK', 'name': 'y'}}
+    assert fm['endpoints']['base']['quotas'] == {
+        'tpm': None, 'rpm': {'code': 'L-OK', 'name': 'y'}, 'tpd': {'code': 'L-UNLISTED', 'name': 'z'}}
     qm.QuotaMapper._drop_unlisted_saved_codes(fm, set(), 'us-east-1')          # failed listing: no change
     assert fm['endpoints']['base']['quotas']['rpm']['code'] == 'L-OK'

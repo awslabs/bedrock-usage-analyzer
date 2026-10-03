@@ -35,7 +35,7 @@ _clients: Dict[str, object] = {}
 _clients_lock = threading.Lock()
 
 
-def _client(region: str):
+def regional_client(region: str):
     """One Service Quotas client per region, reused across quota lookups (thread-safe)."""
     with _clients_lock:
         if region not in _clients:
@@ -43,16 +43,11 @@ def _client(region: str):
         return _clients[region]
 
 
-def regional_client(region: str):
-    """The shared Service Quotas client of a region."""
-    return _client(region)
-
-
 def list_quota_codes(region: str, service_code: str = 'bedrock') -> Optional[Dict[str, Dict]]:
     """All quotas of the service in a region by code (one paginated listing), or None on error."""
     try:
         quotas = {}
-        paginator = _client(region).get_paginator('list_service_quotas')
+        paginator = regional_client(region).get_paginator('list_service_quotas')
         for page in paginator.paginate(ServiceCode=service_code):
             quotas.update((q['QuotaCode'], q) for q in page.get('Quotas', []) if q.get('QuotaCode'))
         return quotas
@@ -75,7 +70,7 @@ def check_quota(quota_code: str, region: str, service_code: str = 'bedrock', cli
         network, permissions), which callers must not treat as "missing".
     """
     try:
-        response = (client or _client(region)).get_service_quota(ServiceCode=service_code, QuotaCode=quota_code)
+        response = (client or regional_client(region)).get_service_quota(ServiceCode=service_code, QuotaCode=quota_code)
         return QUOTA_OK, response.get('Quota', {})
     except ClientError as e:
         if e.response.get('Error', {}).get('Code') == 'NoSuchResourceException':

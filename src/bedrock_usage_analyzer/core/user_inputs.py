@@ -357,8 +357,7 @@ class UserInputs:
     def _is_known_model(self, value: str) -> bool:
         """True when ``value`` is a model or system profile ID listed for the region."""
         model_id, prefix = split_profile_id(value)
-        if not self.region or not os.path.exists(get_data_path(f'fm-list-{self.region}.yml')):
-            return prefix is not None
+        # The region's fm-list exists here: collect() exits earlier when it is missing
         for model in self._load_fm_list(self.region):
             if model.get('model_id') == model_id:
                 return prefix is None or prefix in (model.get('endpoints') or {})

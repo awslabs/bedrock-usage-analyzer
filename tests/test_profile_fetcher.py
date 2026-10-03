@@ -419,3 +419,32 @@ def test_single_arn_copy_of_model_with_on_demand_endpoint_is_base_first():
                                       on_demand_models=[HAIKU])
     app = fetcher.list_application_profiles()[0]
     assert app['sources'] == [HAIKU, f"au.{HAIKU}"] and app['profile_prefix'] is None
+
+
+def test_new_country_geography_is_learned_when_its_set_drifts():
+    """kr.* is not in the defaults; it is a country because its regions sit inside apac.*."""
+    kr_now = [arn('ap-northeast-2', HAIKU), arn('ap-northeast-8', HAIKU)]
+    old_copy = [arn('ap-northeast-2', HAIKU), arn('ap-northeast-9', HAIKU)]
+    apac = kr_now + [arn('ap-northeast-9', HAIKU), arn('ap-southeast-1', HAIKU)]
+    fetcher = InferenceProfileFetcher(FakeBedrock(
+        system=[system_profile(f"kr.{HAIKU}", kr_now), system_profile(f"apac.{HAIKU}", apac),
+                system_profile(f"kr.{NOVA}", [arn('ap-northeast-2', NOVA), arn('ap-northeast-9', NOVA)]),
+                system_profile(f"apac.{NOVA}", [arn('ap-northeast-2', NOVA), arn('ap-northeast-9', NOVA),
+                                                arn('ap-southeast-1', NOVA)])],
+        application=[app_profile('krold000001', 'k', old_copy)]))
+    assert fetcher.list_application_profiles()[0]['sources'] == [f"kr.{HAIKU}"]
+
+
+def test_failed_system_listing_is_not_retried_forever():
+    calls = []
+
+    class Down(FakeBedrock):
+        def list_inference_profiles(self, **kwargs):
+            calls.append(kwargs.get('typeEquals'))
+            raise RuntimeError('Could not connect to the endpoint URL')
+
+    fetcher = InferenceProfileFetcher(Down())
+    for _ in range(4):
+        with pytest.raises(RuntimeError):
+            fetcher.is_system_profile('x')
+    assert len(calls) == 2                                   # MAX_LISTING_ATTEMPTS, then cached

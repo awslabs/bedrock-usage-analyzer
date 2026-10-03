@@ -62,26 +62,50 @@ class InferenceProfileFetcher:
         self._app_profiles: Optional[List[Dict]] = None
         self._listing_error: Optional[Exception] = None
         self._listing_failures = 0
+        self._system_error: Optional[Exception] = None
+        self._system_failures = 0
         self._tags_cache: Dict[str, Dict[str, str]] = {}
 
     # ------------------------------------------------------------------ listing
 
     def _load_system_profiles(self) -> List[Dict]:
+        if self._system_error is not None:
+            raise self._system_error  # given up for this run, like the application listing
         if self._system_profiles is None:
-            self._system_profiles = list_inference_profiles(self.bedrock_client, 'SYSTEM_DEFINED')
-            for profile in self._system_profiles:
+            try:
+                profiles = list_inference_profiles(self.bedrock_client, 'SYSTEM_DEFINED')
+            except Exception as e:
+                self._system_failures += 1
+                if is_access_denied(e) or self._system_failures >= MAX_LISTING_ATTEMPTS:
+                    self._system_error = e
+                raise
+            self._system_profiles = profiles
+            prefix_regions: Dict[str, set] = {}
+            for profile in profiles:
                 self._system_ids.add(profile['inferenceProfileId'])
                 arns = frozenset(m.get('modelArn', '') for m in profile.get('models', []))
                 if arns:
                     # Several profiles can share one routing set (jp.X and apac.X when a model
                     # is offered only in Tokyo and Osaka), so keep every candidate
                     self._system_by_arns.setdefault(arns, []).append(profile['inferenceProfileId'])
-                    # Learn new regions of a country geography from its listed profiles
-                    prefix = profile['inferenceProfileId'].split('.', 1)[0]
                     regions = {region_from_arn(a) for a in arns}
-                    if prefix in self._country_regions and all(regions):
-                        self._country_regions[prefix].update(regions)
+                    if all(regions):  # region-bound (global profiles have a region-less ARN)
+                        prefix = profile['inferenceProfileId'].split('.', 1)[0]
+                        prefix_regions.setdefault(prefix, set()).update(regions)
+            self._learn_country_geographies(prefix_regions)
         return self._system_profiles
+
+    def _learn_country_geographies(self, prefix_regions: Dict[str, set]) -> None:
+        """Country geographies (jp, au, kr, ...) from the listed profiles.
+
+        A regional prefix whose regions are a strict subset of another regional prefix's
+        (kr.* inside apac.*) is a country geography, so a new one needs no code change.
+        The defaults also cover a country whose profiles are not listed for every model.
+        """
+        for prefix, regions in prefix_regions.items():
+            if prefix in self._country_regions or any(
+                    regions < other for p, other in prefix_regions.items() if p != prefix):
+                self._country_regions.setdefault(prefix, set()).update(regions)
 
     def list_application_profiles(self) -> List[Dict]:
         """All application inference profiles in the region, with their resolved source.
@@ -218,9 +242,10 @@ class InferenceProfileFetcher:
         return [inferred] if inferred else []
 
     def _country_of(self, regions) -> Optional[str]:
-        """The country prefix (jp, au, in) whose regions contain all of ``regions``."""
+        """The country prefix (jp, au, kr, ...) whose regions contain all of ``regions``."""
+        listed = {p.split('.', 1)[0] for p in self._system_ids}
         for prefix, members in sorted(self._country_regions.items()):
-            if regions and set(regions) <= members and prefix in self.prefix_map:
+            if regions and set(regions) <= members and (prefix in self.prefix_map or prefix in listed):
                 return prefix
         return None
 

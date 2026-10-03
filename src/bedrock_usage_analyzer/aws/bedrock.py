@@ -52,12 +52,9 @@ def _load_prefix_mapping() -> List[Dict]:
     if _prefix_mapping_cache is not None:
         return _prefix_mapping_cache
 
-    from bedrock_usage_analyzer.utils.paths import get_user_data_dir, load_bundled_yaml
-
+    bundled, user = prefix_mapping_layers()
     merged: Dict[str, Dict] = {}
-    for entry in (load_bundled_yaml('prefix-mapping.yml') or {}).get('prefixes', []) or []:
-        merged[entry['prefix']] = entry
-    for entry in _read_prefixes(get_user_data_dir() / 'prefix-mapping.yml'):
+    for entry in bundled + user:
         merged[entry['prefix']] = entry
 
     if not merged:
@@ -68,6 +65,13 @@ def _load_prefix_mapping() -> List[Dict]:
         )
     _prefix_mapping_cache = sorted(merged.values(), key=lambda m: m['prefix'])
     return _prefix_mapping_cache
+
+
+def prefix_mapping_layers():
+    """(bundled entries, user entries) of prefix-mapping.yml, each read once."""
+    from bedrock_usage_analyzer.utils.paths import get_user_data_dir, load_bundled_yaml
+    bundled = list((load_bundled_yaml('prefix-mapping.yml') or {}).get('prefixes', []) or [])
+    return bundled, list(_read_prefixes(get_user_data_dir() / 'prefix-mapping.yml'))
 
 
 def load_prefix_mapping(refresh: bool = False) -> List[Dict]:

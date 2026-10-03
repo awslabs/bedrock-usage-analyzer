@@ -14,6 +14,7 @@ from bedrock_usage_analyzer.aws.bedrock import (
     build_profile_map,
     discover_prefix_mapping,
     load_prefix_mapping,
+    prefix_mapping_layers,
     QUOTA_KEYWORD_ON_DEMAND,
     QUOTA_KEYWORD_GLOBAL
 )
@@ -74,10 +75,9 @@ def refresh_region(region_name: str, update_bundle: bool = False):
     # The user file only ever gets the user's own and newly discovered entries: a full copy
     # of the bundle there would hide later bundled changes to existing prefixes.
     prefix_file = get_writable_path('prefix-mapping.yml')
-    known = {p['prefix']: p for p in load_prefix_mapping(refresh=True)}
-    user_entries = {}
-    if prefix_file.exists():
-        user_entries = {p['prefix']: p for p in (load_yaml(str(prefix_file)) or {}).get('prefixes', []) or []}
+    bundled, user = prefix_mapping_layers()
+    user_entries = {p['prefix']: p for p in user}
+    known = {**{p['prefix']: p for p in bundled}, **user_entries}
     new_entries = [e for e in discovered if e['prefix'] not in known]
 
     # Manual entries (always include)
