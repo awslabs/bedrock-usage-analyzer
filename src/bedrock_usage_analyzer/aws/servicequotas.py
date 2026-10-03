@@ -53,7 +53,6 @@ def list_quota_codes(region: str, service_code: str = 'bedrock',
             quotas.update((q['QuotaCode'], q) for q in page.get('Quotas', []) if q.get('QuotaCode'))
         return quotas
     except Exception as e:
-        from bedrock_usage_analyzer.core.errors import is_access_denied
         # quiet_denied: callers that fall back to GetServiceQuota per code (the analyzer and
         # quota-index) do not need servicequotas:ListServiceQuotas, so no warning there
         (logger.debug if quiet_denied and is_access_denied(e) else logger.warning)(

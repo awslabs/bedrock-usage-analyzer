@@ -68,6 +68,13 @@ def save_yaml(filepath, data):
         yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
 
 
+def model_endpoints(model) -> dict:
+    """The 'endpoints' mapping of one parsed fm-list model; {} for null or a hand-edited
+    non-mapping value ('endpoints: TODO', 'endpoints: [us]')."""
+    endpoints = model.get('endpoints') if isinstance(model, dict) else None
+    return endpoints if isinstance(endpoints, dict) else {}
+
+
 def fm_endpoints(models, model_id):
     """Endpoint keys ('base', 'us', 'global', ...) of ``model_id`` in parsed fm-list models.
 
@@ -75,7 +82,7 @@ def fm_endpoints(models, model_id):
     """
     for model in models or []:
         if model.get('model_id') == model_id:
-            return set(model.get('endpoints') or {})
+            return set(model_endpoints(model))
     return None
 
 
@@ -96,8 +103,7 @@ def endpoint_quotas(model):
     'base: TODO') and non-mapping 'quotas' are skipped. The mappings are the model's own,
     so callers may null codes in place.
     """
-    endpoints = model.get('endpoints') if isinstance(model, dict) else None
-    for endpoint, endpoint_data in (endpoints if isinstance(endpoints, dict) else {}).items():
+    for endpoint, endpoint_data in model_endpoints(model).items():
         quotas = endpoint_data.get('quotas') if isinstance(endpoint_data, dict) else None
         if isinstance(quotas, dict):
             yield endpoint, quotas

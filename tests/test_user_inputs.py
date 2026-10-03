@@ -499,3 +499,10 @@ def test_missing_fm_list_still_exits_after_an_earlier_lookup(monkeypatch):
     assert inputs._load_fm_list('xx-test-1') == []             # an earlier caller (no list)
     with pytest.raises(SystemExit):
         inputs._ensure_fm_list('xx-test-1')                   # the 'run bua refresh fm-list' exit
+
+
+def test_hand_edited_endpoints_value_is_no_endpoints():
+    from bedrock_usage_analyzer.utils.yaml_handler import fm_endpoints, model_endpoints
+    models = [{'model_id': 'x', 'endpoints': 'TODO'}, {'model_id': 'y', 'endpoints': ['us']}]
+    assert fm_endpoints(models, 'x') == set() and fm_endpoints(models, 'y') == set()
+    assert model_endpoints({'endpoints': {'us': None}}) == {'us': None}

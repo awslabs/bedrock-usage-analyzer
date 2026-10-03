@@ -10,6 +10,7 @@ from typing import List, Dict, Optional, Tuple
 import yaml
 
 from bedrock_usage_analyzer.aws.client_factory import create_client
+from bedrock_usage_analyzer.core.errors import is_access_denied
 from bedrock_usage_analyzer.utils.partition import build_arn, partition_region_prefix
 
 logger = logging.getLogger(__name__)
@@ -323,7 +324,6 @@ def fetch_foundation_models(region: str) -> Optional[List[Dict]]:
         return models
     
     except Exception as e:
-        from bedrock_usage_analyzer.core.errors import is_access_denied
         error_msg = str(e)
         # The shared permission rule, plus the opt-in messages of a region not enabled
         if is_access_denied(e) or any(x in error_msg for x in ['not enabled', 'not subscribed']):

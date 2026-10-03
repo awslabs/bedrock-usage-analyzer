@@ -76,8 +76,10 @@ class QuotaIndexGenerator:
         commercial rows, and vice versa), but only the credentials' partition is
         validated against Service Quotas and cleaned up.
         """
-        from bedrock_usage_analyzer.sync.regions import SKIP_REGIONS, credentials_partition_or_exit
-        from bedrock_usage_analyzer.utils.partition import get_partition_for_region
+        from bedrock_usage_analyzer.sync.regions import (
+            SKIP_REGIONS, credentials_partition_or_exit, load_region_names, read_region_file)
+        from bedrock_usage_analyzer.utils.partition import (
+            PARTITION_HOME_REGIONS, filter_regions_by_partition, get_partition_for_region)
 
         self._partition = credentials_partition_or_exit()
         fm_files = []
@@ -95,14 +97,10 @@ class QuotaIndexGenerator:
         # Each model endpoint is validated in the first region listing a mapping for it, so
         # order the partition's home region first, then regions the account has enabled
         # (the user's regions.yml), and opt-in regions it may not have enabled last
-        from bedrock_usage_analyzer.sync.regions import read_region_file
-        from bedrock_usage_analyzer.utils.partition import PARTITION_HOME_REGIONS
         enabled = set(read_region_file(get_writable_path('regions.yml')))
         homes = set(PARTITION_HOME_REGIONS.values())
         # Only regions the account can call are validated and cleaned: an opt-in region it
         # has not enabled answers every lookup with an error (its codes are kept as they are)
-        from bedrock_usage_analyzer.sync.regions import load_region_names
-        from bedrock_usage_analyzer.utils.partition import filter_regions_by_partition
         # Only this partition's regions: a regions.yml written with other credentials says
         # nothing about which regions of this partition are enabled
         known = set(filter_regions_by_partition(enabled, self._partition))
