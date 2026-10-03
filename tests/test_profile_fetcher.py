@@ -149,7 +149,7 @@ def test_heuristic_fallback_without_system_profiles():
         'e0000000001': f"eu.{NOVA}",
         'a0000000001': f"apac.{NOVA}",
         'v0000000001': f"us-gov.{NOVA}",
-        'm0000000001': f"global.{NOVA}",
+        'm0000000001': None,                      # two families, no region-less ARN: not global
     }
 
 

@@ -43,3 +43,14 @@ def save_yaml(filepath, data):
     """
     with open(filepath, 'w', encoding='utf-8') as f:
         yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+
+
+def fm_endpoints(models, model_id):
+    """Endpoint keys ('base', 'us', 'global', ...) of ``model_id`` in parsed fm-list models.
+
+    None when the model is not listed. The one rule for "does the list have this endpoint".
+    """
+    for model in models or []:
+        if model.get('model_id') == model_id:
+            return set(model.get('endpoints') or {})
+    return None

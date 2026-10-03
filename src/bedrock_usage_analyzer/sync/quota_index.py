@@ -11,7 +11,7 @@ import sys
 from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
 from bedrock_usage_analyzer.utils.csv_handler import write_csv
 from bedrock_usage_analyzer.utils.paths import list_data_files, get_writable_path, get_bundle_path
-from bedrock_usage_analyzer.aws.servicequotas import check_quota, confirm_statuses, is_missing, list_quota_codes, lookup_quota, QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK
+from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, is_missing, list_quota_codes, lookup_quota, QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
 from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict, scrub_conflicting
 
@@ -264,8 +264,7 @@ class QuotaIndexGenerator:
         # confirmed one by one, so a code is never removed on the listing alone
         unresolved = sorted(k for k in pending - set(self._region_checks)
                             if k[0] not in (self._listings.get(k[1]) or {}))
-        # (lookup through this module's name, so tests can stub it)
-        confirm_statuses(unresolved, self._region_checks, lookup=lambda code, region: check_quota(code, region))
+        confirm_statuses(unresolved, self._region_checks)
         for key in pending - set(self._region_checks):
             self._region_checks[key] = QUOTA_OK  # in the region's listing
         # Every region file is also checked for mismatches by the quota name stored with each
@@ -297,15 +296,14 @@ class QuotaIndexGenerator:
         if region not in self._checked_regions:
             return (QUOTA_ERROR, None)  # not enabled for the account: kept, not looked up
         # Listings were fetched up front (in a pool); this only reads them
-        result = lookup_quota(code, region, self._listings, check=lambda c, r: check_quota(c, r),
-                              lister=lambda r: None)
+        result = lookup_quota(code, region, self._listings, lister=lambda r: None)
         self._region_checks[(code, region)] = result[0]
         return result
 
     def _missing_in(self, code: str, region: str) -> bool:
         if region not in self._checked_regions:
             return False  # not enabled for the account: cannot be verified, kept
-        return is_missing(code, region, self._region_checks, lookup=lambda c, r: check_quota(c, r))
+        return is_missing(code, region, self._region_checks)
 
     def _cleanup_region_errors(self, region: str):
         """Null out codes missing in this region or contradicting their model/endpoint (user copy, else bundled)"""

@@ -13,7 +13,7 @@ from ..aws.client_factory import create_client
 from ..core.errors import troubleshooting_hint
 from ..core.profile_fetcher import InferenceProfileFetcher
 from ..sync.regions import load_region_names
-from ..utils.yaml_handler import load_fm_list
+from ..utils.yaml_handler import fm_endpoints, load_fm_list
 from ..utils.ui import select_from_list
 from ..utils.paths import get_data_path
 from ..utils.partition import (
@@ -357,20 +357,14 @@ class UserInputs:
 
     def _profile_endpoints_of(self, model_id: str) -> list:
         """Inference profile prefixes the region's fm-list lists for ``model_id``."""
-        for model in self._load_fm_list(self.region):
-            if model.get('model_id') == model_id:
-                return sorted(p for p in (model.get('endpoints') or {}) if p != 'base')
-        return []
+        return sorted((fm_endpoints(self._load_fm_list(self.region), model_id) or set()) - {'base'})
 
     def _is_known_model(self, value: str) -> bool:
         """True when ``value`` is a model or system profile ID listed for the region."""
         model_id, prefix = split_profile_id(value)
         # The region's fm-list exists here: collect() exits earlier when it is missing
-        for model in self._load_fm_list(self.region):
-            if model.get('model_id') == model_id:
-                # A bare model ID is an endpoint only when the model is invokable on demand
-                return (prefix or 'base') in (model.get('endpoints') or {})
-        return False
+        # A bare model ID is an endpoint only when the model is invokable on demand
+        return (prefix or 'base') in (fm_endpoints(self._load_fm_list(self.region), model_id) or set())
 
     def _find_application_profile(self, identifier):
         """Look up an application profile, or None if absent or the list cannot be read."""

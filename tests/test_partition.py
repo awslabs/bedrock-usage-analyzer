@@ -248,3 +248,17 @@ def test_is_missing_caches_one_lookup_per_pair():
     lookup = lambda code, region: calls.append(code) or (sq.QUOTA_MISSING, None)
     assert sq.is_missing('L-1', 'us-east-1', cache, lookup) and sq.is_missing('L-1', 'us-east-1', cache, lookup)
     assert calls == ['L-1']
+
+
+def test_probe_reuses_the_detection_error(monkeypatch):
+    calls = []
+
+    def lookup(region, probe=False):
+        calls.append(region)
+        raise RuntimeError('InvalidClientTokenId')
+    monkeypatch.setattr(p, 'get_caller_identity', lookup)
+    assert p.detect_credentials_partition(None) is None
+    before = len(calls)
+    monkeypatch.setattr(p, 'probe_other_partitions', lambda region, lookup=None: {'Partition': 'aws-us-gov'})
+    assert p.probe_if_rejected(None)['Partition'] == 'aws-us-gov'
+    assert len(calls) == before                               # no second identity lookup

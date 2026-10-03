@@ -73,6 +73,7 @@ class InferenceProfileFetcher:
                                            for kind in ('SYSTEM_DEFINED', 'APPLICATION')}
         self._by_model: Dict[str, List] = {}   # model ID -> [(routing set, profile IDs)]
         self._listed_prefixes: set = set()
+        self._parts: Dict[str, tuple] = {}     # endpoint ID -> (prefix or None, model ID)
         self._tags_cache: Dict[str, Dict[str, str]] = {}
 
     # ------------------------------------------------------------------ listing
@@ -118,7 +119,12 @@ class InferenceProfileFetcher:
             # Candidates per model, so resolving one application profile only looks at its model
             # (each routing set is unique and all its profiles serve the same model)
             for arn_set, ids in self._system_by_arns.items():
-                self._by_model.setdefault(ids[0].split('.', 1)[-1], []).append((arn_set, ids))
+                model = next((m for m in map(model_id_from_arn, arn_set) if m), None)
+                if model:
+                    # Keyed like the lookup (the model of the routed ARNs, not the ID text)
+                    self._by_model.setdefault(model, []).append((arn_set, ids))
+                    for profile_id in ids:
+                        self._parts[profile_id] = (profile_id.split('.', 1)[0], model)
         return self._system_profiles
 
     def _learn_country_geographies(self, prefix_regions: Dict[str, set]) -> None:
@@ -153,14 +159,8 @@ class InferenceProfileFetcher:
                 sources = self.resolve_sources(arns)
                 if sources:
                     source = sources[0]
-                    first = source.split('.', 1)[0]
-                    if '.' in source and (source in self._system_ids or first in self._listed_prefixes
-                                          or first in self._country_regions):
-                        # A listed system profile or a known geography: the first segment is
-                        # the prefix, even one launched after this release (e.g. 'kr.')
-                        prefix, model_id = source.split('.', 1)
-                    else:
-                        model_id, prefix = split_profile_id(source)
+                    # Recorded where the source was chosen (listed profile, base model, guess)
+                    prefix, model_id = self._parts.get(source) or split_profile_id(source)[::-1]
                 else:
                     # Still listed (it can be analyzed by ID), but no endpoint or quotas are implied
                     model_ids = sorted({m for m in (model_id_from_arn(a) for a in arns) if m})
@@ -215,8 +215,8 @@ class InferenceProfileFetcher:
             # one decides the quotas: the on-demand endpoint when the model has one, else the
             # system profile (the model may have no on-demand endpoint at all).
             if model_id in self.on_demand_models:
-                return [model_id] + _specific_first(exact or [], self._country_regions)
-            return _specific_first(exact or [], self._country_regions) + [model_id]
+                return [self._endpoint(None, model_id)] + _specific_first(exact or [], self._country_regions)
+            return _specific_first(exact or [], self._country_regions) + [self._endpoint(None, model_id)]
 
         # The routing set no longer equals any listed profile (sets change over time). Only
         # listed profiles of this model are candidates, so the source always exists in the
@@ -260,6 +260,12 @@ class InferenceProfileFetcher:
         inferred = self._infer_from_regions(arns, model_id)
         return [inferred] if inferred else []
 
+    def _endpoint(self, prefix: Optional[str], model_id: str) -> str:
+        """Endpoint ID for (prefix, model), remembered so it is never split by guesswork."""
+        endpoint_id = f"{prefix}.{model_id}" if prefix else model_id
+        self._parts[endpoint_id] = (prefix, model_id)
+        return endpoint_id
+
     def _country_of(self, regions) -> Optional[str]:
         """The country prefix (jp, au, kr, ...) whose regions contain all of ``regions``."""
         # The narrowest geography first: learned sets can nest or overlap
@@ -273,12 +279,12 @@ class InferenceProfileFetcher:
         """Fallback when no system profile matches: guess from the ARN regions."""
         regions = [region_from_arn(a) for a in model_arns]
         if any(not r for r in regions):
-            return f"global.{model_id}"  # global profiles include a region-less ARN
+            return self._endpoint('global', model_id)  # global profiles include a region-less ARN
         # No listed profile of this model to compare with: a set inside one country is a copy
         # of that country's profile, not of apac.* (issue #7)
         country = self._country_of(regions)
         if country:
-            return f"{country}.{model_id}"
+            return self._endpoint(country, model_id)
         groups = {region_group(r) for r in regions}
         if len(groups) == 1:
             group = groups.pop()
@@ -286,8 +292,10 @@ class InferenceProfileFetcher:
                 # No system profile family for this geography (sa, me, mx, ...): an ID like
                 # 'sa.<model>' would not exist, so leave the source unknown
                 return None
-            return f"{self.prefix_map[group]}.{model_id}"
-        return f"global.{model_id}"
+            return self._endpoint(self.prefix_map[group], model_id)
+        # Several region families without a region-less ARN: a regional profile spanning
+        # them (us.* also routes to ca-central-1), not a global one. Which one cannot be told.
+        return None
 
     def is_system_profile(self, profile_id: str) -> bool:
         """True when ``profile_id`` is a system-defined inference profile in the region."""

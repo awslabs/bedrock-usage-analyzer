@@ -119,7 +119,7 @@ def test_quota_index_removes_saved_mismatches_in_every_region(monkeypatch, tmp_p
             {'model_id': SONNET4, 'provider': 'Anthropic', 'endpoints': {
                 'us': {'quotas': {'tpm': us_tpm}}, 'global': {'quotas': {'tpm': wrong}}}}]})
     names = {'L-GL46': wrong['name'], 'L-US': right['name']}
-    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: ('ok', {'QuotaName': names[code]}))
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: ('ok', {'QuotaName': names[code]}))
     gen = quota_index.QuotaIndexGenerator()
     gen.run()
     east = load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]['endpoints']
@@ -154,7 +154,7 @@ def test_unverified_conflicting_entry_is_left_out_of_csv(monkeypatch, tmp_path, 
     wrong = {'code': 'L-GL46', 'name': 'Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6'}
     save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [
         {'model_id': SONNET4, 'provider': 'Anthropic', 'endpoints': {'us': {'quotas': {'tpm': wrong}}}}]})
-    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: ('error', None))   # e.g. throttled
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: ('error', None))   # e.g. throttled
     quota_index.QuotaIndexGenerator().run()
     assert 'L-GL46' not in (tmp_path / 'data' / 'quota-index.csv').read_text()
     assert load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]['endpoints']['us']['quotas']['tpm'] is None
@@ -194,7 +194,7 @@ def test_quota_index_ignores_other_partitions(monkeypatch, tmp_path, no_bundle, 
             {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': {
                 'tpm': {'code': f'L-{region}', 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
     checked = []
-    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: checked.append(region) or ('ok', {'QuotaName': 'n'}))
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: checked.append(region) or ('ok', {'QuotaName': 'n'}))
     gen = quota_index.QuotaIndexGenerator()
     gen.run()
     assert set(checked) == {'us-east-1'} and set(gen._fm_data) == {'us-east-1'}
@@ -203,7 +203,7 @@ def test_quota_index_ignores_other_partitions(monkeypatch, tmp_path, no_bundle, 
 def test_quota_index_cleanup_never_creates_user_copies(monkeypatch, tmp_path, commercial_creds):
     """Bundled lists are left alone (a user copy would hide future bundled updates)."""
     before = set((tmp_path / 'data').glob('*')) if (tmp_path / 'data').exists() else set()
-    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: ('missing', None))
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: ('missing', None))
     quota_index.QuotaIndexGenerator().run()
     created = {p.name for p in (tmp_path / 'data').glob('fm-list-*.yml')} - {p.name for p in before}
     assert created == set()
@@ -253,7 +253,7 @@ def test_quota_index_keeps_other_partitions_rows(monkeypatch, tmp_path, no_bundl
                 'tpm': {'code': code, 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
     monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws-us-gov')
     checked = []
-    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: checked.append(code) or ('ok', {'QuotaName': 'n'}))
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: checked.append(code) or ('ok', {'QuotaName': 'n'}))
     quota_index.QuotaIndexGenerator().run()
     csv_text = (tmp_path / 'data' / 'quota-index.csv').read_text()
     assert 'L-COMM' in csv_text and 'L-GOV' in csv_text
@@ -268,7 +268,7 @@ def test_quota_index_prefers_home_and_enabled_regions_and_writes_partition(monke
             {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': {
                 'tpm': {'code': 'L-1', 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
     checked = []
-    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: checked.append(region) or ('ok', {'QuotaName': 'n'}))
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: checked.append(region) or ('ok', {'QuotaName': 'n'}))
     quota_index.QuotaIndexGenerator().run()
     assert checked[0] == 'us-east-1'                    # validated in the home region, not af-south-1
     header = (tmp_path / 'data' / 'quota-index.csv').read_text().splitlines()[0]
@@ -311,7 +311,7 @@ def test_quota_index_removes_code_missing_only_outside_source_region(monkeypatch
         save_yaml(str(tmp_path / 'data' / f'fm-list-{region}.yml'), {'models': [
             {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': {
                 'tpm': {'code': 'L-ABC', 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
-    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region:
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region:
                         ('missing', None) if region == 'ap-southeast-2' else ('ok', {'QuotaName': 'n'}))
     quota_index.QuotaIndexGenerator().run()
     sydney = load_yaml(str(tmp_path / 'data' / 'fm-list-ap-southeast-2.yml'))
@@ -332,7 +332,7 @@ def test_quota_index_uses_region_listings_and_confirms_absent_codes(monkeypatch,
               'ap-southeast-2': {}}
     monkeypatch.setattr(quota_index, 'list_quota_codes', lambda region, **_: listed[region])
     confirmed = []
-    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: confirmed.append((code, region)) or ('missing', None))
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: confirmed.append((code, region)) or ('missing', None))
     quota_index.QuotaIndexGenerator().run()
     assert confirmed == [('L-ABC', 'ap-southeast-2')]          # only the code absent from a listing
     sydney = load_yaml(str(tmp_path / 'data' / 'fm-list-ap-southeast-2.yml'))
@@ -348,7 +348,7 @@ def test_quota_index_skips_regions_the_account_has_not_enabled(monkeypatch, tmp_
                 'tpm': {'code': 'L-1', 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
     listed, asked = [], []
     monkeypatch.setattr(quota_index, 'list_quota_codes', lambda region, **_: listed.append(region) or None)
-    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: asked.append(region) or ('ok', {'QuotaName': 'n'}))
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: asked.append(region) or ('ok', {'QuotaName': 'n'}))
     quota_index.QuotaIndexGenerator().run()
     assert 'af-south-1' not in listed + asked                 # opt-in region not enabled: no calls
     cape = load_yaml(str(tmp_path / 'data' / 'fm-list-af-south-1.yml'))
@@ -364,7 +364,7 @@ def test_quota_index_ignores_regions_file_of_another_partition(monkeypatch, tmp_
                 'tpm': {'code': 'L-G', 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
     monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws-us-gov')
     asked = []
-    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: asked.append(region) or ('ok', {'QuotaName': 'n'}))
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: asked.append(region) or ('ok', {'QuotaName': 'n'}))
     quota_index.QuotaIndexGenerator().run()
     assert 'us-gov-east-1' in asked                          # not dropped by a commercial regions.yml
 
@@ -374,7 +374,7 @@ def test_fm_quotas_drops_saved_codes_missing_from_the_listing(monkeypatch):
         'tpm': {'code': 'L-GONE', 'name': 'x'}, 'rpm': {'code': 'L-OK', 'name': 'y'},
         'tpd': {'code': 'L-UNLISTED', 'name': 'z'}}}}}
     # Absent from the listing: dropped only when GetServiceQuota confirms it is missing
-    monkeypatch.setattr(qm, 'check_quota', lambda code, region:
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region:
                         ('missing', None) if code == 'L-GONE' else ('ok', {}))
     qm.QuotaMapper._drop_unlisted_saved_codes(fm, {'L-OK'}, 'us-east-1')
     assert fm['endpoints']['base']['quotas'] == {
@@ -388,7 +388,7 @@ def test_fm_quotas_confirms_each_unlisted_code_once(monkeypatch):
     fm = {'model_id': 'm', 'endpoints': {'jp': {'quotas': {'tpm': dict(shared)}},
                                          'apac': {'quotas': {'tpm': dict(shared)}}}}
     asked = []
-    monkeypatch.setattr(qm, 'check_quota', lambda code, region: asked.append(code) or ('ok', {}))
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: asked.append(code) or ('ok', {}))
     qm.QuotaMapper._drop_unlisted_saved_codes(fm, {'L-OTHER'}, 'ap-northeast-1', {})
     assert asked == ['L-SHARED']
 

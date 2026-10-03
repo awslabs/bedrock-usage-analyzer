@@ -219,7 +219,7 @@ def test_quota_index_removes_only_codes_reported_missing(monkeypatch, tmp_path, 
     from bedrock_usage_analyzer.aws.servicequotas import QUOTA_MISSING, QUOTA_ERROR
     _index_fixture(tmp_path, {'tpm': 'L-GONE', 'rpm': 'L-FLAKY'})
     answers = {'L-GONE': (QUOTA_MISSING, None), 'L-FLAKY': (QUOTA_ERROR, None)}
-    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: answers[code])
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: answers[code])
     quota_index.QuotaIndexGenerator().run()
     for region in ('us-east-1', 'us-west-2'):
         quotas = load_yaml(str(tmp_path / 'data' / f'fm-list-{region}.yml'))['models'][0]['endpoints']['base']['quotas']
@@ -232,7 +232,7 @@ def test_quota_index_refreshes_names(monkeypatch, tmp_path, no_bundle, commercia
     from bedrock_usage_analyzer.aws.servicequotas import QUOTA_OK
     _index_fixture(tmp_path, {'tpm': 'L-1', 'rpm': 'L-2'})
     names = {'L-1': 'On-demand tokens per minute for Model One', 'L-2': 'On-demand requests per minute for Model One'}
-    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: (QUOTA_OK, {'QuotaName': names[code]}))
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: (QUOTA_OK, {'QuotaName': names[code]}))
     gen = quota_index.QuotaIndexGenerator()
     gen.run()
     assert {e['quota_name'] for e in gen.entries} == set(names.values())
@@ -280,7 +280,7 @@ def test_quota_index_keeps_code_where_it_exists(monkeypatch, tmp_path, no_bundle
         if code == 'L-PEGASUS' and region == 'us-east-1':
             return QUOTA_MISSING, None
         return QUOTA_OK, {'QuotaName': code}
-    monkeypatch.setattr(quota_index, 'check_quota', check)
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', check)
     gen = quota_index.QuotaIndexGenerator()
     gen.run()
     tpm = {r: load_yaml(str(tmp_path / 'data' / f'fm-list-{r}.yml'))['models'][0]['endpoints']['base']['quotas']['tpm']

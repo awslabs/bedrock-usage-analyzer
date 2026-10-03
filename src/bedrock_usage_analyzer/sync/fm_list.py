@@ -150,10 +150,18 @@ def refresh_region(region_name: str, update_bundle: bool = False):
         # Preserve existing endpoints/quotas if they exist
         if model_id in existing_models:
             model['endpoints'] = dict(existing_models[model_id].get('endpoints') or {})
-        # An ON_DEMAND model gets a base endpoint, also when it gained on-demand after the
-        # saved list was written (existing endpoints and their quotas are kept)
+        # The endpoints follow the model: 'base' only while it is invokable on demand, and a
+        # profile endpoint only while the region lists that profile (when the listing worked,
+        # so a failed listing never drops saved quota mappings)
+        endpoints = model.setdefault('endpoints', {})
+        if 'ON_DEMAND' not in model.get('inference_types', []):
+            endpoints.pop('base', None)
+        if all_profiles:
+            listed = set(profile_map.get(model_id, []))
+            for prefix in [p for p in endpoints if p != 'base' and p not in listed]:
+                del endpoints[prefix]
         if 'ON_DEMAND' in model.get('inference_types', []):
-            model.setdefault('endpoints', {}).setdefault(
+            endpoints.setdefault(
                 'base', {'quotas': {'concurrent': None, 'rpm': None, 'tpd': None, 'tpm': None}})
         
         # Add inference profiles if available
