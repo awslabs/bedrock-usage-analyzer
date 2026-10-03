@@ -185,7 +185,9 @@ class QuotaMapper:
         )
         quota_mapping = self._drop_invalid_choices(quota_mapping, matching_quotas, model_id, endpoint_type)
 
-        if quota_mapping and cache_key not in self.lcode_cache:
+        if quota_mapping:
+            # The newest valid mapping replaces one that did not fit this region, so the next
+            # regions with the same quota set reuse it instead of asking the LLM again
             self.lcode_cache[cache_key] = quota_mapping
 
         return quota_mapping

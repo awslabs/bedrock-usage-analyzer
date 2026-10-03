@@ -25,7 +25,7 @@ class BedrockAnalyzer:
     
     TIME_PERIODS = ["1hour", "1day", "7days", "14days", "30days"]
     
-    def __init__(self, region, granularity_config, profile_fetcher=None):
+    def __init__(self, region, granularity_config, profile_fetcher=None, fm_models=None):
         self.region = region
         self.granularity_config = granularity_config
 
@@ -48,7 +48,8 @@ class BedrockAnalyzer:
             self.profile_fetcher = InferenceProfileFetcher(self.bedrock_client)
         self.metrics_fetcher = CloudWatchMetricsFetcher(self.cloudwatch_client, self.tz_api_format)
         self.output_generator = None  # Initialized in analyze() with output_dir
-        self._fm_models = None  # Region's fm-list, loaded on first quota lookup
+        # Region's fm-list: the one parsed during input collection, else read on first lookup
+        self._fm_models = fm_models
     
     def _system_profile_listed(self, profile_id) -> bool:
         """True unless the region's system profiles were listed and do not include it."""
@@ -65,7 +66,7 @@ class BedrockAnalyzer:
 
     def _fm_list(self):
         """The region's fm-list models, parsed once per run (every target reads the same file)."""
-        if getattr(self, '_fm_models', None) is None:
+        if self._fm_models is None:
             self._fm_models = load_fm_list(self.region) or []
         return self._fm_models
 

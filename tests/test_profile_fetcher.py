@@ -347,12 +347,13 @@ def test_prefixes_come_from_the_mapping_file(tmp_path, monkeypatch):
     assert 'us-gov' in bedrock.get_regional_profile_prefixes() and 'global' not in bedrock.get_regional_profile_prefixes()
 
 
-def test_au_copy_is_not_attributed_to_listed_apac_when_au_is_missing():
+def test_copy_of_unlisted_country_profile_goes_to_listed_endpoint():
+    """No au.* profile in the region: the source is the listed apac.* (an existing endpoint)."""
     apac_wide = [arn(r, HAIKU) for r in ('ap-northeast-1', 'ap-northeast-2', 'ap-south-1',
                                           'ap-southeast-1', 'ap-southeast-2', 'ap-southeast-4')]
     fetcher = InferenceProfileFetcher(FakeBedrock(system=[system_profile(f"apac.{HAIKU}", apac_wide)],
                                                   application=[app_profile('auonly00001', 'a', AU_ARNS)]))
-    assert fetcher.list_application_profiles()[0]['source'] == f"au.{HAIKU}"
+    assert fetcher.list_application_profiles()[0]['source'] == f"apac.{HAIKU}"
 
 
 def test_public_is_system_profile(sydney_bedrock):
@@ -365,7 +366,7 @@ def test_unlisted_country_copy_also_shows_under_closest_endpoint():
     fetcher = InferenceProfileFetcher(FakeBedrock(system=[system_profile(f"apac.{HAIKU}", tokyo_osaka_plus)],
                                                   application=[app_profile('jponly00001', 'j', JP_ARNS)]))
     app = fetcher.list_application_profiles()[0]
-    assert app['sources'] == [f"jp.{HAIKU}", f"apac.{HAIKU}"]
+    assert app['sources'] == [f"apac.{HAIKU}"]                                  # jp.* does not exist here
     assert fetcher.find_profiles(HAIKU, 'apac')[0][1:] == ['jponly00001']      # not lost from apac
 
 
@@ -388,3 +389,24 @@ def test_kr_copy_resolves_without_a_country_table():
         application=[app_profile('kr000000001', 'k', kr)]))
     app = fetcher.list_application_profiles()[0]
     assert (app['source'], app['profile_prefix']) == (f"kr.{HAIKU}", 'kr')
+
+
+def test_regional_copy_is_never_attributed_to_global():
+    """us.* dropped a region since the copy; global.* contains all of them, but is not the source."""
+    us4 = [arn(r, HAIKU) for r in ('us-east-1', 'us-east-2', 'us-west-1', 'us-west-2')]
+    us_now = [a for a in us4 if 'us-west-1' not in a]
+    glob = us4 + [arn('eu-west-1', HAIKU), f"arn:aws:bedrock:::foundation-model/{HAIKU}"]
+    fetcher = InferenceProfileFetcher(FakeBedrock(
+        system=[system_profile(f"us.{HAIKU}", us_now), system_profile(f"global.{HAIKU}", glob)],
+        application=[app_profile('usold000001', 'u', us4)]))
+    assert fetcher.list_application_profiles()[0]['sources'] == [f"us.{HAIKU}"]
+
+
+def test_country_copy_after_country_set_changed_stays_with_country():
+    au_old = [arn('ap-southeast-2', HAIKU), arn('ap-southeast-4', HAIKU)]
+    au_now = [arn('ap-southeast-2', HAIKU), arn('ap-southeast-6', HAIKU)]
+    apac = au_old + [arn(r, HAIKU) for r in ('ap-northeast-1', 'ap-south-1', 'ap-southeast-1')]
+    fetcher = InferenceProfileFetcher(FakeBedrock(
+        system=[system_profile(f"au.{HAIKU}", au_now), system_profile(f"apac.{HAIKU}", apac)],
+        application=[app_profile('auold000001', 'a', au_old)]))
+    assert fetcher.list_application_profiles()[0]['sources'] == [f"au.{HAIKU}"]

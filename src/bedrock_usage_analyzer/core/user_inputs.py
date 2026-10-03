@@ -617,6 +617,10 @@ class UserInputs:
             logger.error(f"Please run: bua refresh fm-list {region}")
             sys.exit(1)
     
+    def fm_models(self):
+        """Parsed fm-list of the selected region (shared with the analyzer)."""
+        return self._load_fm_list(self.region)
+
     def _load_fm_list(self, region):
         """Load foundation models for region (parsed once per region)"""
         if region not in self._fm_lists:

@@ -3,6 +3,7 @@
 
 """AWS Service Quotas operations"""
 
+import logging
 import sys
 import threading
 from typing import List, Dict, Optional
@@ -10,6 +11,8 @@ from typing import List, Dict, Optional
 from botocore.exceptions import ClientError
 
 from bedrock_usage_analyzer.aws.client_factory import create_client
+
+logger = logging.getLogger(__name__)
 
 
 def fetch_service_quotas(region: str, service_code: str = 'bedrock') -> Optional[List[Dict]]:
@@ -48,6 +51,19 @@ def _client(region: str):
         if region not in _clients:
             _clients[region] = create_client('service-quotas', region)
         return _clients[region]
+
+
+def list_quota_codes(region: str, service_code: str = 'bedrock') -> Optional[Dict[str, Dict]]:
+    """All quotas of the service in a region by code (one paginated listing), or None on error."""
+    try:
+        quotas = {}
+        paginator = _client(region).get_paginator('list_service_quotas')
+        for page in paginator.paginate(ServiceCode=service_code):
+            quotas.update((q['QuotaCode'], q) for q in page.get('Quotas', []) if q.get('QuotaCode'))
+        return quotas
+    except Exception as e:
+        logger.debug(f"Could not list {service_code} quotas in {region}: {e}")
+        return None
 
 
 QUOTA_OK = 'ok'

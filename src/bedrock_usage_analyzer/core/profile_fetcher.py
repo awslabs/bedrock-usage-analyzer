@@ -170,40 +170,46 @@ class InferenceProfileFetcher:
             # endpoint at all, and a copy of a real base model still shows under 'base'.
             return _specific_first(exact or []) + [model_id]
 
-        # Routing sets grow over time, so the source is the narrowest listed profile that still
-        # contains every region of the copy: an au.* copy is inside both au.* and the wider
-        # apac.*, and belongs to au.* (issue #7). Only listed profiles are candidates, so the
-        # source is always an endpoint that exists in the region.
+        # The routing set no longer equals any listed profile (sets change over time). Only
+        # listed profiles of this model are candidates, so the source always exists in the
+        # region; global.* only for a copy that routes globally (it has a region-less ARN).
+        regions = {region_from_arn(a) for a in arns}
+        routes_globally = '' in regions
+        candidates = [(system_arns, ids) for system_arns, ids in (
+            (s, [p for p in ids if p.split('.', 1)[-1] == model_id and
+                 (routes_globally or not p.startswith('global.'))])
+            for s, ids in self._system_by_arns.items()) if len(system_arns) > 1 and ids]
+
+        # A copy inside one country geography (au, jp, in) whose profile is listed is a copy of
+        # that profile, even when it also fits inside the wider apac.* set (issue #7)
+        country = None if routes_globally else self._country_of(regions)
+        country_id = f"{country}.{model_id}" if country else None
+        if country_id and any(country_id in ids for _, ids in candidates):
+            return [country_id]
+
+        # Sets usually grow: the narrowest listed profile that contains every routed region
         supersets = {}
-        for system_arns, profile_ids in self._system_by_arns.items():
-            candidates = [p for p in profile_ids if p.split('.', 1)[-1] == model_id]
-            if len(system_arns) > 1 and candidates and arn_set < system_arns:
-                supersets.setdefault(len(system_arns), []).extend(candidates)
-        country_id = self._unlisted_country_profile(arns, model_id)
+        for system_arns, ids in candidates:
+            if arn_set < system_arns:
+                supersets.setdefault(len(system_arns), []).extend(ids)
         if supersets:
-            narrowest = _specific_first(supersets[min(supersets)])
-            # A copy of a country profile that is no longer listed: the country stays the
-            # source (apac.* quotas are not its limits), and the profile also shows under
-            # the narrowest listed endpoint so it does not vanish from that report
-            return ([country_id] if country_id else []) + narrowest
+            return _specific_first(supersets[min(supersets)])
 
         # Closest system profile for the same model (a region was also removed)
         best, best_score = [], 0.0
-        for system_arns, profile_ids in self._system_by_arns.items():
-            candidates = [p for p in profile_ids if p.split('.', 1)[-1] == model_id]
-            if len(system_arns) < 2 or not candidates:
-                continue
+        for system_arns, ids in candidates:
             overlap = len(arn_set & system_arns)
             if not overlap:
                 continue
             score = overlap / len(arn_set | system_arns)
             if score > best_score:
-                best, best_score = candidates, score
+                best, best_score = ids, score
             elif score == best_score:
-                best = best + candidates
+                best = best + ids
         if best:
-            return ([country_id] if country_id else []) + _specific_first(best)
+            return _specific_first(best)
 
+        # Nothing comparable is listed for this model: guess from the regions
         inferred = self._infer_from_regions(arns, model_id)
         return [inferred] if inferred else []
 
@@ -213,12 +219,6 @@ class InferenceProfileFetcher:
             if regions and set(regions) <= members and prefix in self.prefix_map:
                 return prefix
         return None
-
-    def _unlisted_country_profile(self, model_arns: List[str], model_id: str) -> Optional[str]:
-        """Country profile ID the copy routes like, when the region does not list it."""
-        country = self._country_of([region_from_arn(a) for a in model_arns])
-        country_id = f"{country}.{model_id}" if country else None
-        return country_id if country_id and country_id not in self._system_ids else None
 
     def _infer_from_regions(self, model_arns: List[str], model_id: str) -> Optional[str]:
         """Fallback when no system profile matches: guess from the ARN regions."""

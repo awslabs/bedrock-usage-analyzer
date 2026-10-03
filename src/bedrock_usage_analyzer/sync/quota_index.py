@@ -11,7 +11,7 @@ import sys
 from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
 from bedrock_usage_analyzer.utils.csv_handler import write_csv
 from bedrock_usage_analyzer.utils.paths import list_data_files, get_writable_path, get_bundle_path, get_data_path
-from bedrock_usage_analyzer.aws.servicequotas import check_quota, QUOTA_OK, QUOTA_MISSING
+from bedrock_usage_analyzer.aws.servicequotas import check_quota, list_quota_codes, QUOTA_OK, QUOTA_MISSING
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
 from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict
 
@@ -194,9 +194,13 @@ class QuotaIndexGenerator:
         # Only codes of the credentials' partition can be looked up with these credentials
         own = [e for e in self.entries if e['partition'] == self._partition]
         keys = sorted({(e['quota_code'], e['source_region']) for e in own})
-        # Independent lookups; a small pool keeps well under Service Quotas rate limits
+        # One listing per region (a few paginated calls) instead of one call per code; the
+        # cleanup reuses these listings and results
+        regions = sorted(set(self._fm_data) | {region for _, region in keys})
         with ThreadPoolExecutor(max_workers=8) as pool:
-            cache = dict(zip(keys, pool.map(lambda k: check_quota(*k), keys)))
+            self._listings = dict(zip(regions, pool.map(list_quota_codes, regions)))
+        self._region_checks = {}
+        cache = {key: self._lookup(*key) for key in keys}
 
         unverified = 0
         for entry in self.entries:
@@ -237,18 +241,23 @@ class QuotaIndexGenerator:
         # Quota availability differs by region: a code can exist in the entry's source region
         # and be missing in another (or the reverse), so every (code, region) pair an fm-list
         # uses is checked, and a code is removed only from the regions where it is missing
-        self._region_checks = {
-            (e['quota_code'], e['source_region']): QUOTA_MISSING for e in self.error_entries}
+        if not hasattr(self, '_region_checks'):
+            self._listings, self._region_checks = {}, {}
         self._regional = set(get_regional_profile_prefixes())
         self._mismatched = {(e['model_id'], e['endpoint'], e['quota_type'], e['quota_code'])
                             for e in self.mismatch_entries}
         regions = sorted(self._fm_data)
         pending = {(slot[3], region) for region in regions
                    for slot in self._quota_slots_in(self._fm_data[region])}
-        pending = sorted(pending - set(self._region_checks))
+        # Codes absent from a region's listing (or in a region that could not be listed) are
+        # confirmed one by one, so a code is never removed on the listing alone
+        unresolved = sorted(k for k in pending - set(self._region_checks)
+                            if k[0] not in (self._listings.get(k[1]) or {}))
         with ThreadPoolExecutor(max_workers=8) as pool:
-            for key, result in zip(pending, pool.map(lambda k: check_quota(*k), pending)):
+            for key, result in zip(unresolved, pool.map(lambda k: check_quota(*k), unresolved)):
                 self._region_checks[key] = result[0]
+        for key in pending - set(self._region_checks):
+            self._region_checks[key] = QUOTA_OK  # in the region's listing
         # Every region file is also checked for mismatches by the quota name stored with each
         # code, because the index itself samples only one source region per model endpoint
         for region in regions:
@@ -271,6 +280,13 @@ class QuotaIndexGenerator:
                 for quota_type, quota in (endpoint_data.get('quotas') or {}).items():
                     if isinstance(quota, dict) and quota.get('code'):
                         yield (model['model_id'], endpoint, quota_type, quota['code'])
+
+    def _lookup(self, code: str, region: str):
+        """(status, quota) from the region's listing, else from GetServiceQuota (recorded for the cleanup)."""
+        listed = (self._listings.get(region) or {}).get(code)
+        result = (QUOTA_OK, listed) if listed else check_quota(code, region)
+        self._region_checks[(code, region)] = result[0]
+        return result
 
     def _missing_in(self, code: str, region: str) -> bool:
         key = (code, region)

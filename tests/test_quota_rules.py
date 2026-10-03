@@ -217,7 +217,7 @@ def test_analyzer_skips_saved_conflicting_codes(tmp_path, monkeypatch):
             'tpm': {'code': 'L-GL46', 'name': 'Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6'},
             'rpm': {'code': 'L-US', 'name': 'Cross-region model inference requests per minute for Anthropic Claude Sonnet 4 V1'}}}}}]})
     analyzer = BedrockAnalyzer.__new__(BedrockAnalyzer)
-    analyzer.region = 'us-east-1'
+    analyzer.region, analyzer._fm_models = 'us-east-1', None
     codes = analyzer._load_quota_codes(SONNET4, 'us')
     assert codes['tpm'] is None and codes['rpm']['code'] == 'L-US'
     assert analyzer._load_quota_codes(SONNET4, 'unknown') == {}
@@ -319,3 +319,21 @@ def test_quota_index_removes_code_missing_only_outside_source_region(monkeypatch
     assert sydney['models'][0]['endpoints']['base']['quotas']['tpm'] is None
     assert virginia['models'][0]['endpoints']['base']['quotas']['tpm']['code'] == 'L-ABC'
     assert 'L-ABC' in (tmp_path / 'data' / 'quota-index.csv').read_text()
+
+
+def test_quota_index_uses_region_listings_and_confirms_absent_codes(monkeypatch, tmp_path, no_bundle, commercial_creds):
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['ap-southeast-2', 'us-east-1']})
+    for region in ('ap-southeast-2', 'us-east-1'):
+        save_yaml(str(tmp_path / 'data' / f'fm-list-{region}.yml'), {'models': [
+            {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': {
+                'tpm': {'code': 'L-ABC', 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
+    listed = {'us-east-1': {'L-ABC': {'QuotaCode': 'L-ABC', 'QuotaName': 'On-demand tokens per minute for Amazon Nova Lite'}},
+              'ap-southeast-2': {}}
+    monkeypatch.setattr(quota_index, 'list_quota_codes', lambda region: listed[region])
+    confirmed = []
+    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: confirmed.append((code, region)) or ('missing', None))
+    quota_index.QuotaIndexGenerator().run()
+    assert confirmed == [('L-ABC', 'ap-southeast-2')]          # only the code absent from a listing
+    sydney = load_yaml(str(tmp_path / 'data' / 'fm-list-ap-southeast-2.yml'))
+    assert sydney['models'][0]['endpoints']['base']['quotas']['tpm'] is None

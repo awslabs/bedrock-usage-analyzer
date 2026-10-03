@@ -109,7 +109,8 @@ def cmd_analyze(args):
     output_dir = args.output_dir if args.output_dir else user_inputs.select_output_dir()
 
     analyzer = BedrockAnalyzer(user_inputs.region, user_inputs.granularity_config,
-                               profile_fetcher=user_inputs.profile_fetcher)
+                               profile_fetcher=user_inputs.profile_fetcher,
+                               fm_models=user_inputs.fm_models())
     analyzer.analyze(user_inputs.models, output_dir=output_dir)
     
     logger.info(f"\nCompleted! Results saved to: {output_dir}")

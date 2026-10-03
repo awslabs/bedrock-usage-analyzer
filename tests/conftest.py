@@ -25,6 +25,9 @@ def isolated_env(tmp_path, monkeypatch):
     partition.clear_cache()
     bedrock_module._prefix_mapping_cache = None
     servicequotas_module._clients.clear()
+    # quota-index lists each region's quotas first; tests stub check_quota per code instead
+    from bedrock_usage_analyzer.sync import quota_index
+    monkeypatch.setattr(quota_index, 'list_quota_codes', lambda region: None)
     yield
     partition.clear_cache()
     bedrock_module._prefix_mapping_cache = None
