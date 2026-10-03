@@ -335,6 +335,11 @@ class UserInputs:
         if prefix is None and value.count('.') >= 2 and not known_model and self._is_system_profile(value):
             # A system profile with a prefix newer than this release (e.g. 'kr.')
             prefix, base_model_id = value.split('.', 1)
+        elif not known_model and prefix is None and self._profile_endpoints_of(base_model_id):
+            # Listed, but offered only through inference profiles: the bare ID has no usage
+            options = ', '.join(f"{p}.{base_model_id}" for p in self._profile_endpoints_of(base_model_id))
+            logger.warning(f"  WARNING: {value} has no on-demand endpoint in {self.region}; its "
+                           f"usage is under its inference profiles: {options}")
         elif not known_model and self.region:
             # Still analyzed (the model list may predate a new model), but not silently
             logger.warning(f"  WARNING: {value} is not a model, inference profile or application "
@@ -353,13 +358,21 @@ class UserInputs:
             logger.debug(f"Could not list system inference profiles: {e}")
             return False
 
+    def _profile_endpoints_of(self, model_id: str) -> list:
+        """Inference profile prefixes the region's fm-list lists for ``model_id``."""
+        for model in self._load_fm_list(self.region):
+            if model.get('model_id') == model_id:
+                return sorted(p for p in (model.get('endpoints') or {}) if p != 'base')
+        return []
+
     def _is_known_model(self, value: str) -> bool:
         """True when ``value`` is a model or system profile ID listed for the region."""
         model_id, prefix = split_profile_id(value)
         # The region's fm-list exists here: collect() exits earlier when it is missing
         for model in self._load_fm_list(self.region):
             if model.get('model_id') == model_id:
-                return prefix is None or prefix in (model.get('endpoints') or {})
+                # A bare model ID is an endpoint only when the model is invokable on demand
+                return (prefix or 'base') in (model.get('endpoints') or {})
         return False
 
     def _find_application_profile(self, identifier):

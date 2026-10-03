@@ -11,7 +11,7 @@ import sys
 from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
 from bedrock_usage_analyzer.utils.csv_handler import write_csv
 from bedrock_usage_analyzer.utils.paths import list_data_files, get_writable_path, get_bundle_path
-from bedrock_usage_analyzer.aws.servicequotas import check_quota, confirm_statuses, list_quota_codes, QUOTA_ERROR, QUOTA_OK, QUOTA_MISSING
+from bedrock_usage_analyzer.aws.servicequotas import check_quota, confirm_statuses, list_quota_codes, lookup_quota, QUOTA_ERROR, QUOTA_OK, QUOTA_MISSING
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
 from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict, scrub_conflicting
 
@@ -294,8 +294,9 @@ class QuotaIndexGenerator:
         """(status, quota) from the region's listing, else from GetServiceQuota (recorded for the cleanup)."""
         if region not in self._checked_regions:
             return (QUOTA_ERROR, None)  # not enabled for the account: kept, not looked up
-        listed = (self._listings.get(region) or {}).get(code)
-        result = (QUOTA_OK, listed) if listed else check_quota(code, region)
+        # Listings were fetched up front (in a pool); this only reads them
+        result = lookup_quota(code, region, self._listings, check=lambda c, r: check_quota(c, r),
+                              lister=lambda r: None)
         self._region_checks[(code, region)] = result[0]
         return result
 

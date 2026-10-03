@@ -307,5 +307,6 @@ def test_quotas_come_from_the_region_listing(analyzer, monkeypatch):
                         lambda region: {'L-1': {'QuotaCode': 'L-1', 'Value': 123.0}})
     asked = []
     monkeypatch.setattr(analyzer_module, 'check_quota', lambda code, region, client=None: asked.append(code) or ('missing', None))
+    analyzer._use_quota_listing = True                        # set by analyze() for many codes
     quotas = analyzer._fetch_quotas(HAIKU, {'tpm': {'code': 'L-1', 'name': 'x'}, 'rpm': {'code': 'L-2', 'name': 'y'}})
     assert quotas['tpm']['value'] == 123.0 and asked == ['L-2']                # one lookup, for the unlisted code

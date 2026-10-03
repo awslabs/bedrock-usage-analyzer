@@ -433,3 +433,14 @@ def test_unknown_dotted_model_warns(inputs, caplog):
     caplog.set_level(logging.WARNING)
     assert inputs._parse_model_id('team.prd') == {'model_id': 'team.prd', 'profile_prefix': None}
     assert 'is not a model, inference profile or application inference profile known' in caplog.text
+
+
+def test_bare_id_of_profile_only_model_points_to_its_profiles(inputs, monkeypatch, caplog):
+    import logging
+    caplog.set_level(logging.WARNING)
+    monkeypatch.setattr(inputs, '_load_fm_list', lambda region: [
+        {'model_id': 'anthropic.claude-x-v1:0', 'endpoints': {'us': {}, 'global': {}}}])
+    monkeypatch.setattr(inputs, '_find_application_profile', lambda value: None)
+    monkeypatch.setattr(inputs, '_is_system_profile', lambda value: False)
+    inputs._parse_model_id('anthropic.claude-x-v1:0')
+    assert 'no on-demand endpoint' in caplog.text and 'global.anthropic.claude-x-v1:0' in caplog.text

@@ -70,7 +70,8 @@ This tool requires different IAM permissions depending on which features you use
         "bedrock:ListInferenceProfiles",
         "bedrock:ListTagsForResource",
         "cloudwatch:GetMetricData",
-        "servicequotas:GetServiceQuota"
+        "servicequotas:GetServiceQuota",
+        "servicequotas:ListServiceQuotas"
       ],
       "Resource": "*"
     }
@@ -84,6 +85,7 @@ This tool requires different IAM permissions depending on which features you use
 - `bedrock:ListTagsForResource` - Retrieve tags for inference profiles (for metadata display)
 - `cloudwatch:GetMetricData` - Fetch CloudWatch metrics for token usage (TPM, RPM, TPD, throttles)
 - `servicequotas:GetServiceQuota` - Retrieve service quota limits for visualization
+- `servicequotas:ListServiceQuotas` - Optional: when many quota codes are analyzed in one run, read them in one listing (without it, each code is looked up separately)
 
 **Note:** This option uses the bundled metadata files that come with the package.
 

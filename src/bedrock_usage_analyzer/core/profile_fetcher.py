@@ -141,19 +141,14 @@ class InferenceProfileFetcher:
             if self._listings['APPLICATION']['result'] is None:
                 logger.info("  Listing application inference profiles...")
             raw = self._list_once('APPLICATION')
-            try:
-                self._load_system_profiles()
-                system_listed = True
-            except Exception as e:
-                # The profiles are still listed (each can be analyzed by ID), without a
-                # source endpoint; a later call retries while the system listing may recover
-                logger.warning(f"  WARNING: Could not list system inference profiles ({e}); "
-                               f"application profiles are shown without their source endpoint")
-                system_listed = False
+            # Without the system profiles no source can be resolved: fail the call (callers
+            # say the report is incomplete) instead of returning profiles that match nothing.
+            # The application listing above is kept; the next call only retries this one.
+            self._load_system_profiles()
             profiles = []
             for profile in raw:
                 arns = [m.get('modelArn', '') for m in profile.get('models', [])]
-                sources = self.resolve_sources(arns) if system_listed else []
+                sources = self.resolve_sources(arns)
                 if sources:
                     source = sources[0]
                     first = source.split('.', 1)[0]
@@ -183,8 +178,6 @@ class InferenceProfileFetcher:
                     'sources': sources,
                 })
             logger.info(f"  Found {len(profiles)} application inference profile(s)")
-            if not system_listed:
-                return profiles
             self._app_profiles = profiles
         return self._app_profiles
 

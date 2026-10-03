@@ -15,11 +15,14 @@ from bedrock_usage_analyzer.core.output_generator import OutputGenerator
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.servicequotas import (
-    QUOTA_MISSING, QUOTA_OK, check_quota, list_quota_codes, regional_client)
+    QUOTA_MISSING, QUOTA_OK, check_quota, list_quota_codes, lookup_quota, regional_client)
 from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
 
 logger = logging.getLogger(__name__)
+
+# Above this many distinct quota codes per run, the region's quotas are listed once
+QUOTA_LISTING_THRESHOLD = 8
 
 class BedrockAnalyzer:
     """Main orchestrator for Bedrock token usage analysis"""
@@ -42,7 +45,10 @@ class BedrockAnalyzer:
         self.sq_client = regional_client(region)  # shared with the other quota lookups
         # Region's fm-list: the one parsed during input collection, else read on first lookup
         self._fm_models = fm_models
-        self._quotas_by_code = None  # region's quota listing, read on the first quota lookup
+        # One ListServiceQuotas pass pays off only for many codes; a short run uses direct
+        # GetServiceQuota calls (set in analyze())
+        self._quota_listings = {}
+        self._use_quota_listing = False
         # Reuse the fetcher from input collection so profiles are listed only once
         if profile_fetcher is not None:
             self.profile_fetcher = profile_fetcher
@@ -53,12 +59,6 @@ class BedrockAnalyzer:
         self.metrics_fetcher = CloudWatchMetricsFetcher(self.cloudwatch_client, self.tz_api_format)
         self.output_generator = None  # Initialized in analyze() with output_dir
     
-    def _quota_listing(self):
-        """The region's Bedrock quotas by code, listed once per run ({} if the listing fails)."""
-        if self._quotas_by_code is None:
-            self._quotas_by_code = list_quota_codes(self.region) or {}
-        return self._quotas_by_code
-
     def _system_profile_listed(self, profile_id) -> bool:
         """True unless the region's system profiles were listed and do not include it."""
         try:
@@ -136,9 +136,10 @@ class BedrockAnalyzer:
             if key is None:
                 continue
             code = quota_data['code']
-            listed = self._quota_listing().get(code)
-            status, quota = (QUOTA_OK, listed) if listed else \
-                check_quota(code, self.region, client=self.sq_client)
+            status, quota = lookup_quota(
+                code, self.region, self._quota_listings, use_listing=self._use_quota_listing,
+                check=lambda c, r: check_quota(c, r, client=self.sq_client),
+                lister=lambda r: list_quota_codes(r))
             if status == QUOTA_OK and quota.get('Value') is None:
                 logger.info(f"  Warning: {quota_type} quota {code} has no value; not shown")
             elif status == QUOTA_OK:
@@ -271,6 +272,14 @@ class BedrockAnalyzer:
                 self._warn_other_sources(model_id, profile_prefix, final_model_ids)
 
         logger.info(f"Profile discovery complete.\n")
+
+        # Many quota codes to look up (several models): one paginated listing of the region's
+        # quotas is cheaper than one GetServiceQuota call each
+        targets = {(model_id, prefix or 'base') for model_id, prefix, _ in all_profiles_map}
+        codes = {q['code'] for m in self._fm_list()
+                 for endpoint, data in (m.get('endpoints') or {}).items() if (m['model_id'], endpoint) in targets
+                 for q in ((data or {}).get('quotas') or {}).values() if isinstance(q, dict) and q.get('code')}
+        self._use_quota_listing = len(codes) > QUOTA_LISTING_THRESHOLD
 
         region_info = get_region_info(self.region)
         processed = set()

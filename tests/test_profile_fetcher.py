@@ -474,8 +474,8 @@ def test_application_listing_is_kept_when_system_listing_fails_once():
 
     fetcher = InferenceProfileFetcher(Flaky(application=[app_profile('auapp000009', 'a', AU_ARNS)],
                                             system=[system_profile(f"au.{HAIKU}", AU_ARNS)]))
-    degraded = fetcher.list_application_profiles()           # listed, source not known yet
-    assert [(p['id'], p['profile_prefix'], p['sources']) for p in degraded] == [('auapp000009', 'unknown', [])]
+    with pytest.raises(RuntimeError):                         # no source can be resolved yet
+        fetcher.list_application_profiles()
     resolved = fetcher.list_application_profiles()           # system listing recovered
     assert resolved[0]['sources'] == [f"au.{HAIKU}"]
     assert calls.count('APPLICATION') == 1                    # not listed again

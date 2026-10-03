@@ -52,7 +52,10 @@ def list_quota_codes(region: str, service_code: str = 'bedrock') -> Optional[Dic
             quotas.update((q['QuotaCode'], q) for q in page.get('Quotas', []) if q.get('QuotaCode'))
         return quotas
     except Exception as e:
-        logger.warning(f"  Could not list {service_code} quotas in {region}: {e}")
+        from bedrock_usage_analyzer.core.errors import is_access_denied
+        # Without servicequotas:ListServiceQuotas, callers fall back to GetServiceQuota per code
+        (logger.debug if is_access_denied(e) else logger.warning)(
+            f"  Could not list {service_code} quotas in {region}: {e}")
         return None
 
 
@@ -97,3 +100,19 @@ def confirm_statuses(pairs, cache: Dict, lookup=None, workers: int = 8) -> Dict:
             for key, result in zip(todo, pool.map(lambda k: lookup(*k), todo)):
                 cache[key] = result[0]
     return cache
+
+
+def lookup_quota(code: str, region: str, listings: Dict, check=None, lister=None, use_listing: bool = True):
+    """(status, quota) of one code: from the region's listing (cached in ``listings``), else
+    GetServiceQuota. The one lookup rule of the analyzer and `bua refresh quota-index`.
+
+    ``check``/``lister`` default to check_quota/list_quota_codes; callers pass their own so a
+    shared client or a test stub is used.
+    """
+    if use_listing:
+        if region not in listings:
+            listings[region] = (lister or list_quota_codes)(region)
+        listed = (listings[region] or {}).get(code)
+        if listed:
+            return QUOTA_OK, listed
+    return (check or check_quota)(code, region)

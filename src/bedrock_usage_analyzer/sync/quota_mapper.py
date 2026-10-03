@@ -27,7 +27,8 @@ def _normalize(text: str) -> str:
 class QuotaMapper:
     """Maps foundation models to their service quotas using Bedrock LLM"""
     
-    def __init__(self, bedrock_region: str, model_id: str, target_region: Optional[str] = None):
+    def __init__(self, bedrock_region: str, model_id: str, target_region: Optional[str] = None,
+                 credential_regions: Optional[List[str]] = None):
         """Initialize quota mapper
         
         Args:
@@ -36,6 +37,7 @@ class QuotaMapper:
             target_region: Optional specific region to process
         """
         self.bedrock_region = bedrock_region
+        self.credential_regions = credential_regions
         self.model_id = model_id
         self.target_region = target_region
         self.common_name_cache = {}
@@ -66,7 +68,9 @@ class QuotaMapper:
         from bedrock_usage_analyzer.sync.regions import load_region_names, regions_for_credentials
         # Quota codes are cached across regions, so stay inside the credentials' partition
         # Same STS region hint as the picker (target first), so the cached identity is reused
-        all_regions, _ = regions_for_credentials(load_region_names(), self.target_region or self.bedrock_region)
+        # (the CLI passes the list it already read for its partition check)
+        all_regions = self.credential_regions if self.credential_regions is not None else \
+            regions_for_credentials(load_region_names(), self.target_region or self.bedrock_region)[0]
 
         if self.target_region:
             if self.target_region not in all_regions:
