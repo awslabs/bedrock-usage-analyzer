@@ -10,7 +10,8 @@ import sys
 from typing import Dict, List, Optional
 
 from bedrock_usage_analyzer.utils.yaml_handler import (
-    endpoint_quotas, fm_file_data, load_data_file, model_endpoints, quota_slots, save_yaml, valid_models)
+    endpoint_quotas, fm_file_data, load_data_file, load_yaml, model_endpoints, quota_slots, save_yaml,
+    valid_models)
 from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, is_missing, list_quota_codes
 from bedrock_usage_analyzer.aws.bedrock_llm import extract_common_name, extract_quota_codes
@@ -203,6 +204,13 @@ class QuotaMapper:
         for endpoint_type, quotas in endpoint_quotas(fm):
             scrub_conflicting(fm['model_id'], endpoint_type, quotas, regional)
 
+    def _rules(self):
+        """(endpoint quota keywords, regional prefixes): the same for every region, model and
+        endpoint of a run, so built once."""
+        if self._match_rules is None:
+            self._match_rules = (get_endpoint_quota_keywords(), set(get_regional_profile_prefixes()))
+        return self._match_rules
+
     def _get_endpoints_to_process(self, fm: Dict) -> List[str]:
         """Determine which endpoints to process for a model"""
         # The keys of the endpoints mapping ({} for a hand-edited non-mapping value)
@@ -211,9 +219,7 @@ class QuotaMapper:
     def _get_quota_mapping(self, region: str, model_id: str, common_name: str, 
                           endpoint_type: str, quotas: List[Dict]) -> Optional[Dict]:
         """Get quota mapping for a specific endpoint"""
-        if self._match_rules is None:  # the same for every region, model and endpoint of a run
-            self._match_rules = (get_endpoint_quota_keywords(), set(get_regional_profile_prefixes()))
-        if endpoint_type not in self._match_rules[0]:
+        if endpoint_type not in self._rules()[0]:
             return None  # not a known endpoint type: no quota keyword, nothing cached applies
         cache_key =(model_id, endpoint_type if endpoint_type in ['base', 'cross-region', 'global'] else 'cross-region')
         region_codes = self._listed_codes.get(region)
@@ -272,9 +278,7 @@ class QuotaMapper:
         """Find quotas matching the common name and endpoint type"""
         matching = []
 
-        if self._match_rules is None:  # the same for every region, model and endpoint of a run
-            self._match_rules = (get_endpoint_quota_keywords(), set(get_regional_profile_prefixes()))
-        endpoint_quota_keywords, regional = self._match_rules
+        endpoint_quota_keywords, regional = self._rules()
         required_keyword = endpoint_quota_keywords.get(endpoint_type)
         if not required_keyword:
             return matching
@@ -318,7 +322,11 @@ class QuotaMapper:
         valid entries returned here are the same dicts, so updates reach the file.
         """
         try:
-            data = load_data_file(f'fm-list-{region}.yml')
+            checkout = self._bundle_file(region)
+            # --update-bundle maps the checkout's list (the file it rewrites), not a user copy
+            # or the installed package's copy, which would overwrite newer bundled entries
+            data = load_yaml(str(checkout)) if checkout and checkout.exists() else \
+                load_data_file(f'fm-list-{region}.yml')
         except Exception:
             return None
         if data is None:
@@ -328,14 +336,19 @@ class QuotaMapper:
     
     def _save_fm_list(self, region: str, fm_list: List[Dict]):
         """Save FM list for region"""
-        output_file = get_writable_path(f'fm-list-{region}.yml')
         data = self._fm_files.get(region) or {'models': fm_list}
+        bundle_file = self._bundle_file(region)
+        if bundle_file:
+            # Maintainer mode: the checkout's list was read and is written back; the user's
+            # own copy is left alone (writing bundle data there would hide later updates)
+            save_yaml(str(bundle_file), data)
+            logger.info(f"  ✓ Saved: {bundle_file} (bundled)")
+            return
+        output_file = get_writable_path(f'fm-list-{region}.yml')
         save_yaml(str(output_file), data)
         logger.info(f"  ✓ Saved: {output_file}")
-        
-        if getattr(self, 'update_bundle', False):
-            bundle_path = get_bundle_path()
-            if bundle_path:
-                bundle_file = bundle_path / f'fm-list-{region}.yml'
-                save_yaml(str(bundle_file), data)
-                logger.info(f"  ✓ Saved: {bundle_file} (bundled)")
+
+    def _bundle_file(self, region: str):
+        """The checkout's bundled fm-list path with --update-bundle, else None."""
+        bundle_path = get_bundle_path() if getattr(self, 'update_bundle', False) else None
+        return bundle_path / f'fm-list-{region}.yml' if bundle_path else None

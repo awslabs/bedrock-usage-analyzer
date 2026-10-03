@@ -118,10 +118,6 @@ def refresh_region(region_name: str, update_bundle: bool = False):
         save_yaml(str(prefix_file), {'prefixes': by_prefix(user_entries)})
         logger.info(f"  ✓ Prefix mapping saved: {prefix_file}")
 
-    all_prefixes = dict(known)
-    for entry in manual_entries + new_entries:
-        all_prefixes[entry['prefix']] = entry
-
     if update_bundle:
         bundle_path = get_bundle_path()
         if bundle_path:
@@ -138,7 +134,8 @@ def refresh_region(region_name: str, update_bundle: bool = False):
 
     # Later lookups in this run must see newly discovered prefixes
     load_prefix_mapping(refresh=True)
-    logger.info(f"  ({len(discovered)} discovered, {len(new_entries)} new, {len(all_prefixes)} total prefixes)")
+    total = len(set(known) | {e['prefix'] for e in manual_entries + new_entries})
+    logger.info(f"  ({len(discovered)} discovered, {len(new_entries)} new, {total} total prefixes)")
     
     output_file = get_writable_path(f'fm-list-{region_name}.yml')
 

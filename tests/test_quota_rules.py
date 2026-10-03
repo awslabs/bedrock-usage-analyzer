@@ -472,6 +472,43 @@ def test_quota_index_tells_unchecked_regions_from_api_errors(monkeypatch, tmp_pa
     assert 'not enabled for this account' in caplog.text and 'API errors' not in caplog.text
 
 
+def test_update_bundle_cleans_the_checkout_file_not_the_user_copy(monkeypatch, tmp_path, no_bundle, commercial_creds):
+    (tmp_path / 'data').mkdir()
+    checkout = tmp_path / 'checkout'
+    checkout.mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1']})
+    stale = {'model_id': 'amazon.nova-lite-v1:0', 'endpoints': {'base': {'quotas': {
+        'tpm': {'code': 'L-X', 'name': 'Cross-region model inference tokens per minute for Amazon Nova Lite'}}}}}
+    save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [stale]})
+    newer = dict(stale, endpoints={**stale['endpoints'], 'us': {'quotas': {}}})
+    save_yaml(str(checkout / 'fm-list-us-east-1.yml'), {'models': [newer]})
+    monkeypatch.setattr(quota_index, 'get_bundle_path', lambda: checkout)
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: ('ok', {'QuotaName': 'n'}))
+    quota_index.QuotaIndexGenerator().run(update_bundle=True)
+    written = load_yaml(str(checkout / 'fm-list-us-east-1.yml'))['models'][0]['endpoints']
+    assert 'us' in written and written['base']['quotas']['tpm'] is None   # newer entry kept, code removed
+
+
+def test_fm_quotas_update_bundle_reads_and_writes_the_checkout(monkeypatch, tmp_path):
+    (tmp_path / 'data').mkdir()
+    checkout = tmp_path / 'checkout'
+    checkout.mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1']})
+    user = {'models': [{'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': {}}}}]}
+    save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), user)
+    save_yaml(str(checkout / 'fm-list-us-east-1.yml'), {'models': [
+        {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': {}}, 'us': {'quotas': {}}}}]})
+    monkeypatch.setattr(qm, 'get_bundle_path', lambda: checkout)
+    monkeypatch.setattr(qm, 'list_quota_codes', lambda region: {})
+    monkeypatch.setattr(qm, 'extract_common_name', lambda *a: 'nova')
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition', lambda _=None: ('aws', None))
+    mapper = qm.QuotaMapper('us-east-1', 'model', 'us-east-1')
+    monkeypatch.setattr(mapper, '_get_quota_mapping', lambda *a: {'tpm': {'code': 'L-N', 'name': 'n'}})
+    mapper.run(update_bundle=True)
+    assert 'us' in load_yaml(str(checkout / 'fm-list-us-east-1.yml'))['models'][0]['endpoints']
+    assert load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml')) == user          # user copy untouched
+
+
 def test_quota_index_tolerates_non_mapping_quotas(monkeypatch, tmp_path, no_bundle, commercial_creds):
     (tmp_path / 'data').mkdir()
     save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1', 'us-west-2']})

@@ -8,7 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict
 import sys
 
-from bedrock_usage_analyzer.utils.yaml_handler import endpoint_quotas, fm_file_data, load_data_file, quota_slots, save_yaml, valid_models
+from bedrock_usage_analyzer.utils.yaml_handler import (
+    endpoint_quotas, fm_file_data, load_data_file, load_yaml, model_endpoints, quota_slots, save_yaml, valid_models)
 from bedrock_usage_analyzer.utils.csv_handler import write_csv
 from bedrock_usage_analyzer.utils.paths import list_data_names, get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, is_missing, list_quota_codes, lookup_quota, QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK
@@ -151,7 +152,7 @@ class QuotaIndexGenerator:
 
     def _merge_endpoints(self, key, model: Dict, region: str):
         """Merge endpoints from model into existing model entry"""
-        new_endpoints = model.get('endpoints') if isinstance(model.get('endpoints'), dict) else {}
+        new_endpoints = model_endpoints(model)
 
         for endpoint_type, endpoint_data in new_endpoints.items():
             # 'us: null' or a hand-edited 'us: TODO' / 'quotas: TODO' is kept without quotas
@@ -352,6 +353,7 @@ class QuotaIndexGenerator:
         data = self._fm_data[region]  # only the credentials' partition is cleaned
 
         modified = 0  # codes removed in this region
+        removed_slots = set()  # (model, endpoint, metric, code), applied to the bundle too
         reasons = set()
         for model in valid_models(data):
             for endpoint, quotas in endpoint_quotas(model):
@@ -372,6 +374,7 @@ class QuotaIndexGenerator:
                                 f"({quota.get('code')}) in {region}: {reason}")
                     quotas[quota_type] = None
                     modified += 1
+                    removed_slots.add((model['model_id'], endpoint, quota_type, quota.get('code')))
 
         if not modified:
             return
@@ -388,7 +391,16 @@ class QuotaIndexGenerator:
         bundle_path = get_bundle_path() if self.update_bundle else None
         if bundle_path:
             bundle_file = bundle_path / f'fm-list-{region}.yml'
-            save_yaml(str(bundle_file), data)
+            # The same removals applied to the checkout's file being rewritten: `data` may be
+            # a user copy or the installed package's list, which would revert newer entries
+            bundle_data = fm_file_data(load_yaml(str(bundle_file))) if bundle_file.exists() else data
+            for model in valid_models(bundle_data):
+                for endpoint, quotas in endpoint_quotas(model):
+                    for metric, quota in list(quotas.items()):
+                        if isinstance(quota, dict) and \
+                                (model['model_id'], endpoint, metric, quota.get('code')) in removed_slots:
+                            quotas[metric] = None
+            save_yaml(str(bundle_file), bundle_data)
             self._files_written += 1
             written = True
             logger.info(f"  ✓ Updated {bundle_file} (bundled)")

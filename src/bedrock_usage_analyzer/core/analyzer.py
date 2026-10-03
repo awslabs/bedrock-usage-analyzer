@@ -16,7 +16,8 @@ from bedrock_usage_analyzer.aws.bedrock import endpoint_id, get_regional_profile
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.servicequotas import (
     QUOTA_MISSING, QUOTA_OK, list_quota_codes, lookup_quota)
-from bedrock_usage_analyzer.utils.yaml_handler import endpoint_quotas, has_endpoint, load_fm_list, profile_endpoints, quota_slots
+from bedrock_usage_analyzer.utils.yaml_handler import (
+    has_endpoint, load_fm_list, model_endpoints, profile_endpoints, quota_slots)
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
 
 logger = logging.getLogger(__name__)
@@ -91,9 +92,11 @@ class BedrockAnalyzer:
         for model in self._fm_list():
             if model['model_id'] != model_id:
                 continue
-            endpoints = model.get('endpoints') if isinstance(model.get('endpoints'), dict) else {}
+            endpoints = model_endpoints(model)
             if endpoint_key in endpoints:
-                quotas = dict(dict(endpoint_quotas(model)).get(endpoint_key) or {})  # tolerates hand edits
+                endpoint = endpoints[endpoint_key]
+                saved = endpoint.get('quotas') if isinstance(endpoint, dict) else None
+                quotas = dict(saved) if isinstance(saved, dict) else {}  # tolerates hand edits
             elif endpoint_key == 'base':
                 # Old fm-list structure: model-level quotas were on-demand quotas
                 quotas = dict(model.get('quotas') or {})

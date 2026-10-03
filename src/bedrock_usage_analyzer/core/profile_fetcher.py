@@ -121,7 +121,8 @@ class InferenceProfileFetcher:
                 if not profile.get('inferenceProfileId'):
                     continue  # malformed summary: nothing to index
                 self._system_ids.add(profile['inferenceProfileId'])
-                arns = frozenset(m.get('modelArn', '') for m in profile.get('models') or [])
+                # Empty ARNs dropped, as on the application side, so the routing sets compare equal
+                arns = frozenset(filter(None, (m.get('modelArn') for m in profile.get('models') or [])))
                 if arns:
                     # Several profiles can share one routing set (jp.X and apac.X when a model
                     # is offered only in Tokyo and Osaka), so keep every candidate
