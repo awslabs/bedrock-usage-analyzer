@@ -66,7 +66,7 @@ QUOTA_MISSING = 'missing'
 QUOTA_ERROR = 'error'
 
 
-def check_quota(quota_code: str, region: str, service_code: str = 'bedrock', client=None):
+def check_quota(quota_code: str, region: str, service_code: str = 'bedrock'):
     """Look up one quota and say whether it exists.
 
     Returns:
@@ -75,7 +75,7 @@ def check_quota(quota_code: str, region: str, service_code: str = 'bedrock', cli
         network, permissions), which callers must not treat as "missing".
     """
     try:
-        response = (client or regional_client(region)).get_service_quota(ServiceCode=service_code, QuotaCode=quota_code)
+        response = regional_client(region).get_service_quota(ServiceCode=service_code, QuotaCode=quota_code)
         return QUOTA_OK, response.get('Quota', {})
     except ClientError as e:
         if e.response.get('Error', {}).get('Code') == 'NoSuchResourceException':
@@ -104,12 +104,12 @@ def confirm_statuses(pairs, cache: Dict, lookup=None, workers: int = 8) -> Dict:
     return cache
 
 
-def lookup_quota(code: str, region: str, listings: Dict, check=None, lister=None, use_listing: bool = True):
+def lookup_quota(code: str, region: str, listings: Dict, lister=None, use_listing: bool = True):
     """(status, quota) of one code: from the region's listing (cached in ``listings``), else
     GetServiceQuota. The one lookup rule of the analyzer and `bua refresh quota-index`.
 
-    ``check``/``lister`` default to check_quota/list_quota_codes; callers pass their own so a
-    shared client or a test stub is used.
+    ``lister`` fills a missing listing (default list_quota_codes; quota-index passes one that
+    never lists, because it fetched every listing up front).
     """
     if use_listing:
         if region not in listings:
@@ -117,7 +117,7 @@ def lookup_quota(code: str, region: str, listings: Dict, check=None, lister=None
         listed = (listings[region] or {}).get(code)
         if listed:
             return QUOTA_OK, listed
-    return (check or check_quota)(code, region)
+    return check_quota(code, region)
 
 
 def is_missing(code: str, region: str, cache: Dict, lookup=None) -> bool:

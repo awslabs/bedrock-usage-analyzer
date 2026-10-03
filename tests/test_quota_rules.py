@@ -425,3 +425,14 @@ def test_quota_index_tolerates_malformed_fm_lists(monkeypatch, tmp_path, no_bund
     monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: ('ok', {'QuotaName': 'n'}))
     quota_index.QuotaIndexGenerator().run()                  # no crash
     assert 'L-1' in (tmp_path / 'data' / 'quota-index.csv').read_text()
+
+
+def test_fm_quotas_tolerates_null_endpoints(monkeypatch):
+    mapper = qm.QuotaMapper('us-east-1', 'm')
+    assert mapper._get_endpoints_to_process({'model_id': 'x', 'endpoints': None}) == []
+
+
+def test_quota_index_lists_bundled_files_of_a_zipped_package(monkeypatch):
+    from bedrock_usage_analyzer.utils import paths
+    monkeypatch.setattr(paths, 'list_data_files', lambda pattern='*.yml': [])   # no file paths (zip)
+    assert 'fm-list-us-east-1.yml' in paths.list_data_names('fm-list-*.yml')

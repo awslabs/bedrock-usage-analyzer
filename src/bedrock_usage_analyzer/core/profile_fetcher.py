@@ -271,8 +271,7 @@ class InferenceProfileFetcher:
         """The country prefix (jp, au, kr, ...) whose regions contain all of ``regions``."""
         # The narrowest geography first: learned sets can nest or overlap
         for prefix, members in sorted(self._country_regions.items(), key=lambda kv: (len(kv[1]), kv[0])):
-            if regions and set(regions) <= members and \
-                    (prefix in self.prefix_map or prefix in self._listed_prefixes):
+            if regions and set(regions) <= members:
                 return prefix
         return None
 

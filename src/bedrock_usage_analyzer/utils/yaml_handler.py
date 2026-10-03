@@ -19,21 +19,28 @@ def load_yaml(filepath):
         return yaml.safe_load(f)
 
 
+def load_data_file(filename):
+    """Parsed metadata file: the user copy, else the bundled one (also from a zipped
+    package); None when neither exists."""
+    import os
+    from bedrock_usage_analyzer.utils.paths import get_data_path, load_bundled_yaml
+    path = get_data_path(filename)
+    # An existing but empty user file is {} (present), not None (missing)
+    return (load_yaml(path) or {}) if os.path.exists(path) else load_bundled_yaml(filename)
+
+
 def load_fm_list(region):
     """Models of a region's fm-list (user copy, else bundled); None when there is no list.
 
     A file that is empty, has no 'models' key, or 'models: null' gives [].
     """
-    import os
-    from bedrock_usage_analyzer.utils.paths import get_data_path, load_bundled_yaml
-    path = get_data_path(f'fm-list-{region}.yml')
-    if os.path.exists(path):
-        data = load_yaml(path)
-    else:
-        # A zipped package has no file path for its bundled lists; read them as resources
-        data = load_bundled_yaml(f'fm-list-{region}.yml')
-        if data is None:
-            return None
+    data = load_data_file(f'fm-list-{region}.yml')
+    return None if data is None else valid_models(data)
+
+
+def valid_models(data):
+    """The usable model entries of parsed fm-list ``data``: 'models: null', a non-mapping file
+    and entries without a model_id are skipped. The one rule every reader applies."""
     models = data.get('models') if isinstance(data, dict) else None
     return [m for m in models or [] if isinstance(m, dict) and m.get('model_id')]
 

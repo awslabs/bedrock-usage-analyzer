@@ -40,7 +40,7 @@ Combines the AWS GovCloud work from #5 and #6 into one partition layer and fixes
 - `regions.yml` stays a plain list of region names; entries in the `{name: ...}` form are
   still read.
 - `refresh regions` keeps regions of other partitions when it updates the list.
-- All AWS clients are created in one place (`aws/client_factory.py`): adaptive retries (8 attempts) for CloudWatch, Service Quotas and Bedrock Runtime, standard retries (3 attempts) for the others, and single quick attempts for the cross-partition STS probes.
+- All AWS clients are created in one place (`aws/client_factory.py`): adaptive retries (up to 9 attempts) for CloudWatch, Service Quotas and Bedrock Runtime, standard retries (up to 4 attempts) for the others, and a single quick attempt for the cross-partition STS probes.
 
 ### Removed
 - Hardcoded GovCloud endpoint URLs and the service allowlist from #5 (botocore resolves them).

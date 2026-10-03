@@ -113,6 +113,10 @@
           "description": "Load prefix mapping from metadata file with caching"
         },
         {
+          "name": "prefix_mapping_layers",
+          "description": "(bundled entries, user entries) of prefix-mapping.yml, each read once."
+        },
+        {
           "name": "load_prefix_mapping",
           "description": "Public accessor for the merged prefix mapping; ``refresh`` re-reads the files."
         },
@@ -135,6 +139,10 @@
         {
           "name": "get_profile_prefixes",
           "description": "All system inference profile prefixes (known defaults plus prefix-mapping.yml)."
+        },
+        {
+          "name": "endpoint_id",
+          "description": "Endpoint ID of a model: '<prefix>.<model>' for a profile, the model ID for its base"
         },
         {
           "name": "split_profile_id",
@@ -240,22 +248,41 @@
           "description": "Fetch all service quotas for Bedrock in a region"
         },
         {
-          "name": "_client",
-          "description": "One Service Quotas client per region, reused across quota lookups."
+          "name": "regional_client",
+          "description": "One Service Quotas client per region, reused across quota lookups (thread-safe)."
+        },
+        {
+          "name": "list_quota_codes",
+          "description": "All quotas of the service in a region by code (one paginated listing), or None on error."
         },
         {
           "name": "check_quota",
           "description": "Look up one quota and say whether it exists."
+        },
+        {
+          "name": "confirm_statuses",
+          "description": "Look up, in parallel, the (code, region) pairs not yet in ``cache``; returns ``cache``."
+        },
+        {
+          "name": "lookup_quota",
+          "description": "(status, quota) of one code: from the region's listing (cached in ``listings``), else"
+        },
+        {
+          "name": "is_missing",
+          "description": "True when Service Quotas says ``code`` does not exist in ``region`` (result cached)."
         }
       ],
       "imports_libraries": [
         "botocore",
+        "concurrent",
+        "logging",
         "sys",
         "threading",
         "typing"
       ],
       "imports_files": [
-        "bedrock_usage_analyzer.aws.client_factory"
+        "bedrock_usage_analyzer.aws.client_factory",
+        "bedrock_usage_analyzer.core.errors"
       ]
     },
     {
@@ -295,8 +322,16 @@
           "description": "Initialize analyzer with region and granularity config, setup AWS clients"
         },
         {
+          "name": "_system_profile_listed",
+          "description": "True unless the region's system profiles were listed and do not include it."
+        },
+        {
           "name": "_endpoint_listed",
           "description": "True when the region's fm-list has this model with this endpoint."
+        },
+        {
+          "name": "_fm_list",
+          "description": "The region's fm-list models, parsed once per run (every target reads the same file)."
         },
         {
           "name": "_load_quota_codes",
@@ -335,9 +370,7 @@
         "datetime",
         "logging",
         "numpy",
-        "os",
-        "traceback",
-        "yaml"
+        "traceback"
       ],
       "imports_files": [
         "bedrock_usage_analyzer.aws.bedrock",
@@ -348,7 +381,7 @@
         "bedrock_usage_analyzer.core.profile_fetcher",
         "bedrock_usage_analyzer.sync.quota_rules",
         "bedrock_usage_analyzer.utils.partition",
-        "bedrock_usage_analyzer.utils.paths"
+        "bedrock_usage_analyzer.utils.yaml_handler"
       ]
     },
     {
@@ -565,24 +598,40 @@
           "description": "Order candidates so geography-specific prefixes (jp, au) come before apac/global."
         },
         {
+          "name": "for_region",
+          "description": "Fetcher that knows which models of the region's fm-list have an on-demand endpoint."
+        },
+        {
           "name": "__init__",
           "description": "Initialize with Bedrock client and prefix map"
+        },
+        {
+          "name": "_list_once",
+          "description": "List inference profiles of ``kind`` once per run."
         },
         {
           "name": "_load_system_profiles",
           "description": ""
         },
         {
+          "name": "_learn_country_geographies",
+          "description": "Country geographies (jp, au, kr, ...) from the listed profiles."
+        },
+        {
           "name": "list_application_profiles",
           "description": "All application inference profiles in the region, with their resolved source."
         },
         {
-          "name": "resolve_sources",
-          "description": "Return the endpoint IDs an application profile may have been copied from."
+          "name": "resolve_endpoints",
+          "description": "Return the endpoints, as (prefix or None, model ID), a profile may have been copied from."
         },
         {
-          "name": "_country_prefix",
-          "description": "The country-level prefix (au, jp, in, ...) whose regions contain ``region_set``."
+          "name": "_pairs",
+          "description": "Listed system profile IDs as (prefix, model), country geographies first."
+        },
+        {
+          "name": "_country_of",
+          "description": "The country prefix (jp, au, kr, ...) whose regions contain all of ``regions``."
         },
         {
           "name": "_infer_from_regions",
@@ -661,6 +710,10 @@
           "description": "Get current AWS account ID via STS"
         },
         {
+          "name": "_exit_no_identity",
+          "description": ""
+        },
+        {
           "name": "_explain_partition_mismatch",
           "description": "If STS in ``region`` rejected the credentials, check whether they belong to another partition."
         },
@@ -687,6 +740,10 @@
         {
           "name": "_is_system_profile",
           "description": "True when ``value`` is the ID of a system inference profile in the region."
+        },
+        {
+          "name": "_profile_endpoints_of",
+          "description": "Inference profile prefixes the region's fm-list lists for ``model_id``."
         },
         {
           "name": "_is_known_model",
@@ -739,6 +796,14 @@
         {
           "name": "_ensure_fm_list",
           "description": "Ensure FM list exists for region"
+        },
+        {
+          "name": "fm_models",
+          "description": "Parsed fm-list of the selected region (shared with the analyzer)."
+        },
+        {
+          "name": "_load_fm_list_or_none",
+          "description": "The region's fm-list models, None when there is no list (parsed once per region)."
         },
         {
           "name": "_load_fm_list",
@@ -821,6 +886,10 @@
       ],
       "methods": [
         {
+          "name": "_account_regions",
+          "description": "Regions the account has enabled in ``partition`` (account:ListRegions, else"
+        },
+        {
           "name": "__init__",
           "description": "Initialize generator with empty models and entries"
         },
@@ -849,8 +918,8 @@
           "description": "Remove ERROR entries from YAML files"
         },
         {
-          "name": "_stale_slots_in",
-          "description": "(model, endpoint, type, code) slots of one region file that are in ``stale``."
+          "name": "_lookup",
+          "description": "(status, quota) from the region's listing, else from GetServiceQuota (recorded for the cleanup)."
         },
         {
           "name": "_missing_in",
@@ -917,6 +986,10 @@
           "description": "Process quota mapping for a single region"
         },
         {
+          "name": "_drop_unlisted_saved_codes",
+          "description": "Null saved codes that the region's quota listing lacks and Service Quotas confirms missing."
+        },
+        {
           "name": "_drop_conflicting_saved_codes",
           "description": ""
         },
@@ -951,6 +1024,7 @@
       ],
       "imports_libraries": [
         "copy",
+        "functools",
         "logging",
         "sys",
         "typing"
@@ -984,6 +1058,10 @@
         {
           "name": "mapping_conflict",
           "description": "Return why ``quota_name`` cannot be a quota of this model endpoint, or None."
+        },
+        {
+          "name": "scrub_conflicting",
+          "description": "Null, in place, the codes in ``quotas`` that contradict this model endpoint."
         }
       ],
       "imports_libraries": [
@@ -1119,6 +1197,10 @@
           "description": ""
         },
         {
+          "name": "partition_mismatch",
+          "description": "Why ``region`` cannot be used with credentials of ``credentials_partition`` (None if it can)."
+        },
+        {
           "name": "get_region_display_name",
           "description": "Human-readable region name, e.g. 'AWS GovCloud (US-West)'."
         },
@@ -1175,12 +1257,20 @@
           "description": "Identity found by asking STS in the home region of each *other* partition."
         },
         {
-          "name": "detect_credentials_partition",
-          "description": "Partition of the current credentials, or None if it cannot be determined."
+          "name": "detect_partition",
+          "description": "(partition of the current credentials, None) or (None, the error that prevented it)."
         },
         {
           "name": "clear_cache",
           "description": "Forget cached caller identities and config regions (used by tests)."
+        },
+        {
+          "name": "probe_if_rejected",
+          "description": "Identity from another partition's STS, asked only when STS rejected the token."
+        },
+        {
+          "name": "other_partition_message",
+          "description": "'The credentials are for X, but <region> is in Y.' (region None: the default STS endpoint)."
         }
       ],
       "imports_libraries": [
@@ -1232,6 +1322,10 @@
           "description": "List metadata files matching pattern."
         },
         {
+          "name": "list_data_names",
+          "description": "Names of the metadata files matching pattern (user copies and bundled ones)."
+        },
+        {
           "name": "is_using_customized_metadata",
           "description": "Check if using customized (user-refreshed) metadata."
         },
@@ -1249,6 +1343,7 @@
         }
       ],
       "imports_libraries": [
+        "fnmatch",
         "importlib",
         "os",
         "pathlib",
@@ -1271,6 +1366,10 @@
           "description": "Invokable Claude endpoint IDs listed in the region's fm-list, newest first."
         },
         {
+          "name": "require_credentials_partition",
+          "description": "Exit when ``bedrock_region`` is outside the credentials' partition."
+        },
+        {
           "name": "select_quota_mapping_params",
           "description": "Interactive selection for quota mapping parameters (region, model)"
         },
@@ -1280,15 +1379,14 @@
         }
       ],
       "imports_libraries": [
-        "os",
         "sys",
         "typing"
       ],
       "imports_files": [
+        "bedrock_usage_analyzer.aws.bedrock",
         "bedrock_usage_analyzer.sync.quota_rules",
         "bedrock_usage_analyzer.sync.regions",
         "bedrock_usage_analyzer.utils.partition",
-        "bedrock_usage_analyzer.utils.paths",
         "bedrock_usage_analyzer.utils.yaml_handler"
       ]
     },
@@ -1301,14 +1399,37 @@
           "description": "Load YAML file with UTF-8 encoding using safe_load"
         },
         {
+          "name": "load_data_file",
+          "description": "Parsed metadata file: the user copy, else the bundled one (also from a zipped"
+        },
+        {
+          "name": "load_fm_list",
+          "description": "Models of a region's fm-list (user copy, else bundled); None when there is no list."
+        },
+        {
+          "name": "valid_models",
+          "description": "The usable model entries of parsed fm-list ``data``: 'models: null', a non-mapping file"
+        },
+        {
           "name": "save_yaml",
           "description": "Save data to YAML file with UTF-8 encoding"
+        },
+        {
+          "name": "fm_endpoints",
+          "description": "Endpoint keys ('base', 'us', 'global', ...) of ``model_id`` in parsed fm-list models."
+        },
+        {
+          "name": "quota_slots",
+          "description": "(model ID, endpoint, metric, code) of every mapped quota in parsed fm-list models."
         }
       ],
       "imports_libraries": [
+        "os",
         "yaml"
       ],
-      "imports_files": []
+      "imports_files": [
+        "bedrock_usage_analyzer.utils.paths"
+      ]
     },
     {
       "path": "tests/conftest.py",
@@ -1318,6 +1439,8 @@
       ],
       "imports_files": [
         "bedrock_usage_analyzer.aws",
+        "bedrock_usage_analyzer.core",
+        "bedrock_usage_analyzer.sync",
         "bedrock_usage_analyzer.utils"
       ]
     },
@@ -1345,11 +1468,13 @@
       "path": "tests/test_cli_and_sync.py",
       "summary": "CLI argument handling, error hints, and metadata sync behaviour.",
       "imports_libraries": [
+        "argparse",
         "botocore",
         "pytest",
         "sys"
       ],
       "imports_files": [
+        "bedrock_usage_analyzer",
         "bedrock_usage_analyzer.__main__",
         "bedrock_usage_analyzer.aws",
         "bedrock_usage_analyzer.aws.bedrock",
@@ -1369,10 +1494,13 @@
       "path": "tests/test_partition.py",
       "summary": "Partition helpers: offline resolution, ARNs, console links, caller identity.",
       "imports_libraries": [
+        "logging",
         "pytest"
       ],
       "imports_files": [
+        "bedrock_usage_analyzer.aws",
         "bedrock_usage_analyzer.aws.client_factory",
+        "bedrock_usage_analyzer.sync",
         "bedrock_usage_analyzer.utils"
       ]
     },
@@ -1401,6 +1529,7 @@
         "bedrock_usage_analyzer.aws",
         "bedrock_usage_analyzer.core.analyzer",
         "bedrock_usage_analyzer.sync",
+        "bedrock_usage_analyzer.sync.quota_index",
         "bedrock_usage_analyzer.sync.quota_rules",
         "bedrock_usage_analyzer.utils.yaml_handler"
       ]
@@ -1434,6 +1563,7 @@
         "bedrock_usage_analyzer.core",
         "bedrock_usage_analyzer.core.profile_fetcher",
         "bedrock_usage_analyzer.core.user_inputs",
+        "bedrock_usage_analyzer.utils",
         "bedrock_usage_analyzer.utils.partition"
       ]
     },

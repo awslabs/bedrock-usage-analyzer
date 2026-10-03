@@ -8,9 +8,9 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict
 import sys
 
-from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, quota_slots, save_yaml
+from bedrock_usage_analyzer.utils.yaml_handler import load_data_file, quota_slots, save_yaml, valid_models
 from bedrock_usage_analyzer.utils.csv_handler import write_csv
-from bedrock_usage_analyzer.utils.paths import list_data_files, get_writable_path, get_bundle_path
+from bedrock_usage_analyzer.utils.paths import list_data_names, get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, is_missing, list_quota_codes, lookup_quota, QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
 from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict, scrub_conflicting
@@ -43,6 +43,7 @@ class QuotaIndexGenerator:
         self._listings = {}  # region -> {code: quota} from ListServiceQuotas (None: not listed)
         self._checked_regions = set()  # regions the account can call (regions.yml)
         self._files_written = 0  # fm-list files the cleanup rewrote
+        self._removed = 0  # quota codes the cleanup removed (or would remove from bundled lists)
         self._regional = set()
         self._mismatched = set()
         # Parsed fm-lists of the credentials' partition, by region (read once per run)
@@ -78,9 +79,9 @@ class QuotaIndexGenerator:
 
         self._partition = credentials_partition_or_exit()
         fm_files = []
-        for fm_file in list_data_files('fm-list-*.yml'):
-            filename = fm_file.name if hasattr(fm_file, 'name') else str(fm_file)
-            region = filename.replace('fm-list-', '').replace('.yml', '')
+        # By name: also finds the bundled lists of a zipped package (no file paths there)
+        for fm_file in list_data_names('fm-list-*.yml'):
+            region = fm_file.replace('fm-list-', '').replace('.yml', '')
             # Disrupted regions are skipped like in every refresh (their endpoints time out)
             if region not in SKIP_REGIONS:
                 fm_files.append((region, fm_file))
@@ -118,11 +119,9 @@ class QuotaIndexGenerator:
         logger.info(f"Found {len(fm_files)} fm-list files")
 
         for region, fm_file in fm_files:
-            data = load_yaml(str(fm_file))
-            data = data if isinstance(data, dict) else {}
-            # Same tolerance as load_fm_list: 'models: null' and entries without a model_id
-            # are skipped instead of stopping the whole run
-            data['models'] = [m for m in data.get('models') or [] if isinstance(m, dict) and m.get('model_id')]
+            loaded = load_data_file(fm_file)
+            data = loaded if isinstance(loaded, dict) else {}
+            data['models'] = valid_models(loaded)  # malformed entries skipped, not fatal
             partition = get_partition_for_region(region)
             if partition == self._partition:
                 self._fm_data[region] = data
@@ -268,7 +267,7 @@ class QuotaIndexGenerator:
     def _cleanup_errors(self):
         """Remove quota codes that do not exist, or belong to another model/endpoint, from every fm-list"""
         if not self.error_entries and not self.mismatch_entries:
-            logger.info(f"\nThere is no erroneous entry.")
+            logger.info(f"\nNo index entry is missing or mismatched; checking every region's list...")
         else:
             logger.info(f"\nCleaning up {len(self.error_entries)} missing and "
                         f"{len(self.mismatch_entries)} mismatched entries...")
@@ -343,6 +342,7 @@ class QuotaIndexGenerator:
                                 f"({quota.get('code')}) in {region}: {reason}")
                     quotas[quota_type] = None
                     modified = True
+                    self._removed += 1
 
         if not modified:
             return
@@ -394,10 +394,12 @@ class QuotaIndexGenerator:
                 )
                 logger.info(f"✓ Generated {bundle_file} (bundled)")
         
-        if self.error_entries or self.mismatch_entries:
-            # Only files actually rewritten count (bundled lists change only with --update-bundle)
-            logger.info(f"✓ Cleaned up {len(self.error_entries)} missing and {len(self.mismatch_entries)} "
-                        f"mismatched entries in {self._files_written} fm-list file(s)")
+        # Codes removed in any region (not only index entries), and only files really written
+        if self._removed and self._files_written:
+            logger.info(f"✓ Removed {self._removed} quota code(s) from {self._files_written} fm-list file(s)")
+        elif self._removed:
+            logger.info(f"{self._removed} quota code(s) to remove were found only in bundled lists, which "
+                        f"were left unchanged (maintainers: --update-bundle)")
 
 
 def main():

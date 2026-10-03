@@ -120,6 +120,21 @@ def list_data_files(pattern: str = "*.yml") -> List[Path]:
     return [found[name] for name in sorted(found)]
 
 
+def list_data_names(pattern: str = "*.yml") -> List[str]:
+    """Names of the metadata files matching pattern (user copies and bundled ones).
+
+    Unlike list_data_files this also sees bundled files of a zipped package, which have no
+    file path; read them with yaml_handler.load_data_file.
+    """
+    import fnmatch
+    names = {p.name for p in list_data_files(pattern)}
+    try:
+        names.update(r.name for r in get_bundled_data_dir().iterdir() if fnmatch.fnmatch(r.name, pattern))
+    except (TypeError, FileNotFoundError, ModuleNotFoundError, OSError):
+        pass
+    return sorted(names)
+
+
 def is_using_customized_metadata() -> bool:
     """Check if using customized (user-refreshed) metadata."""
     user_dir = get_user_data_dir()

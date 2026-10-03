@@ -145,7 +145,9 @@ class QuotaMapper:
             # cannot be told apart from a failed LLM call or a keyword miss, and wiping a
             # correct code is worse than keeping a stale one. `bua refresh quota-index` removes
             # codes that Service Quotas rejects or that contradict their model/endpoint.
-            endpoints = fm.setdefault('endpoints', {})
+            if not isinstance(fm.get('endpoints'), dict):
+                fm['endpoints'] = {}  # 'endpoints: null' in a hand-edited or older list
+            endpoints = fm['endpoints']
             for endpoint_type, new in endpoints_data.items():
                 saved = (endpoints.get(endpoint_type) or {}).get('quotas') or {}
                 merged = dict(saved)
@@ -195,7 +197,7 @@ class QuotaMapper:
     def _get_endpoints_to_process(self, fm: Dict) -> List[str]:
         """Determine which endpoints to process for a model"""
         # Simply return the keys from the endpoints dict
-        return list(fm.get('endpoints', {}).keys())
+        return list(fm.get('endpoints') or {})
     
     def _get_quota_mapping(self, region: str, model_id: str, common_name: str, 
                           endpoint_type: str, quotas: List[Dict]) -> Optional[Dict]:
