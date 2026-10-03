@@ -105,18 +105,19 @@ class QuotaMapper:
         regional = set(get_regional_profile_prefixes())
         listed_codes = {q.get('QuotaCode') for q in quotas}
         self._listed_codes[region] = listed_codes  # reused for every model and endpoint
-        # Saved codes absent from the listing are confirmed in one parallel pass
+        # First: saved codes that contradict their model/endpoint (written by older versions)
+        # go even when nothing new replaces them, and need no lookup
+        for fm in fm_list:
+            self._drop_conflicting_saved_codes(fm, regional)
+        # The remaining saved codes absent from the listing are confirmed in one parallel pass
         unlisted = {(code, region) for _, _, _, code in quota_slots(fm_list) if code not in listed_codes}
         if listed_codes:
             confirm_statuses(unlisted, self._quota_checks)
         for i, fm in enumerate(fm_list, 1):
             model_id = fm['model_id']
             logger.info(f"    [{i}/{len(fm_list)}] {model_id}... ", extra={'end': ''})
-            
+
             endpoints_to_process = self._get_endpoints_to_process(fm)
-            # First, before any 'continue': saved codes that contradict their model/endpoint
-            # (written by older versions) go even when nothing new replaces them
-            self._drop_conflicting_saved_codes(fm, regional)
             # The region's quotas were just listed: a saved code not in the list is gone
             self._drop_unlisted_saved_codes(fm, listed_codes, region, self._quota_checks)
 

@@ -15,7 +15,7 @@ from bedrock_usage_analyzer.core.output_generator import OutputGenerator
 from bedrock_usage_analyzer.aws.bedrock import endpoint_id, get_regional_profile_prefixes
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.servicequotas import (
-    QUOTA_MISSING, QUOTA_OK, check_quota, list_quota_codes, lookup_quota, regional_client)
+    QUOTA_MISSING, QUOTA_OK, list_quota_codes, lookup_quota)
 from bedrock_usage_analyzer.utils.yaml_handler import fm_endpoints, load_fm_list, quota_slots
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
 
@@ -42,7 +42,6 @@ class BedrockAnalyzer:
 
         # botocore picks the endpoint for the region's partition (commercial, GovCloud, China)
         self.cloudwatch_client = create_client('cloudwatch', region)
-        self.sq_client = regional_client(region)  # shared with the other quota lookups
         # Region's fm-list: the one parsed during input collection, else read on first lookup
         self._fm_models = fm_models
         # One ListServiceQuotas pass pays off only for many codes; a short run uses direct
@@ -136,7 +135,6 @@ class BedrockAnalyzer:
             code = quota_data['code']
             status, quota = lookup_quota(
                 code, self.region, self._quota_listings, use_listing=self._use_quota_listing,
-                check=lambda c, r: check_quota(c, r, client=self.sq_client),
                 lister=lambda r: list_quota_codes(r, quiet_denied=True))
             if status == QUOTA_OK and quota.get('Value') is None:
                 logger.info(f"  Warning: {quota_type} quota {code} has no value; not shown")

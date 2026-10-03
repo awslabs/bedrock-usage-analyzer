@@ -222,8 +222,9 @@ class InferenceProfileFetcher:
         # region; global.* only for a copy that routes globally (it has a region-less ARN).
         regions = {region_from_arn(a) for a in arns}
         routes_globally = '' in regions
+        # and a global copy only to global.* (global profiles have their own quotas)
         candidates = [(system_arns, ids) for system_arns, ids in (
-            (s, [p for p in ids if routes_globally or not p.startswith('global.')])
+            (s, [p for p in ids if p.startswith('global.') == routes_globally])
             for s, ids in self._by_model.get(model_id, [])) if len(system_arns) > 1 and ids]
 
         # A copy inside one country geography (au, jp, in) whose profile is listed is a copy of

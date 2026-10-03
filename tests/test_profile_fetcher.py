@@ -499,3 +499,11 @@ def test_narrowest_geography_wins_when_learned_sets_overlap():
                                 'aa': {'ap-northeast-1', 'ap-northeast-3', 'ap-northeast-2'}}
     fetcher._listed_prefixes = {'jp', 'aa'}                   # 'aa' sorts first but is wider
     assert fetcher._country_of({'ap-northeast-1', 'ap-northeast-3'}) == 'jp'
+
+
+def test_global_copy_is_never_credited_to_a_regional_profile():
+    us = [arn(r, HAIKU) for r in ('us-east-1', 'us-east-2', 'us-west-2')]
+    glob = us + [arn('eu-west-1', HAIKU), arn('ap-northeast-1', HAIKU), f"arn:aws:bedrock:::foundation-model/{HAIKU}"]
+    fetcher = InferenceProfileFetcher(FakeBedrock(system=[system_profile(f"us.{HAIKU}", us)],
+                                                  application=[app_profile('globalold01', 'g', glob)]))
+    assert fetcher.list_application_profiles()[0]['sources'] == [f"global.{HAIKU}"]   # not us.*

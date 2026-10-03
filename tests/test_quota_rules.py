@@ -413,3 +413,15 @@ def test_quota_index_without_regions_file_checks_only_account_regions(monkeypatc
                         lambda code, region: asked.append(region) or ('ok', {'QuotaName': 'n'}))
     quota_index.QuotaIndexGenerator().run()
     assert 'ap-east-2' not in asked                           # opt-in region the account has not enabled
+
+
+def test_quota_index_tolerates_malformed_fm_lists(monkeypatch, tmp_path, no_bundle, commercial_creds):
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1', 'us-west-2']})
+    (tmp_path / 'data' / 'fm-list-us-west-2.yml').write_text('models:\n')
+    save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [{'provider': 'X'}, {
+        'model_id': 'amazon.nova-lite-v1:0', 'endpoints': {'base': {'quotas': {
+            'tpm': {'code': 'L-1', 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: ('ok', {'QuotaName': 'n'}))
+    quota_index.QuotaIndexGenerator().run()                  # no crash
+    assert 'L-1' in (tmp_path / 'data' / 'quota-index.csv').read_text()

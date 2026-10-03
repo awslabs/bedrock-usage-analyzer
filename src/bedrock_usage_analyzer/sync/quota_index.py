@@ -42,6 +42,7 @@ class QuotaIndexGenerator:
         self._region_checks = {}
         self._listings = {}  # region -> {code: quota} from ListServiceQuotas (None: not listed)
         self._checked_regions = set()  # regions the account can call (regions.yml)
+        self._files_written = 0  # fm-list files the cleanup rewrote
         self._regional = set()
         self._mismatched = set()
         # Parsed fm-lists of the credentials' partition, by region (read once per run)
@@ -117,12 +118,16 @@ class QuotaIndexGenerator:
         logger.info(f"Found {len(fm_files)} fm-list files")
 
         for region, fm_file in fm_files:
-            data = load_yaml(str(fm_file)) or {}
+            data = load_yaml(str(fm_file))
+            data = data if isinstance(data, dict) else {}
+            # Same tolerance as load_fm_list: 'models: null' and entries without a model_id
+            # are skipped instead of stopping the whole run
+            data['models'] = [m for m in data.get('models') or [] if isinstance(m, dict) and m.get('model_id')]
             partition = get_partition_for_region(region)
             if partition == self._partition:
                 self._fm_data[region] = data
 
-            for model in data.get('models', []):
+            for model in data['models']:
                 key = (partition, model['model_id'])
 
                 if key not in self.models:
@@ -347,11 +352,13 @@ class QuotaIndexGenerator:
         # when it reads quotas, so bundled lists are corrected by maintainers (--update-bundle).
         if user_file.exists():
             save_yaml(str(user_file), data)
+            self._files_written += 1
             logger.info(f"  ✓ Updated {user_file}")
         bundle_path = get_bundle_path() if self.update_bundle else None
         if bundle_path:
             bundle_file = bundle_path / f'fm-list-{region}.yml'
             save_yaml(str(bundle_file), data)
+            self._files_written += 1
             logger.info(f"  ✓ Updated {bundle_file} (bundled)")
         elif not user_file.exists():
             # The analyzer re-applies the mismatch checks; a missing code is looked up and
@@ -387,8 +394,10 @@ class QuotaIndexGenerator:
                 )
                 logger.info(f"✓ Generated {bundle_file} (bundled)")
         
-        if self.error_entries:
-            logger.info(f"✓ Cleaned up {len(self.error_entries)} ERROR entries from YAML files")
+        if self.error_entries or self.mismatch_entries:
+            # Only files actually rewritten count (bundled lists change only with --update-bundle)
+            logger.info(f"✓ Cleaned up {len(self.error_entries)} missing and {len(self.mismatch_entries)} "
+                        f"mismatched entries in {self._files_written} fm-list file(s)")
 
 
 def main():

@@ -56,7 +56,8 @@ def analyzer(sydney_bedrock, monkeypatch):
     cw = FakeCloudWatch({'auapp000001': (2, 100, 50), f"au.{HAIKU}": (1, 10, 5)})
     clients = {'bedrock': sydney_bedrock, 'cloudwatch': cw, 'service-quotas': FakeQuotas()}
     monkeypatch.setattr(analyzer_module, 'create_client', lambda service, region=None, **_: clients[service])
-    monkeypatch.setattr(analyzer_module, 'regional_client', lambda region: clients['service-quotas'])
+    monkeypatch.setattr(analyzer_module, 'list_quota_codes', lambda region, **_: None)
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.regional_client', lambda region: clients['service-quotas'])
     a = BedrockAnalyzer('ap-southeast-2', GRANULARITY, profile_fetcher=InferenceProfileFetcher(sydney_bedrock))
     a.cw = cw
     return a
@@ -223,7 +224,7 @@ def test_report_drops_non_https_quota_links(tmp_path):
     assert 'href="javascript:' not in html and '[L-9]' in html
 
 
-def test_concurrent_quota_is_fetched_and_missing_codes_explained(analyzer, caplog):
+def test_concurrent_quota_is_fetched_and_missing_codes_explained(analyzer, caplog, monkeypatch):
     import logging
     caplog.set_level(logging.INFO)
 
@@ -234,7 +235,7 @@ def test_concurrent_quota_is_fetched_and_missing_codes_explained(analyzer, caplo
                 raise ClientError({'Error': {'Code': 'NoSuchResourceException', 'Message': 'x'}}, 'GetServiceQuota')
             return {'Quota': {'Value': 7.0}}
 
-    analyzer.sq_client = Quotas()
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.regional_client', lambda region: Quotas())
     quotas = analyzer._fetch_quotas(HAIKU, {'concurrent': {'code': 'L-C', 'name': 'c'},
                                             'tpm': {'code': 'L-GONE', 'name': 't'}}, None)
     assert quotas['concurrent']['value'] == 7.0 and quotas['tpm'] is None
@@ -287,11 +288,11 @@ def test_chart_quota_note_is_built_without_innerhtml():
     assert "quotaInfo.url.startsWith('https://')" in template
 
 
-def test_quota_without_value_is_skipped(analyzer):
+def test_quota_without_value_is_skipped(analyzer, monkeypatch):
     class Quotas:
         def get_service_quota(self, ServiceCode, QuotaCode):
             return {'Quota': {'QuotaName': 'x'}}
-    analyzer.sq_client = Quotas()
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.regional_client', lambda region: Quotas())
     assert analyzer._fetch_quotas(HAIKU, {'tpm': {'code': 'L-1', 'name': 'n'}}, None)['tpm'] is None
 
 
@@ -306,7 +307,7 @@ def test_quotas_come_from_the_region_listing(analyzer, monkeypatch):
     monkeypatch.setattr(analyzer_module, 'list_quota_codes',
                         lambda region, **_: {'L-1': {'QuotaCode': 'L-1', 'Value': 123.0}})
     asked = []
-    monkeypatch.setattr(analyzer_module, 'check_quota', lambda code, region, client=None: asked.append(code) or ('missing', None))
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region, client=None: asked.append(code) or ('missing', None))
     analyzer._use_quota_listing = True                        # set by analyze() for many codes
     quotas = analyzer._fetch_quotas(HAIKU, {'tpm': {'code': 'L-1', 'name': 'x'}, 'rpm': {'code': 'L-2', 'name': 'y'}})
     assert quotas['tpm']['value'] == 123.0 and asked == ['L-2']                # one lookup, for the unlisted code

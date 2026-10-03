@@ -295,10 +295,6 @@ def detect_partition(region: Optional[str] = None):
         return None, e
 
 
-def detect_credentials_partition(region: Optional[str] = None) -> Optional[str]:
-    """Partition of the current credentials, or None if it cannot be determined."""
-    return detect_partition(region)[0]
-
 
 def clear_cache() -> None:
     """Forget cached caller identities and config regions (used by tests)."""

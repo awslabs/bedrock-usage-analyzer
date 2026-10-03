@@ -113,7 +113,7 @@ def test_caller_identity_is_cached_per_region(monkeypatch):
                                'Partition': 'aws-us-gov'}
     assert sts.calls == 1
     assert created == [('sts', 'us-gov-west-1')]
-    assert p.detect_credentials_partition('us-gov-west-1') == 'aws-us-gov'
+    assert p.detect_partition('us-gov-west-1')[0] == 'aws-us-gov'
 
 
 def test_detect_partition_returns_none_on_error(monkeypatch):
@@ -121,7 +121,7 @@ def test_detect_partition_returns_none_on_error(monkeypatch):
         raise RuntimeError('no credentials')
 
     monkeypatch.setattr('bedrock_usage_analyzer.aws.client_factory.create_client', boom)
-    assert p.detect_credentials_partition('us-east-1') is None
+    assert p.detect_partition('us-east-1')[0] is None
 
 
 def test_region_hint_prefers_env(monkeypatch):
