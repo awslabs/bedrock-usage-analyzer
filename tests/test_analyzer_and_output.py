@@ -56,6 +56,7 @@ def analyzer(sydney_bedrock, monkeypatch):
     cw = FakeCloudWatch({'auapp000001': (2, 100, 50), f"au.{HAIKU}": (1, 10, 5)})
     clients = {'bedrock': sydney_bedrock, 'cloudwatch': cw, 'service-quotas': FakeQuotas()}
     monkeypatch.setattr(analyzer_module, 'create_client', lambda service, region=None, **_: clients[service])
+    monkeypatch.setattr(analyzer_module, 'regional_client', lambda region: clients['service-quotas'])
     a = BedrockAnalyzer('ap-southeast-2', GRANULARITY, profile_fetcher=InferenceProfileFetcher(sydney_bedrock))
     a.cw = cw
     return a

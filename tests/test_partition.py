@@ -213,3 +213,16 @@ def test_probe_other_partitions_skips_the_asked_partition():
     assert p.probe_other_partitions('us-east-2', lookup)['Partition'] == 'aws-us-gov'
     assert 'us-east-1' not in asked
     assert p.probe_other_partitions('cn-north-1', lambda r: (_ for _ in ()).throw(RuntimeError('x'))) is None
+
+
+def test_identity_fallback_warns_about_region_not_enabled(caplog):
+    import logging
+    caplog.set_level(logging.WARNING)
+
+    def lookup(region):
+        if region == 'ap-east-2':
+            raise RuntimeError('InvalidClientTokenId')
+        return {'Partition': 'aws'}
+
+    p.resolve_caller_identity('ap-east-2', lookup)
+    assert 'ap-east-2 may not be enabled for this account' in caplog.text

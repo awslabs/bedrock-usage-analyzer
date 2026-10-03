@@ -410,3 +410,12 @@ def test_country_copy_after_country_set_changed_stays_with_country():
         system=[system_profile(f"au.{HAIKU}", au_now), system_profile(f"apac.{HAIKU}", apac)],
         application=[app_profile('auold000001', 'a', au_old)]))
     assert fetcher.list_application_profiles()[0]['sources'] == [f"au.{HAIKU}"]
+
+
+def test_single_arn_copy_of_model_with_on_demand_endpoint_is_base_first():
+    one = [arn('ap-southeast-2', HAIKU)]
+    fetcher = InferenceProfileFetcher(FakeBedrock(system=[system_profile(f"au.{HAIKU}", one)],
+                                                  application=[app_profile('single00001', 's', one)]),
+                                      on_demand_models=[HAIKU])
+    app = fetcher.list_application_profiles()[0]
+    assert app['sources'] == [HAIKU, f"au.{HAIKU}"] and app['profile_prefix'] is None

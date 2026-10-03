@@ -43,6 +43,11 @@ def _client(region: str):
         return _clients[region]
 
 
+def regional_client(region: str):
+    """The shared Service Quotas client of a region."""
+    return _client(region)
+
+
 def list_quota_codes(region: str, service_code: str = 'bedrock') -> Optional[Dict[str, Dict]]:
     """All quotas of the service in a region by code (one paginated listing), or None on error."""
     try:

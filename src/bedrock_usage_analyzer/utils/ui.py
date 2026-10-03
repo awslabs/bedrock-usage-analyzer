@@ -74,14 +74,13 @@ def _claude_endpoints_in(region: str, limit: int = 12) -> list:
     return sorted(options, key=newest_first, reverse=True)[:limit]
 
 
-def require_credentials_partition(bedrock_region: str, credential_regions: list) -> None:
-    """Exit when ``bedrock_region`` is outside the partition of ``credential_regions``.
+def require_credentials_partition(bedrock_region: str, credentials_partition: str) -> None:
+    """Exit when ``bedrock_region`` is outside the credentials' partition.
 
     e.g. GovCloud credentials with a commercial Bedrock region: every LLM call would fail.
     """
-    from bedrock_usage_analyzer.utils.partition import get_partition_for_region, partition_mismatch
-    problem = credential_regions and partition_mismatch(
-        bedrock_region, get_partition_for_region(credential_regions[0]))
+    from bedrock_usage_analyzer.utils.partition import partition_mismatch
+    problem = partition_mismatch(bedrock_region, credentials_partition)
     if problem:
         print(f"\nBedrock calls: {problem}", file=sys.stderr)
         sys.exit(1)
@@ -115,7 +114,7 @@ def select_quota_mapping_params(target_region: str = None, bedrock_region: str =
     from bedrock_usage_analyzer.sync.regions import load_region_names, regions_for_credentials
     from bedrock_usage_analyzer.utils.partition import GOVCLOUD, get_partition_for_region
     # Any region the user already named pins STS to the right partition (GovCloud without AWS_REGION)
-    all_regions, _ = regions_for_credentials(load_region_names(), target_region or bedrock_region)
+    all_regions, partition = regions_for_credentials(load_region_names(), target_region or bedrock_region)
     if not all_regions:
         print("\nNo regions in regions.yml for these credentials. Run: bua refresh regions", file=sys.stderr)
         sys.exit(1)
@@ -127,7 +126,7 @@ def select_quota_mapping_params(target_region: str = None, bedrock_region: str =
             all_regions
         )
     else:
-        require_credentials_partition(bedrock_region, all_regions)
+        require_credentials_partition(bedrock_region, partition)
     print(f"\n✓ Bedrock calls will use region: {bedrock_region}")
 
     # Step 2: Select model for mapping (skip if provided)

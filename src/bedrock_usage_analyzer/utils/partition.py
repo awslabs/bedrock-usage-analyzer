@@ -258,6 +258,11 @@ def resolve_caller_identity(region: Optional[str] = None, lookup=None) -> Dict[s
         except Exception:
             raise e
         _identity_fallback[key] = home
+        # The credentials are valid in this partition, but not in this region: typically an
+        # opt-in region the account has not enabled. Said once, before Bedrock calls fail there.
+        logger.warning(f"  STS in {key} rejected the credentials, {home} accepted them: {key} may "
+                       f"not be enabled for this account (opt-in region). Enable it in the "
+                       f"account settings or pick another region.")
         return identity
 
 

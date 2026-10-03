@@ -10,7 +10,7 @@ import sys
 
 from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
 from bedrock_usage_analyzer.utils.csv_handler import write_csv
-from bedrock_usage_analyzer.utils.paths import list_data_files, get_writable_path, get_bundle_path, get_data_path
+from bedrock_usage_analyzer.utils.paths import list_data_files, get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import check_quota, list_quota_codes, QUOTA_ERROR, QUOTA_OK, QUOTA_MISSING
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
 from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict
@@ -91,7 +91,11 @@ class QuotaIndexGenerator:
         # Only regions the account can call are validated and cleaned: an opt-in region it
         # has not enabled answers every lookup with an error (its codes are kept as they are)
         from bedrock_usage_analyzer.sync.regions import load_region_names
-        known = enabled or set(load_region_names())
+        from bedrock_usage_analyzer.utils.partition import filter_regions_by_partition
+        # Only this partition's regions: a regions.yml written with other credentials says
+        # nothing about which regions of this partition are enabled
+        known = set(filter_regions_by_partition(enabled, self._partition)) or \
+            set(filter_regions_by_partition(load_region_names(), self._partition))
         fm_files.sort(key=lambda item: (item[0] not in homes, item[0] not in enabled, item[0]))
 
         logger.info(f"Found {len(fm_files)} fm-list files")
@@ -307,9 +311,7 @@ class QuotaIndexGenerator:
     def _cleanup_region_errors(self, region: str):
         """Null out codes missing in this region or contradicting their model/endpoint (user copy, else bundled)"""
         regional, mismatched = self._regional, self._mismatched
-        data = self._fm_data.get(region)
-        if data is None:
-            data = load_yaml(get_data_path(f'fm-list-{region}.yml')) or {}
+        data = self._fm_data[region]  # only the credentials' partition is cleaned
 
         modified = False
         reasons = set()

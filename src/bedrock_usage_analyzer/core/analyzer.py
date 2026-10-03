@@ -14,7 +14,7 @@ from bedrock_usage_analyzer.core.metrics_fetcher import CloudWatchMetricsFetcher
 from bedrock_usage_analyzer.core.output_generator import OutputGenerator
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
 from bedrock_usage_analyzer.aws.client_factory import create_client
-from bedrock_usage_analyzer.aws.servicequotas import QUOTA_MISSING, QUOTA_OK, check_quota
+from bedrock_usage_analyzer.aws.servicequotas import QUOTA_MISSING, QUOTA_OK, check_quota, regional_client
 from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
 
@@ -38,18 +38,19 @@ class BedrockAnalyzer:
 
         # botocore picks the endpoint for the region's partition (commercial, GovCloud, China)
         self.cloudwatch_client = create_client('cloudwatch', region)
-        self.sq_client = create_client('service-quotas', region)
+        self.sq_client = regional_client(region)  # shared with the other quota lookups
+        # Region's fm-list: the one parsed during input collection, else read on first lookup
+        self._fm_models = fm_models
         # Reuse the fetcher from input collection so profiles are listed only once
         if profile_fetcher is not None:
             self.profile_fetcher = profile_fetcher
             self.bedrock_client = profile_fetcher.bedrock_client
         else:
             self.bedrock_client = create_client('bedrock', region)
-            self.profile_fetcher = InferenceProfileFetcher(self.bedrock_client)
+            on_demand = [m['model_id'] for m in self._fm_list() if 'base' in (m.get('endpoints') or {})]
+            self.profile_fetcher = InferenceProfileFetcher(self.bedrock_client, on_demand)
         self.metrics_fetcher = CloudWatchMetricsFetcher(self.cloudwatch_client, self.tz_api_format)
         self.output_generator = None  # Initialized in analyze() with output_dir
-        # Region's fm-list: the one parsed during input collection, else read on first lookup
-        self._fm_models = fm_models
     
     def _system_profile_listed(self, profile_id) -> bool:
         """True unless the region's system profiles were listed and do not include it."""

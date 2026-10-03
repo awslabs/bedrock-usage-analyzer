@@ -95,6 +95,7 @@ class QuotaMapper:
         
         updated_count = 0
         regional = set(get_regional_profile_prefixes())
+        listed_codes = {q.get('QuotaCode') for q in quotas}
         for i, fm in enumerate(fm_list, 1):
             model_id = fm['model_id']
             logger.info(f"    [{i}/{len(fm_list)}] {model_id}... ", extra={'end': ''})
@@ -103,6 +104,8 @@ class QuotaMapper:
             # First, before any 'continue': saved codes that contradict their model/endpoint
             # (written by older versions) go even when nothing new replaces them
             self._drop_conflicting_saved_codes(fm, regional)
+            # The region's quotas were just listed: a saved code not in the list is gone
+            self._drop_unlisted_saved_codes(fm, listed_codes, region)
 
             if not endpoints_to_process:
                 logger.info("⊘ (no endpoints)")
@@ -147,6 +150,19 @@ class QuotaMapper:
         self._save_fm_list(region, fm_list)
         logger.info(f"  ✓ Updated {updated_count} models\n")
     
+    @staticmethod
+    def _drop_unlisted_saved_codes(fm: Dict, listed_codes, region: str) -> None:
+        """Null saved codes that the region's (successful) quota listing does not contain."""
+        if not listed_codes:
+            return
+        for endpoint_type, endpoint in (fm.get('endpoints') or {}).items():
+            quotas = (endpoint or {}).get('quotas') or {}
+            for metric, value in quotas.items():
+                if isinstance(value, dict) and value.get('code') and value['code'] not in listed_codes:
+                    logger.debug(f"Dropping {value['code']} for {fm['model_id']} ({endpoint_type}): "
+                                 f"not listed in {region}")
+                    quotas[metric] = None
+
     @staticmethod
     def _drop_conflicting_saved_codes(fm: Dict, regional) -> None:
         for endpoint_type, endpoint_value in (fm.get('endpoints') or {}).items():

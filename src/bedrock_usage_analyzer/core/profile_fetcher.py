@@ -50,8 +50,10 @@ class InferenceProfileFetcher:
     'jp.' copy even though all of them route to ap-* regions.
     """
 
-    def __init__(self, bedrock_client):
+    def __init__(self, bedrock_client, on_demand_models: Optional[Iterable[str]] = None):
         self.bedrock_client = bedrock_client
+        # Models with an on-demand ('base') endpoint in the region's fm-list
+        self.on_demand_models = set(on_demand_models or ())
         self.prefix_map = get_default_region_prefix_map()
         self._system_profiles: Optional[List[Dict]] = None
         self._system_by_arns: Dict[FrozenSet[str], List[str]] = {}
@@ -165,9 +167,11 @@ class InferenceProfileFetcher:
 
         if len(arn_set) == 1:
             # A base-model copy, unless a system profile routes to exactly this one ARN: the
-            # two cannot be told apart, so the profile belongs to both endpoints. The system
-            # profile comes first (it decides the quotas): the model may have no on-demand
-            # endpoint at all, and a copy of a real base model still shows under 'base'.
+            # two cannot be told apart, so the profile belongs to both endpoints. The first
+            # one decides the quotas: the on-demand endpoint when the model has one, else the
+            # system profile (the model may have no on-demand endpoint at all).
+            if model_id in self.on_demand_models:
+                return [model_id] + _specific_first(exact or [])
             return _specific_first(exact or []) + [model_id]
 
         # The routing set no longer equals any listed profile (sets change over time). Only

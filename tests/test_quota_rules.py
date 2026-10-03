@@ -353,3 +353,26 @@ def test_quota_index_skips_regions_the_account_has_not_enabled(monkeypatch, tmp_
     assert 'af-south-1' not in listed + asked                 # opt-in region not enabled: no calls
     cape = load_yaml(str(tmp_path / 'data' / 'fm-list-af-south-1.yml'))
     assert cape['models'][0]['endpoints']['base']['quotas']['tpm']['code'] == 'L-1'   # kept
+
+
+def test_quota_index_ignores_regions_file_of_another_partition(monkeypatch, tmp_path, no_bundle):
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1', 'us-west-2']})
+    for region in ('us-gov-east-1', 'us-gov-west-1'):
+        save_yaml(str(tmp_path / 'data' / f'fm-list-{region}.yml'), {'models': [
+            {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': {
+                'tpm': {'code': 'L-G', 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws-us-gov')
+    asked = []
+    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: asked.append(region) or ('ok', {'QuotaName': 'n'}))
+    quota_index.QuotaIndexGenerator().run()
+    assert 'us-gov-east-1' in asked                          # not dropped by a commercial regions.yml
+
+
+def test_fm_quotas_drops_saved_codes_missing_from_the_listing():
+    fm = {'model_id': 'm', 'endpoints': {'base': {'quotas': {
+        'tpm': {'code': 'L-GONE', 'name': 'x'}, 'rpm': {'code': 'L-OK', 'name': 'y'}}}}}
+    qm.QuotaMapper._drop_unlisted_saved_codes(fm, {'L-OK'}, 'us-east-1')
+    assert fm['endpoints']['base']['quotas'] == {'tpm': None, 'rpm': {'code': 'L-OK', 'name': 'y'}}
+    qm.QuotaMapper._drop_unlisted_saved_codes(fm, set(), 'us-east-1')          # failed listing: no change
+    assert fm['endpoints']['base']['quotas']['rpm']['code'] == 'L-OK'
