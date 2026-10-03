@@ -418,7 +418,7 @@ def test_fm_list_refresh_adds_base_when_a_listed_model_gains_on_demand(monkeypat
         {'model_id': 'x.prov-only-v1:0', 'provider': 'X', 'inference_types': ['PROVISIONED'],
          'endpoints': {'apac': {'quotas': {'tpm': {'code': 'L-A', 'name': 'n'}}}}}]})
     monkeypatch.setattr(fm_list, 'discover_prefix_mapping', lambda region, profiles=None: [])
-    monkeypatch.setattr(fm_list, 'fetch_all_inference_profiles', lambda region: [])
+    monkeypatch.setattr(fm_list, 'fetch_all_inference_profiles', lambda region: None)   # listing failed
     monkeypatch.setattr(fm_list, 'fetch_foundation_models', lambda region: [
         {'model_id': 'x.prov-only-v1:0', 'provider': 'X', 'inference_types': ['ON_DEMAND', 'PROVISIONED']}])
     fm_list.refresh_region('ap-south-1')
@@ -434,3 +434,18 @@ def test_fm_list_for_a_region_of_another_partition_explains(monkeypatch):
     monkeypatch.setattr(fm_list, 'refresh_region', lambda *a, **k: pytest.fail('must not refresh'))
     with pytest.raises(SystemExit):
         cli.cmd_refresh_fm_list(argparse.Namespace(region='us-gov-west-1', update_bundle=False))
+
+
+def test_fm_list_refresh_prunes_profiles_when_the_region_lists_none(monkeypatch, tmp_path):
+    from bedrock_usage_analyzer.sync import fm_list
+    (tmp_path / 'data').mkdir(exist_ok=True)
+    save_yaml(str(tmp_path / 'data' / 'fm-list-ap-south-1.yml'), {'models': [
+        {'model_id': 'x.m-v1:0', 'provider': 'X', 'inference_types': ['ON_DEMAND'],
+         'endpoints': {'apac': {'quotas': {}}, 'base': {'quotas': {}}}}]})
+    monkeypatch.setattr(fm_list, 'discover_prefix_mapping', lambda region, profiles=None: [])
+    monkeypatch.setattr(fm_list, 'fetch_all_inference_profiles', lambda region: [])     # all retired
+    monkeypatch.setattr(fm_list, 'fetch_foundation_models', lambda region: [
+        {'model_id': 'x.m-v1:0', 'provider': 'X', 'inference_types': ['ON_DEMAND']}])
+    fm_list.refresh_region('ap-south-1')
+    saved = load_yaml(str(tmp_path / 'data' / 'fm-list-ap-south-1.yml'))['models'][0]
+    assert set(saved['endpoints']) == {'base'}

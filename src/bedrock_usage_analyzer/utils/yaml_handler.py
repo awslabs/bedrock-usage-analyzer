@@ -79,6 +79,11 @@ def fm_endpoints(models, model_id):
     return None
 
 
+def profile_endpoints(models, model_id):
+    """Inference profile prefixes (every endpoint but 'base') the fm-list has for ``model_id``."""
+    return sorted((fm_endpoints(models, model_id) or set()) - {'base'})
+
+
 def has_endpoint(models, model_id, prefix):
     """True when the fm-list has ``model_id`` with the endpoint of ``prefix`` (None: base)."""
     return (prefix or 'base') in (fm_endpoints(models, model_id) or set())

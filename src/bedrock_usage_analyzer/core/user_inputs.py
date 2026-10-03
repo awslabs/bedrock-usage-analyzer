@@ -13,7 +13,7 @@ from ..aws.client_factory import create_client
 from ..core.errors import troubleshooting_hint
 from ..core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
 from ..sync.regions import load_region_names
-from ..utils.yaml_handler import fm_endpoints, has_endpoint, load_fm_list
+from ..utils.yaml_handler import has_endpoint, load_fm_list, profile_endpoints
 from ..utils.ui import select_from_list
 from ..utils.partition import (
     partition_mismatch,
@@ -65,17 +65,9 @@ def _source_key(model_id: str, prefix, profile_ids) -> tuple:
 
 def group_application_profiles(profiles: Sequence[Dict]) -> List[Dict]:
     """Turn selected application profiles into one model config per source endpoint."""
-    groups: Dict[tuple, Dict] = {}
-    for app in profiles:
-        key = _source_key(app['model_id'], app['profile_prefix'], [app['id']])
-        config = groups.setdefault(key, {
-            'model_id': app['model_id'],
-            'profile_prefix': app['profile_prefix'],
-            'application_profile_ids': [],
-        })
-        if app['id'] not in config['application_profile_ids']:
-            config['application_profile_ids'].append(app['id'])
-    return list(groups.values())
+    return merge_application_configs([
+        {'model_id': app['model_id'], 'profile_prefix': app['profile_prefix'],
+         'application_profile_ids': [app['id']]} for app in profiles])
 
 
 def merge_application_configs(configs: Sequence[Dict]) -> List[Dict]:
@@ -336,12 +328,13 @@ class UserInputs:
                 return self._application_profile_config(value, profile)
 
         base_model_id, prefix = split_profile_id(value)
+        profile_only = [] if known_model or prefix else self._profile_endpoints_of(base_model_id)
         if prefix is None and value.count('.') >= 2 and not known_model and self._is_system_profile(value):
             # A system profile with a prefix newer than this release (e.g. 'kr.')
             prefix, base_model_id = value.split('.', 1)
-        elif not known_model and prefix is None and self._profile_endpoints_of(base_model_id):
+        elif profile_only:
             # Listed, but offered only through inference profiles: the bare ID has no usage
-            options = ', '.join(f"{p}.{base_model_id}" for p in self._profile_endpoints_of(base_model_id))
+            options = ', '.join(f"{p}.{base_model_id}" for p in profile_only)
             logger.warning(f"  WARNING: {value} has no on-demand endpoint in {self.region}; its "
                            f"usage is under its inference profiles: {options}")
         elif not known_model and self.region:
@@ -364,7 +357,7 @@ class UserInputs:
 
     def _profile_endpoints_of(self, model_id: str) -> list:
         """Inference profile prefixes the region's fm-list lists for ``model_id``."""
-        return sorted((fm_endpoints(self._load_fm_list(self.region), model_id) or set()) - {'base'})
+        return profile_endpoints(self._load_fm_list(self.region), model_id)
 
     def _is_known_model(self, value: str) -> bool:
         """True when ``value`` is a model or system profile ID listed for the region."""
@@ -378,7 +371,10 @@ class UserInputs:
         try:
             return self._get_profile_fetcher().resolve_application_profile(identifier)
         except Exception as e:
-            logger.debug(f"Could not list application inference profiles: {e}")
+            # Not silent: an application profile name with '.' or ':' would otherwise be
+            # analyzed as a model ID without saying why
+            logger.warning(f"  WARNING: could not list application inference profiles in {self.region}, "
+                           f"so {identifier} is treated as a model or system profile ID: {e}")
             return None
 
     def _application_profile_config(self, identifier, profile=None):

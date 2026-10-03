@@ -7,6 +7,8 @@ import sys
 import logging
 from typing import List, Dict, Optional, Tuple
 
+import yaml
+
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.utils.partition import build_arn, partition_region_prefix
 
@@ -32,6 +34,10 @@ def _read_prefixes(path) -> List[Dict]:
     try:
         return (load_yaml(str(path)) or {}).get('prefixes', []) or []
     except (FileNotFoundError, OSError):
+        return []
+    except yaml.YAMLError as e:
+        # A hand-edited file with a syntax error: use the other layer (or the fallback set)
+        logger.warning(f"Ignoring unreadable {path}: {e}")
         return []
 
 
@@ -194,8 +200,6 @@ def region_from_arn(arn: str) -> str:
 
 def list_inference_profiles(bedrock_client, type_equals: str) -> List[Dict]:
     """List all inference profiles of one type ('SYSTEM_DEFINED' or 'APPLICATION')."""
-    if not hasattr(bedrock_client, 'list_inference_profiles'):
-        return []
     profiles = []
     params = {'maxResults': 1000, 'typeEquals': type_equals}
     while True:
@@ -306,7 +310,7 @@ def fetch_foundation_models(region: str) -> Optional[List[Dict]]:
         return None
 
 
-def fetch_all_inference_profiles(region: str) -> List[Dict]:
+def fetch_all_inference_profiles(region: str) -> Optional[List[Dict]]:
     """Fetch ALL inference profiles in region
     This fetches only system inference profile, not application inference profile
     The purpose is to list down the available system inference profiles for a given FM.
@@ -322,7 +326,7 @@ def fetch_all_inference_profiles(region: str) -> List[Dict]:
     except Exception as e:
         # Inference profiles might not be available in all regions
         logger.warning(f"  Could not list inference profiles in {region}: {e}")
-        return []
+        return None  # not [] : callers must tell a failed listing from a region listing none
 
 
 def build_profile_map(profiles: List[Dict]) -> Dict[str, List[str]]:

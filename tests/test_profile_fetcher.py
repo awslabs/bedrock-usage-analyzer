@@ -48,10 +48,6 @@ def test_list_inference_profiles_paginates():
     assert [c[2] for c in client.calls] == [None, '2', '4']
 
 
-def test_list_inference_profiles_without_api():
-    assert list_inference_profiles(object(), 'APPLICATION') == []
-
-
 def test_issue_7_au_application_profile_is_matched(sydney_bedrock):
     """An app profile copied from au.* must not be mistaken for apac.* (issue #7)."""
     fetcher = InferenceProfileFetcher(sydney_bedrock)

@@ -67,6 +67,8 @@ def refresh_region(region_name: str, update_bundle: bool = False):
     # model -> profile map below are built from it
     logger.info("  Fetching inference profiles...")
     all_profiles = fetch_all_inference_profiles(region_name)
+    profiles_listed = all_profiles is not None  # False: the listing failed (not "none listed")
+    all_profiles = all_profiles or []
 
     # Refresh prefix mapping - merge with existing
     logger.info("  Refreshing prefix mapping...")
@@ -102,7 +104,7 @@ def refresh_region(region_name: str, update_bundle: bool = False):
     def by_prefix(entries):
         return sorted(entries.values(), key=lambda x: x['prefix'])
 
-    if new_entries or user_entries:
+    if new_entries:  # an unchanged user file is not rewritten
         for entry in new_entries:
             user_entries[entry['prefix']] = entry
         save_yaml(str(prefix_file), {'prefixes': by_prefix(user_entries)})
@@ -154,7 +156,7 @@ def refresh_region(region_name: str, update_bundle: bool = False):
         endpoints = model.setdefault('endpoints', {})
         if 'ON_DEMAND' not in model.get('inference_types', []):
             endpoints.pop('base', None)
-        if all_profiles:
+        if profiles_listed:
             listed = set(profile_map.get(model_id, []))
             for prefix in [p for p in endpoints if p != 'base' and p not in listed]:
                 del endpoints[prefix]

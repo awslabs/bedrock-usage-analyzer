@@ -166,6 +166,8 @@ class InferenceProfileFetcher:
             self._load_system_profiles()
             profiles = []
             for profile in raw:
+                if not profile.get('inferenceProfileId'):
+                    continue  # malformed summary: skip it, keep the others
                 arns = [m.get('modelArn', '') for m in profile.get('models', [])]
                 endpoints = self.resolve_endpoints(arns)
                 sources = [endpoint_id(m, p) for p, m in endpoints]
@@ -271,7 +273,8 @@ class InferenceProfileFetcher:
         if best:
             return self._pairs(best)
 
-        # Nothing comparable is listed for this model: guess from the regions
+        # Nothing comparable is listed for this model: guess from the regions (e.g. a copy of
+        # a retired au.* profile; the analyzer says that endpoint is no longer offered)
         inferred = self._infer_from_regions(arns, model_id)
         return [(inferred, model_id)] if inferred else []
 
@@ -360,10 +363,6 @@ class InferenceProfileFetcher:
             profile_names[target_endpoint] = target_endpoint
             profile_metadata[target_endpoint] = {'id': 'N/A', 'tags': {}}
 
-        if not hasattr(self.bedrock_client, 'list_inference_profiles'):
-            logger.info("No application profiles found (API not available)")
-            return profiles, profile_names, profile_metadata
-
         wanted = set(application_profile_ids or [])
         try:
             app_profiles = self.list_application_profiles()
@@ -372,8 +371,10 @@ class InferenceProfileFetcher:
                 raise
             # e.g. no bedrock:ListInferenceProfiles permission: still analyze the endpoint itself,
             # but say plainly that the report is missing its application profiles
-            logger.warning(f"  WARNING: Could not list application inference profiles ({e}). "
-                           f"This report covers {target_endpoint} only, without its application profiles.")
+            # The application listing also needs the system one (to resolve sources): name the one that failed
+            failed = 'application' if self._listings['APPLICATION']['result'] is None else 'system'
+            logger.warning(f"  WARNING: Could not list {failed} inference profiles ({e}). This report "
+                           f"covers {target_endpoint} only, without its application profiles.")
             app_profiles = []
         matched = 0
         selected = []
@@ -410,7 +411,9 @@ class InferenceProfileFetcher:
         target = endpoint_id(model_id, profile_prefix)
         for app in app_profiles:
             # Profiles with an unknown source are not pointed to: there is no endpoint to pick
-            if app['model_id'] == model_id and app['sources'] and target not in app['sources']:
+            # and only to endpoints that can be selected (a retired profile's guessed source cannot)
+            if app['model_id'] == model_id and app['sources'] and target not in app['sources'] and \
+                    (app['profile_prefix'] is None or app['source'] in self._system_ids):
                 key = app['profile_prefix'] or 'base'
                 counts[key] = counts.get(key, 0) + 1
         return counts
