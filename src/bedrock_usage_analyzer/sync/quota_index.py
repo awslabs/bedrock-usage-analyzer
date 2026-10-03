@@ -358,7 +358,6 @@ class QuotaIndexGenerator:
         data = self._fm_data[region]  # only the credentials' partition is cleaned
 
         modified = 0  # codes removed in this region
-        removed_slots = set()  # (model, endpoint, metric, code), applied to the bundle too
         reasons = set()
         for model in valid_models(data):
             for endpoint, quotas in endpoint_quotas(model):
@@ -379,7 +378,6 @@ class QuotaIndexGenerator:
                                 f"({quota.get('code')}) in {region}: {reason}")
                     quotas[quota_type] = None
                     modified += 1
-                    removed_slots.add((model['model_id'], endpoint, quota_type, quota.get('code')))
 
         if not modified:
             return
@@ -397,16 +395,9 @@ class QuotaIndexGenerator:
             logger.info(f"  ✓ Updated {user_file}")
         if bundle_path:
             bundle_file = bundle_path / f'fm-list-{region}.yml'
-            # The same removals applied to the checkout's file being rewritten: `data` may be
-            # a user copy or the installed package's list, which would revert newer entries
-            bundle_data = fm_file_data(load_yaml(str(bundle_file))) if bundle_file.exists() else data
-            for model in valid_models(bundle_data):
-                for endpoint, quotas in endpoint_quotas(model):
-                    for metric, quota in list(quotas.items()):
-                        if isinstance(quota, dict) and \
-                                (model['model_id'], endpoint, metric, quota.get('code')) in removed_slots:
-                            quotas[metric] = None
-            save_yaml(str(bundle_file), bundle_data)
+            # With --update-bundle `data` was read from this checkout file (_load_all_models),
+            # so the removals above are already in it
+            save_yaml(str(bundle_file), data)
             self._files_written += 1
             written = True
             logger.info(f"  ✓ Updated {bundle_file} (bundled)")

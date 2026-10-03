@@ -94,14 +94,17 @@ def cmd_analyze(args):
             sys.exit(1)
     
     user_inputs = UserInputs()
-    user_inputs.collect(
-        region=args.region,
-        model_id=args.model_id,
-        granularity_config=granularity_config,
-        skip_confirm=args.yes
-    )
-    # A region picked from the menu is not in args: keep it for the error hint in main()
-    args.region = args.region or user_inputs.region
+    try:
+        user_inputs.collect(
+            region=args.region,
+            model_id=args.model_id,
+            granularity_config=granularity_config,
+            skip_confirm=args.yes
+        )
+    finally:
+        # A region picked from the menu is not in args: keep it for the error hint in main(),
+        # also when collect() fails after the pick
+        args.region = args.region or user_inputs.region
 
     if not user_inputs.models:
         logger.error("No model selected; nothing to analyze.")

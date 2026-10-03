@@ -140,14 +140,16 @@ class BedrockAnalyzer:
                 wanted.append((quota_type, quota_data, key))
 
         def lookup(code):
-            return lookup_quota(code, self.region, self._quota_listings, use_listing=self._use_quota_listing,
-                                lister=lambda r: list_quota_codes(r, quiet_denied=True))
+            return lookup_quota(code, self.region, self._quota_listings, use_listing=self._use_quota_listing)
 
-        if self._use_quota_listing and wanted:
-            lookup(wanted[0][1]['code'])  # fills the region's listing once, before the pool
+        if self._use_quota_listing and self.region not in self._quota_listings:
+            # The region's listing once, before the pool (never listed again from the threads)
+            self._quota_listings[self.region] = list_quota_codes(self.region, quiet_denied=True)
         # Per-code lookups (up to two calls each) run in parallel, as confirm_statuses does
-        with ThreadPoolExecutor(max_workers=max(1, min(4, len(wanted)))) as pool:
-            results = list(pool.map(lambda item: lookup(item[1]['code']), wanted))
+        results = []
+        if wanted:
+            with ThreadPoolExecutor(max_workers=min(4, len(wanted))) as pool:
+                results = list(pool.map(lambda item: lookup(item[1]['code']), wanted))
         for (quota_type, quota_data, key), (status, quota) in zip(wanted, results):
             code = quota_data['code']
             if status == QUOTA_OK and quota.get('Value') is None:

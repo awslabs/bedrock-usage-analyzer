@@ -15,6 +15,7 @@ from bedrock_usage_analyzer.aws.bedrock import (
     discover_prefix_mapping,
     load_prefix_mapping,
     prefix_mapping_layers,
+    read_prefix_file,
     QUOTA_KEYWORD_ON_DEMAND,
     QUOTA_KEYWORD_GLOBAL
 )
@@ -123,8 +124,8 @@ def refresh_region(region_name: str, update_bundle: bool = False):
         if bundle_path:
             bundle_prefix_file = bundle_path / 'prefix-mapping.yml'
             # The file being rewritten (the checkout), not the installed package's copy
-            bundled = {p['prefix']: p for p in
-                       ((load_yaml(str(bundle_prefix_file)) if bundle_prefix_file.exists() else None) or {}).get('prefixes') or []}
+            # Read with the same validation as every other reader (malformed entries skipped)
+            bundled = {p['prefix']: p for p in read_prefix_file(bundle_prefix_file)}
             # Everything discovered that the bundle lacks, including prefixes already saved in
             # the user's own file by an earlier refresh without --update-bundle
             for entry in manual_entries + [e for e in discovered if e['prefix'] not in bundled]:

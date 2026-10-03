@@ -3,9 +3,11 @@
 
 """Interactive UI for quota mapping parameter selection"""
 
+import logging
 import sys
 from typing import Tuple
 
+logger = logging.getLogger(__name__)
 
 
 def select_from_list(
@@ -74,15 +76,17 @@ def _claude_endpoints_in(region: str, limit: int = 12) -> list:
     return sorted(options, key=newest_first, reverse=True)[:limit]
 
 
-def require_credentials_partition(bedrock_region: str, credentials_partition: str) -> None:
+def require_credentials_partition(bedrock_region: str, credentials_partition: str,
+                                  label: str = 'Bedrock calls: ') -> None:
     """Exit when ``bedrock_region`` is outside the credentials' partition.
 
-    e.g. GovCloud credentials with a commercial Bedrock region: every LLM call would fail.
+    e.g. GovCloud credentials with a commercial Bedrock region: every call would fail.
+    The one partition gate of the CLI, the analyzer's region choice included.
     """
     from bedrock_usage_analyzer.utils.partition import partition_mismatch
     problem = partition_mismatch(bedrock_region, credentials_partition)
     if problem:
-        print(f"\nBedrock calls: {problem}", file=sys.stderr)
+        logger.error(f"\n{label}{problem}")
         sys.exit(1)
 
 

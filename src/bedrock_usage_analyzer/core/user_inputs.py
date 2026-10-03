@@ -14,9 +14,8 @@ from ..core.errors import troubleshooting_hint
 from ..core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
 from ..sync.regions import load_region_names
 from ..utils.yaml_handler import has_endpoint, load_fm_list, model_endpoints, profile_endpoints
-from ..utils.ui import select_from_list
+from ..utils.ui import require_credentials_partition, select_from_list
 from ..utils.partition import (
-    partition_mismatch,
     filter_regions_by_partition,
     get_caller_identity,
     get_partition_display_name,
@@ -238,10 +237,7 @@ class UserInputs:
 
     def _check_region_partition(self, region):
         """Stop early when the region belongs to a different partition than the credentials."""
-        problem = partition_mismatch(region, self.partition)
-        if problem:
-            logger.error(f"\n{problem}")
-            sys.exit(1)
+        require_credentials_partition(region, self.partition, label='')
 
     def _select_region(self):
         """Select a region, showing only regions in the credentials' partition"""

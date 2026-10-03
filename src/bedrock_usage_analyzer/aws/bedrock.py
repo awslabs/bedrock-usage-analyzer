@@ -49,7 +49,7 @@ def _valid_prefix_entries(data, source) -> List[Dict]:
     return valid
 
 
-def _read_prefixes(path) -> List[Dict]:
+def read_prefix_file(path) -> List[Dict]:
     from bedrock_usage_analyzer.utils.yaml_handler import load_yaml
     try:
         data = load_yaml(str(path))
@@ -99,7 +99,7 @@ def prefix_mapping_layers():
     """(bundled entries, user entries) of prefix-mapping.yml, each read once."""
     from bedrock_usage_analyzer.utils.paths import get_user_data_dir, load_bundled_yaml
     bundled = _valid_prefix_entries(load_bundled_yaml('prefix-mapping.yml'), 'bundled prefix-mapping.yml')
-    return bundled, list(_read_prefixes(get_user_data_dir() / 'prefix-mapping.yml'))
+    return bundled, list(read_prefix_file(get_user_data_dir() / 'prefix-mapping.yml'))
 
 
 def load_prefix_mapping(refresh: bool = False) -> List[Dict]:

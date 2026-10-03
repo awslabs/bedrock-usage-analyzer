@@ -37,6 +37,15 @@ models:
   model_id: amazon.nova-2-lite-v1:0
   provider: Amazon
 - endpoints:
+    base:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd:
+          code: L-45E0AD92
+          name: Model invocation max tokens per day for Amazon Nova Lite (doubled
+            for cross-region calls)
+        tpm: null
     us:
       quotas:
         concurrent: null
