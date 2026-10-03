@@ -15,7 +15,6 @@ from ..core.profile_fetcher import InferenceProfileFetcher
 from ..sync.regions import load_region_names
 from ..utils.yaml_handler import fm_endpoints, load_fm_list
 from ..utils.ui import select_from_list
-from ..utils.paths import get_data_path
 from ..utils.partition import (
     partition_mismatch,
     filter_regions_by_partition,
@@ -601,11 +600,13 @@ class UserInputs:
     
     def _load_regions(self):
         """Load region names from regions.yml (user copy, else bundled)"""
-        if not os.path.exists(get_data_path('regions.yml')):
+        # Read through the loaders (user copy, else bundled, also from a zipped package)
+        names = load_region_names()
+        if not names:
             logger.error("Regions list not found")
             logger.error("Please run: bua refresh regions")
             sys.exit(1)
-        return load_region_names()
+        return names
 
     def _ensure_fm_list(self, region):
         """Ensure FM list exists for region"""
@@ -613,7 +614,7 @@ class UserInputs:
         if not is_valid_region_name(region):
             raise ValueError(f"Invalid region format: {region}")
 
-        if not os.path.exists(get_data_path(f'fm-list-{region}.yml')):
+        if self._load_fm_list_or_none(region) is None:
             logger.error(f"Foundation model list not found for region: {region}")
             logger.error(f"Please run: bua refresh fm-list {region}")
             sys.exit(1)
@@ -621,6 +622,15 @@ class UserInputs:
     def fm_models(self):
         """Parsed fm-list of the selected region (shared with the analyzer)."""
         return self._load_fm_list(self.region)
+
+    def _load_fm_list_or_none(self, region):
+        """The region's fm-list models, None when there is no list (cached like _load_fm_list)."""
+        if region not in self._fm_lists:
+            models = load_fm_list(region)
+            if models is None:
+                return None
+            self._fm_lists[region] = models
+        return self._fm_lists[region]
 
     def _load_fm_list(self, region):
         """Load foundation models for region (parsed once per region)"""

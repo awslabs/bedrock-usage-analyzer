@@ -65,8 +65,6 @@ _caller_identity_cache: Dict[Optional[str], Dict[str, str]] = {}
 _config_region_cache: Dict[Optional[str], Optional[str]] = {}
 # STS region -> home region to ask instead, after the first region rejected the token
 _identity_fallback: Dict[Optional[str], str] = {}
-# Last failure of detect_credentials_partition per region hint (one STS round-trip, not two)
-_detect_errors: Dict[Optional[str], Exception] = {}
 
 
 def _load_endpoint_data() -> dict:
@@ -287,14 +285,18 @@ def probe_other_partitions(region: Optional[str], lookup=None) -> Optional[Dict[
     return None
 
 
-def detect_credentials_partition(region: Optional[str] = None) -> Optional[str]:
-    """Partition of the current credentials, or None if it cannot be determined."""
+def detect_partition(region: Optional[str] = None):
+    """(partition of the current credentials, None) or (None, the error that prevented it)."""
     try:
-        return resolve_caller_identity(region)['Partition']
+        return resolve_caller_identity(region)['Partition'], None
     except Exception as e:
         logger.debug(f"Could not detect credentials partition: {e}")
-        _detect_errors[region] = e  # probe_if_rejected reuses it instead of asking STS again
-        return None
+        return None, e
+
+
+def detect_credentials_partition(region: Optional[str] = None) -> Optional[str]:
+    """Partition of the current credentials, or None if it cannot be determined."""
+    return detect_partition(region)[0]
 
 
 def clear_cache() -> None:
@@ -302,7 +304,6 @@ def clear_cache() -> None:
     _caller_identity_cache.clear()
     _config_region_cache.clear()
     _identity_fallback.clear()
-    _detect_errors.clear()
 
 
 def probe_if_rejected(region: Optional[str], error: Optional[Exception] = None,
@@ -313,8 +314,6 @@ def probe_if_rejected(region: Optional[str], error: Optional[Exception] = None,
     is tried once to get it. A network error or an expired token is not a partition
     mismatch, so nothing more is asked then. None when no other partition accepts them.
     """
-    if error is None:
-        error = _detect_errors.get(region)
     if error is None:
         try:
             resolve_caller_identity(region, lookup=lookup)

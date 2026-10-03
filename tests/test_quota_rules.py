@@ -139,7 +139,7 @@ def test_partial_new_mapping_keeps_other_saved_metrics(monkeypatch, tmp_path):
         {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': saved}}}]})
     monkeypatch.setattr(qm, 'fetch_service_quotas', lambda region: [])
     monkeypatch.setattr(qm, 'extract_common_name', lambda *a: 'nova')
-    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws')
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition', lambda _=None: ('aws', None))
     mapper = qm.QuotaMapper('us-east-1', 'model', 'us-east-1')
     monkeypatch.setattr(mapper, '_get_quota_mapping', lambda *a: {
         'tpm': {'code': 'L-NEW', 'name': 'n'}, 'rpm': None, 'tpd': {'code': 'L-TPD', 'name': 't'}, 'concurrent': None})
@@ -179,7 +179,7 @@ def test_saved_conflicting_codes_are_dropped_on_refresh(monkeypatch, tmp_path):
         {'model_id': SONNET4, 'provider': 'Anthropic', 'endpoints': {'us': {'quotas': {'tpd': wrong}}}}]})
     monkeypatch.setattr(qm, 'fetch_service_quotas', lambda region: [])
     monkeypatch.setattr(qm, 'extract_common_name', lambda *a: 'claude')
-    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws')
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition', lambda _=None: ('aws', None))
     mapper = qm.QuotaMapper('us-east-1', 'model', 'us-east-1')
     monkeypatch.setattr(mapper, '_get_quota_mapping', lambda *a: None)
     mapper.run()
@@ -232,7 +232,7 @@ def test_mapper_drops_conflicts_even_without_common_name(monkeypatch, tmp_path):
         {'model_id': SONNET4, 'provider': 'Anthropic', 'endpoints': {'us': {'quotas': {'tpm': wrong}}}}]})
     monkeypatch.setattr(qm, 'fetch_service_quotas', lambda region: [])
     monkeypatch.setattr(qm, 'extract_common_name', lambda *a: None)      # LLM failed
-    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws')
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition', lambda _=None: ('aws', None))
     qm.QuotaMapper('us-east-1', 'model', 'us-east-1').run()
     assert load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]['endpoints']['us']['quotas']['tpm'] is None
 
@@ -251,7 +251,7 @@ def test_quota_index_keeps_other_partitions_rows(monkeypatch, tmp_path, no_bundl
         save_yaml(str(tmp_path / 'data' / f'fm-list-{region}.yml'), {'models': [
             {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': {
                 'tpm': {'code': code, 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
-    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws-us-gov')
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition', lambda _=None: ('aws-us-gov', None))
     checked = []
     monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: checked.append(code) or ('ok', {'QuotaName': 'n'}))
     quota_index.QuotaIndexGenerator().run()
@@ -362,7 +362,7 @@ def test_quota_index_ignores_regions_file_of_another_partition(monkeypatch, tmp_
         save_yaml(str(tmp_path / 'data' / f'fm-list-{region}.yml'), {'models': [
             {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': {
                 'tpm': {'code': 'L-G', 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
-    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws-us-gov')
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition', lambda _=None: ('aws-us-gov', None))
     asked = []
     monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: asked.append(region) or ('ok', {'QuotaName': 'n'}))
     quota_index.QuotaIndexGenerator().run()

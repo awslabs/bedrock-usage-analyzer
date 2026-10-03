@@ -78,7 +78,7 @@ def test_refresh_fm_list_rejects_bad_region(monkeypatch):
 
 def test_refresh_regions_keeps_other_partitions(monkeypatch, tmp_path):
     from bedrock_usage_analyzer.sync import regions as r
-    monkeypatch.setattr(r, 'detect_credentials_partition', lambda _=None: 'aws')
+    monkeypatch.setattr(r, 'detect_partition', lambda _=None: ('aws', None))
     monkeypatch.setattr(r, 'fetch_enabled_regions', lambda partition, hint: ['eu-west-1', 'us-east-1'])
     monkeypatch.setattr(sys, 'argv', ['bua', 'refresh', 'regions'])
     cli.main()
@@ -98,7 +98,7 @@ def test_quota_mapper_keeps_unmapped_endpoints(monkeypatch, tmp_path):
          'endpoints': {'base': {'quotas': {}}, 'us': {'quotas': {}}}}]})
     monkeypatch.setattr(qm, 'fetch_service_quotas', lambda region: [{'QuotaName': 'x'}])
     monkeypatch.setattr(qm, 'extract_common_name', lambda *a: 'nova')
-    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws')
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition', lambda _=None: ('aws', None))
     mapper = qm.QuotaMapper('us-east-1', 'model', 'us-east-1')
     monkeypatch.setattr(mapper, '_get_quota_mapping',
                         lambda region, model_id, common, endpoint, quotas:
@@ -110,7 +110,7 @@ def test_quota_mapper_keeps_unmapped_endpoints(monkeypatch, tmp_path):
 
 
 def test_quota_mapper_rejects_region_outside_partition(monkeypatch):
-    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws')
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition', lambda _=None: ('aws', None))
     with pytest.raises(SystemExit):
         qm.QuotaMapper('us-east-1', 'model', 'us-gov-west-1')._get_regions_to_process()
 
@@ -159,7 +159,7 @@ def _mapper_fixture(monkeypatch, tmp_path, endpoints):
     save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [
         {'model_id': 'openai.gpt-oss-safeguard-20b', 'provider': 'OpenAI', 'endpoints': endpoints}]})
     monkeypatch.setattr(qm, 'extract_common_name', lambda *a: 'gpt-oss')
-    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws')
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition', lambda _=None: ('aws', None))
     return qm.QuotaMapper('us-east-1', 'model', 'us-east-1')
 
 
@@ -258,7 +258,7 @@ def test_check_quota_statuses(monkeypatch):
 
 
 def test_refresh_fm_list_all_regions_stops_without_partition(monkeypatch):
-    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: None)
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition', lambda _=None: (None, RuntimeError('InvalidClientTokenId')))
     monkeypatch.setattr(sys, 'argv', ['bua', 'refresh', 'fm-list'])
     with pytest.raises(SystemExit):
         cli.main()
@@ -351,7 +351,7 @@ def test_gov_quota_mapping_options_follow_region_metadata():
 
 def test_regions_module_main_saves_like_the_cli(monkeypatch, tmp_path):
     from bedrock_usage_analyzer.sync import regions as r
-    monkeypatch.setattr(r, 'detect_credentials_partition', lambda _=None: 'aws')
+    monkeypatch.setattr(r, 'detect_partition', lambda _=None: ('aws', None))
     monkeypatch.setattr(r, 'fetch_enabled_regions', lambda partition, hint: ['eu-west-1'])
     monkeypatch.setattr(sys, 'argv', ['regions.py'])
     r.main()

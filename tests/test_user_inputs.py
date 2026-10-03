@@ -472,3 +472,13 @@ def test_expired_token_is_not_probed_as_a_partition_mismatch(monkeypatch):
     with pytest.raises(SystemExit):
         UserInputs()._get_current_account('us-east-1')
     assert not any(probe for _, probe in asked)
+
+
+def test_zip_install_reads_bundled_fm_list_and_regions(monkeypatch, tmp_path):
+    """No file path for bundled data (zip/egg): the lists are still found through resources."""
+    from bedrock_usage_analyzer.utils import paths, yaml_handler
+    monkeypatch.setattr(paths, 'get_bundled_file', lambda name: None)
+    assert yaml_handler.load_fm_list('us-east-1')                      # read via load_bundled_yaml
+    inputs = UserInputs()
+    inputs._ensure_fm_list('us-east-1')                                # does not exit
+    assert inputs._load_regions()

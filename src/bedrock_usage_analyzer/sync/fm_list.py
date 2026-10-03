@@ -6,8 +6,8 @@
 import logging
 from typing import List, Dict
 
-from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
-from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path, get_data_path
+from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list, load_yaml, save_yaml
+from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.bedrock import (
     fetch_foundation_models,
     fetch_all_inference_profiles,
@@ -22,22 +22,17 @@ from bedrock_usage_analyzer.aws.bedrock import (
 logger = logging.getLogger(__name__)
 
 
-def load_existing_models(filepath: str) -> Dict[str, Dict]:
-    """Load existing models from YAML file
-    
-    Args:
-        filepath: Path to YAML file
-        
-    Returns:
-        Dictionary mapping model IDs to model data
+def load_existing_models(region: str) -> Dict[str, Dict]:
+    """Saved models of the region by ID (user copy, else bundled); {} when there is none.
+
+    Malformed entries are skipped (load_fm_list), so one bad entry cannot drop every saved
+    quota mapping of the region.
     """
     try:
-        data = load_yaml(filepath)
-        if data and 'models' in data:
-            return {m['model_id']: m for m in data['models']}
-    except (FileNotFoundError, Exception) as e:
-        logger.warning(f"Could not load existing models from {filepath}: {e}")
-    return {}
+        return {m['model_id']: m for m in load_fm_list(region) or []}
+    except Exception as e:
+        logger.warning(f"Could not load existing models for {region}: {e}")
+        return {}
 
 
 def save_models(filepath: str, models: List[Dict]):
@@ -136,7 +131,7 @@ def refresh_region(region_name: str, update_bundle: bool = False):
     
     # Load existing models to preserve quota mappings
     # User copy if present, else the bundled list, so refreshing never drops quota mappings
-    existing_models = load_existing_models(get_data_path(f'fm-list-{region_name}.yml'))
+    existing_models = load_existing_models(region_name)
     
     # Build mapping from model to inference profiles
     profile_map = build_profile_map(all_profiles)
@@ -169,12 +164,9 @@ def refresh_region(region_name: str, update_bundle: bool = False):
             model['inference_profiles'] = profile_map[model_id]
             
             # Initialize endpoint structures for each profile prefix
-            if 'endpoints' not in model:
-                model['endpoints'] = {}
-            
             for prefix in profile_map[model_id]:
-                if prefix not in model['endpoints']:
-                    model['endpoints'][prefix] = {
+                if prefix not in endpoints:
+                    endpoints[prefix] = {
                         'quotas': {
                             'concurrent': None,
                             'rpm': None,

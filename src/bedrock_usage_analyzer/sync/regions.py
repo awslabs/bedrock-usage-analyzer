@@ -11,7 +11,7 @@ from typing import Iterable, List, Optional
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.utils.partition import (
     PARTITION_HOME_REGIONS,
-    detect_credentials_partition,
+    detect_partition,
     filter_regions_by_partition,
     get_partition_display_name,
     get_partition_for_region,
@@ -71,11 +71,11 @@ def credentials_partition_or_exit(region: Optional[str] = None) -> str:
     guessing processes (or saves) regions of the wrong partition.
     """
     hint = region or region_hint()
-    partition = detect_credentials_partition(hint)
+    partition, error = detect_partition(hint)
     if partition is None:
         # The region (or, without one, global STS in the commercial partition) may belong to
         # another partition than the credentials; STS there rejects a valid identity
-        identity = probe_if_rejected(hint)
+        identity = probe_if_rejected(hint, error)
         if identity:
             partition = identity['Partition']
             logger.warning(other_partition_message(hint, partition))

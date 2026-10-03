@@ -64,11 +64,11 @@ def test_user_regions_file_overrides_bundle_per_partition(tmp_path):
 
 
 def test_regions_for_credentials_filters_by_partition(monkeypatch):
-    monkeypatch.setattr(r, 'detect_credentials_partition', lambda _=None: 'aws-us-gov')
+    monkeypatch.setattr(r, 'detect_partition', lambda _=None: ('aws-us-gov', None))
     assert r.regions_for_credentials(['us-east-1', 'us-gov-west-1']) == (['us-gov-west-1'], 'aws-us-gov')
     # Unknown partition: stop instead of processing regions the credentials cannot call
-    monkeypatch.setattr(r, 'detect_credentials_partition', lambda _=None: None)
-    monkeypatch.setattr(r, 'probe_if_rejected', lambda region: None)
+    monkeypatch.setattr(r, 'detect_partition', lambda _=None: (None, RuntimeError('InvalidClientTokenId')))
+    monkeypatch.setattr(r, 'probe_if_rejected', lambda region, error=None: None)
     with pytest.raises(SystemExit):
         r.regions_for_credentials(['us-east-1', 'us-gov-west-1'])
 
@@ -107,7 +107,7 @@ def test_merge_keeps_other_partitions():
 
 
 def test_refresh_regions_skips_disrupted_regions_and_merges(monkeypatch):
-    monkeypatch.setattr(r, 'detect_credentials_partition', lambda _=None: 'aws')
+    monkeypatch.setattr(r, 'detect_partition', lambda _=None: ('aws', None))
     monkeypatch.setattr(r, 'fetch_enabled_regions',
                         lambda partition, hint: ['me-central-1', 'me-south-1', 'us-east-1'])
     data = r.refresh_regions(existing=['us-gov-west-1', 'ap-south-1'])
@@ -115,7 +115,7 @@ def test_refresh_regions_skips_disrupted_regions_and_merges(monkeypatch):
 
 
 def test_refresh_regions_exits_when_nothing_found(monkeypatch):
-    monkeypatch.setattr(r, 'detect_credentials_partition', lambda _=None: 'aws')
+    monkeypatch.setattr(r, 'detect_partition', lambda _=None: ('aws', None))
     monkeypatch.setattr(r, 'fetch_enabled_regions', lambda partition, hint: ['me-south-1'])
     with pytest.raises(SystemExit):
         r.refresh_regions()
@@ -123,8 +123,8 @@ def test_refresh_regions_exits_when_nothing_found(monkeypatch):
 
 def test_fetch_exits_when_credentials_do_not_work(monkeypatch):
     """No silent fallback to every Bedrock region when the caller identity fails."""
-    monkeypatch.setattr(r, 'detect_credentials_partition', lambda _=None: None)
-    monkeypatch.setattr(r, 'probe_if_rejected', lambda region: None)
+    monkeypatch.setattr(r, 'detect_partition', lambda _=None: (None, RuntimeError('InvalidClientTokenId')))
+    monkeypatch.setattr(r, 'probe_if_rejected', lambda region, error=None: None)
     with pytest.raises(SystemExit):
         r.fetch_enabled_regions(None, None)
     with pytest.raises(SystemExit):
@@ -142,7 +142,7 @@ def test_update_bundle_replaces_only_credentials_partition(monkeypatch, tmp_path
     (tmp_path / 'data').mkdir()
     save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1', 'us-gov-west-1']})
     monkeypatch.setattr(cli, 'get_bundle_path', lambda: bundle)
-    monkeypatch.setattr(r, 'detect_credentials_partition', lambda _=None: 'aws')
+    monkeypatch.setattr(r, 'detect_partition', lambda _=None: ('aws', None))
     monkeypatch.setattr(r, 'fetch_enabled_regions', lambda partition, hint: ['eu-west-1', 'us-east-1'])
     monkeypatch.setattr(sys, 'argv', ['bua', 'refresh', 'regions', '--update-bundle'])
     cli.main()
@@ -159,15 +159,15 @@ def test_old_user_regions_file_still_gets_bundled_govcloud(tmp_path):
 def test_partition_found_when_named_region_is_in_another_partition(monkeypatch, caplog):
     import logging
     caplog.set_level(logging.WARNING)
-    monkeypatch.setattr(r, 'detect_credentials_partition', lambda region=None: None)
-    monkeypatch.setattr(r, 'probe_if_rejected', lambda region: {'Partition': 'aws'})
+    monkeypatch.setattr(r, 'detect_partition', lambda region=None: (None, RuntimeError('InvalidClientTokenId')))
+    monkeypatch.setattr(r, 'probe_if_rejected', lambda region, error=None: {'Partition': 'aws'})
     assert r.credentials_partition_or_exit('us-gov-west-1') == 'aws'
     assert 'credentials are for AWS Commercial, but us-gov-west-1 is in AWS GovCloud (US)' in caplog.text
 
 
 def test_partition_probed_even_without_a_region_hint(monkeypatch):
     monkeypatch.setattr(r, 'region_hint', lambda: None)
-    monkeypatch.setattr(r, 'detect_credentials_partition', lambda region=None: None)
+    monkeypatch.setattr(r, 'detect_partition', lambda region=None: (None, RuntimeError('InvalidClientTokenId')))
     asked = []
-    monkeypatch.setattr(r, 'probe_if_rejected', lambda region: asked.append(region) or {'Partition': 'aws-us-gov'})
+    monkeypatch.setattr(r, 'probe_if_rejected', lambda region, error=None: asked.append(region) or {'Partition': 'aws-us-gov'})
     assert r.credentials_partition_or_exit() == 'aws-us-gov' and asked == [None]

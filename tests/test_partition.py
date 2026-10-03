@@ -250,15 +250,16 @@ def test_is_missing_caches_one_lookup_per_pair():
     assert calls == ['L-1']
 
 
-def test_probe_reuses_the_detection_error(monkeypatch):
+def test_partition_check_asks_each_sts_endpoint_once(monkeypatch):
+    """A rejected detection is passed to the probe, not repeated (2 round-trips, not 4)."""
+    from bedrock_usage_analyzer.sync import regions as r
     calls = []
 
-    def lookup(region, probe=False):
+    def lookup(region=None, probe=False):
         calls.append(region)
         raise RuntimeError('InvalidClientTokenId')
     monkeypatch.setattr(p, 'get_caller_identity', lookup)
-    assert p.detect_credentials_partition(None) is None
-    before = len(calls)
+    monkeypatch.setattr(r, 'region_hint', lambda: None)
     monkeypatch.setattr(p, 'probe_other_partitions', lambda region, lookup=None: {'Partition': 'aws-us-gov'})
-    assert p.probe_if_rejected(None)['Partition'] == 'aws-us-gov'
-    assert len(calls) == before                               # no second identity lookup
+    assert r.credentials_partition_or_exit() == 'aws-us-gov'
+    assert len(calls) == len(set(calls))

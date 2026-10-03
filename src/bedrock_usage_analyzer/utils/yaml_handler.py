@@ -25,11 +25,15 @@ def load_fm_list(region):
     A file that is empty, has no 'models' key, or 'models: null' gives [].
     """
     import os
-    from bedrock_usage_analyzer.utils.paths import get_data_path
+    from bedrock_usage_analyzer.utils.paths import get_data_path, load_bundled_yaml
     path = get_data_path(f'fm-list-{region}.yml')
-    if not os.path.exists(path):
-        return None
-    data = load_yaml(path)
+    if os.path.exists(path):
+        data = load_yaml(path)
+    else:
+        # A zipped package has no file path for its bundled lists; read them as resources
+        data = load_bundled_yaml(f'fm-list-{region}.yml')
+        if data is None:
+            return None
     models = data.get('models') if isinstance(data, dict) else None
     return [m for m in models or [] if isinstance(m, dict) and m.get('model_id')]
 

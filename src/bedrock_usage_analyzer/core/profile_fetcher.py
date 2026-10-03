@@ -13,7 +13,6 @@ from bedrock_usage_analyzer.aws.bedrock import (
     model_id_from_arn,
     region_from_arn,
     region_group,
-    split_profile_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,7 +72,7 @@ class InferenceProfileFetcher:
                                            for kind in ('SYSTEM_DEFINED', 'APPLICATION')}
         self._by_model: Dict[str, List] = {}   # model ID -> [(routing set, profile IDs)]
         self._listed_prefixes: set = set()
-        self._parts: Dict[str, tuple] = {}     # endpoint ID -> (prefix or None, model ID)
+        self._parts: Dict[str, tuple] = {}     # listed system profile ID -> (prefix, model ID)
         self._tags_cache: Dict[str, Dict[str, str]] = {}
 
     # ------------------------------------------------------------------ listing
@@ -156,11 +155,10 @@ class InferenceProfileFetcher:
             profiles = []
             for profile in raw:
                 arns = [m.get('modelArn', '') for m in profile.get('models', [])]
-                sources = self.resolve_sources(arns)
-                if sources:
-                    source = sources[0]
-                    # Recorded where the source was chosen (listed profile, base model, guess)
-                    prefix, model_id = self._parts.get(source) or split_profile_id(source)[::-1]
+                endpoints = self.resolve_endpoints(arns)
+                sources = [f"{p}.{m}" if p else m for p, m in endpoints]
+                if endpoints:
+                    (prefix, model_id), source = endpoints[0], sources[0]
                 else:
                     # Still listed (it can be analyzed by ID), but no endpoint or quotas are implied
                     model_ids = sorted({m for m in (model_id_from_arn(a) for a in arns) if m})
@@ -186,7 +184,11 @@ class InferenceProfileFetcher:
     # --------------------------------------------------------------- resolution
 
     def resolve_sources(self, model_arns: Iterable[str]) -> List[str]:
-        """Return the endpoint IDs an application profile may have been copied from.
+        """Endpoint IDs an application profile may have been copied from (see resolve_endpoints)."""
+        return [f"{prefix}.{model}" if prefix else model for prefix, model in self.resolve_endpoints(model_arns)]
+
+    def resolve_endpoints(self, model_arns: Iterable[str]) -> List[tuple]:
+        """Return the endpoints, as (prefix or None, model ID), a profile may have been copied from.
 
         Usually one. Several when system profiles share the exact routing set, in which
         case the API gives no way to tell them apart and the profile belongs to each.
@@ -207,7 +209,7 @@ class InferenceProfileFetcher:
         self._load_system_profiles()
         exact = self._system_by_arns.get(arn_set)
         if exact and len(arn_set) > 1:
-            return _specific_first(exact, self._country_regions)
+            return self._pairs(exact)
 
         if len(arn_set) == 1:
             # A base-model copy, unless a system profile routes to exactly this one ARN: the
@@ -215,8 +217,8 @@ class InferenceProfileFetcher:
             # one decides the quotas: the on-demand endpoint when the model has one, else the
             # system profile (the model may have no on-demand endpoint at all).
             if model_id in self.on_demand_models:
-                return [self._endpoint(None, model_id)] + _specific_first(exact or [], self._country_regions)
-            return _specific_first(exact or [], self._country_regions) + [self._endpoint(None, model_id)]
+                return [(None, model_id)] + self._pairs(exact or [])
+            return self._pairs(exact or []) + [(None, model_id)]
 
         # The routing set no longer equals any listed profile (sets change over time). Only
         # listed profiles of this model are candidates, so the source always exists in the
@@ -228,11 +230,14 @@ class InferenceProfileFetcher:
             for s, ids in self._by_model.get(model_id, [])) if len(system_arns) > 1 and ids]
 
         # A copy inside one country geography (au, jp, in) whose profile is listed is a copy of
-        # that profile, even when it also fits inside the wider apac.* set (issue #7)
+        # that profile, even when it also fits inside the wider apac.* set (issue #7).
+        # When the region does not list that country's profile for this model, the source is
+        # the listed endpoint below (e.g. apac.*): an unlisted endpoint has no quotas or
+        # report of its own, so crediting it would hide the copy's usage and limits.
         country = None if routes_globally else self._country_of(regions)
         country_id = f"{country}.{model_id}" if country else None
         if country_id and any(country_id in ids for _, ids in candidates):
-            return [country_id]
+            return [(country, model_id)]
 
         # Sets usually grow: the narrowest listed profile that contains every routed region
         supersets = {}
@@ -240,7 +245,7 @@ class InferenceProfileFetcher:
             if arn_set < system_arns:
                 supersets.setdefault(len(system_arns), []).extend(ids)
         if supersets:
-            return _specific_first(supersets[min(supersets)], self._country_regions)
+            return self._pairs(supersets[min(supersets)])
 
         # Closest system profile for the same model (a region was also removed)
         best, best_score = [], 0.0
@@ -254,17 +259,15 @@ class InferenceProfileFetcher:
             elif score == best_score:
                 best = best + ids
         if best:
-            return _specific_first(best, self._country_regions)
+            return self._pairs(best)
 
         # Nothing comparable is listed for this model: guess from the regions
         inferred = self._infer_from_regions(arns, model_id)
-        return [inferred] if inferred else []
+        return [(inferred, model_id)] if inferred else []
 
-    def _endpoint(self, prefix: Optional[str], model_id: str) -> str:
-        """Endpoint ID for (prefix, model), remembered so it is never split by guesswork."""
-        endpoint_id = f"{prefix}.{model_id}" if prefix else model_id
-        self._parts[endpoint_id] = (prefix, model_id)
-        return endpoint_id
+    def _pairs(self, profile_ids: List[str]) -> List[tuple]:
+        """Listed system profile IDs as (prefix, model), country geographies first."""
+        return [self._parts[p] for p in _specific_first(profile_ids, self._country_regions)]
 
     def _country_of(self, regions) -> Optional[str]:
         """The country prefix (jp, au, kr, ...) whose regions contain all of ``regions``."""
@@ -276,15 +279,15 @@ class InferenceProfileFetcher:
         return None
 
     def _infer_from_regions(self, model_arns: List[str], model_id: str) -> Optional[str]:
-        """Fallback when no system profile matches: guess from the ARN regions."""
+        """Fallback when no system profile matches: the prefix guessed from the ARN regions."""
         regions = [region_from_arn(a) for a in model_arns]
         if any(not r for r in regions):
-            return self._endpoint('global', model_id)  # global profiles include a region-less ARN
+            return 'global'  # global profiles include a region-less ARN
         # No listed profile of this model to compare with: a set inside one country is a copy
         # of that country's profile, not of apac.* (issue #7)
         country = self._country_of(regions)
         if country:
-            return self._endpoint(country, model_id)
+            return country
         groups = {region_group(r) for r in regions}
         if len(groups) == 1:
             group = groups.pop()
@@ -292,7 +295,7 @@ class InferenceProfileFetcher:
                 # No system profile family for this geography (sa, me, mx, ...): an ID like
                 # 'sa.<model>' would not exist, so leave the source unknown
                 return None
-            return self._endpoint(self.prefix_map[group], model_id)
+            return self.prefix_map[group]
         # Several region families without a region-less ARN: a regional profile spanning
         # them (us.* also routes to ca-central-1), not a global one. Which one cannot be told.
         return None

@@ -130,4 +130,4 @@ def no_bundle(tmp_path, monkeypatch):
 @pytest.fixture
 def commercial_creds(monkeypatch):
     """Credentials whose partition is AWS commercial, without calling STS."""
-    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_credentials_partition', lambda _=None: 'aws')
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition', lambda _=None: ('aws', None))
