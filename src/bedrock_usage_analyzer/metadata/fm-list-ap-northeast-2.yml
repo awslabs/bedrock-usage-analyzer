@@ -121,7 +121,10 @@ models:
           code: L-254CACF4
           name: On-demand model inference requests per minute for Anthropic Claude
             3.5 Sonnet
-        tpd: null
+        tpd:
+          code: L-E7D41161
+          name: Model invocation max tokens per day for Anthropic Claude 3.5 Sonnet
+            V1 (doubled for cross-region calls)
         tpm:
           code: L-A50569E5
           name: On-demand model inference tokens per minute for Anthropic Claude 3.5
@@ -174,7 +177,10 @@ models:
           code: L-2DC80978
           name: On-demand model inference requests per minute for Anthropic Claude
             3 Haiku
-        tpd: null
+        tpd:
+          code: L-A60EE1AF
+          name: Model invocation max tokens per day for Anthropic Claude 3 Haiku (doubled
+            for cross-region calls)
         tpm:
           code: L-8CE99163
           name: On-demand model inference tokens per minute for Anthropic Claude 3

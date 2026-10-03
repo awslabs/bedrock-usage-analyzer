@@ -69,7 +69,10 @@ models:
         rpm:
           code: L-E386A278
           name: On-demand model inference requests per minute for Amazon Nova Lite
-        tpd: null
+        tpd:
+          code: L-45E0AD92
+          name: Model invocation max tokens per day for Amazon Nova Lite (doubled
+            for cross-region calls)
         tpm:
           code: L-70423BF8
           name: On-demand model inference tokens per minute for Amazon Nova Lite
