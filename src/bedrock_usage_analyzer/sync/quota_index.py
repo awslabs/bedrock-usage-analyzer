@@ -281,8 +281,10 @@ class QuotaIndexGenerator:
         self._mismatched = {(e['model_id'], e['endpoint'], e['quota_type'], e['quota_code'])
                             for e in self.mismatch_entries}
         regions = sorted(set(self._fm_data) & self._checked_regions)
-        pending = {(slot[3], region) for region in regions
-                   for slot in quota_slots(valid_models(self._fm_data[region]))}
+        # Codes the cleanup removes as mismatches anyway need no lookup
+        pending = {(code, region) for region in regions
+                   for model, endpoint, metric, code in quota_slots(valid_models(self._fm_data[region]))
+                   if not self._mismatch_slot(region, model, endpoint, metric, code)}
         # Codes absent from a region's listing (or in a region that could not be listed) are
         # confirmed one by one, so a code is never removed on the listing alone
         unresolved = sorted(k for k in pending - set(self._region_checks)
@@ -316,6 +318,17 @@ class QuotaIndexGenerator:
         if region not in self._checked_regions:
             return False  # not enabled for the account: cannot be verified, kept
         return is_missing(code, region, self._region_checks)
+
+    def _mismatch_slot(self, region, model_id, endpoint, metric, code) -> bool:
+        """True when the cleanup will remove this saved code as a mismatch."""
+        if (model_id, endpoint, metric, code) in self._mismatched:
+            return True
+        for model in valid_models(self._fm_data[region]):
+            if model['model_id'] == model_id:
+                quota = (((model.get('endpoints') or {}).get(endpoint) or {}).get('quotas') or {}).get(metric)
+                name = quota.get('name') if isinstance(quota, dict) else None
+                return bool(mapping_conflict(model_id, endpoint, name, self._regional))
+        return False
 
     def _cleanup_region_errors(self, region: str):
         """Null out codes missing in this region or contradicting their model/endpoint (user copy, else bundled)"""

@@ -252,15 +252,13 @@ def test_throttled_listing_is_retried_but_denied_is_cached(sydney_bedrock):
     def flaky(**kwargs):
         state['calls'] += 1
         if state['fail']:
-            raise RuntimeError(state['fail'])
+            state['fail'] = None                                   # one throttle, then fine
+            raise RuntimeError('ThrottlingException: Rate exceeded')
         return real(**kwargs)
 
     sydney_bedrock.list_inference_profiles = flaky
     fetcher = InferenceProfileFetcher(sydney_bedrock)
-    with pytest.raises(RuntimeError):
-        fetcher.list_application_profiles()
-    state['fail'] = None
-    assert len(fetcher.list_application_profiles()) == 5          # recovered on the next call
+    assert len(fetcher.list_application_profiles()) == 5          # retried within the same call
 
     denied = InferenceProfileFetcher(FakeBedrock())
     denied.bedrock_client.list_inference_profiles = lambda **k: (_ for _ in ()).throw(
@@ -462,7 +460,7 @@ def test_learned_country_guess_keeps_the_real_model_id():
     assert (app['model_id'], app['profile_prefix']) == (other, 'kr')
 
 
-def test_application_listing_is_kept_when_system_listing_fails_once():
+def test_system_listing_failing_once_is_retried_without_listing_applications_again():
     calls = []
 
     class Flaky(FakeBedrock):
@@ -474,9 +472,7 @@ def test_application_listing_is_kept_when_system_listing_fails_once():
 
     fetcher = InferenceProfileFetcher(Flaky(application=[app_profile('auapp000009', 'a', AU_ARNS)],
                                             system=[system_profile(f"au.{HAIKU}", AU_ARNS)]))
-    with pytest.raises(RuntimeError):                         # no source can be resolved yet
-        fetcher.list_application_profiles()
-    resolved = fetcher.list_application_profiles()           # system listing recovered
+    resolved = fetcher.list_application_profiles()           # system listing retried at once
     assert resolved[0]['sources'] == [f"au.{HAIKU}"]
     assert calls.count('APPLICATION') == 1                    # not listed again
 

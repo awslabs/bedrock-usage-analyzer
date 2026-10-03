@@ -20,7 +20,7 @@ from bedrock_usage_analyzer.utils.partition import (
     probe_if_rejected,
     region_hint,
 )
-from bedrock_usage_analyzer.utils.paths import get_data_path
+from bedrock_usage_analyzer.utils.paths import get_user_data_dir
 from bedrock_usage_analyzer.utils.yaml_handler import load_yaml
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ def load_region_names() -> List[str]:
     regions; it still wins for commercial, but GovCloud comes from the bundle.
     """
     from bedrock_usage_analyzer.utils.paths import load_bundled_yaml
-    names = read_region_file(get_data_path('regions.yml'))
+    names = read_region_file(get_user_data_dir() / 'regions.yml')  # the bundle is read once, below
     bundled = normalize_region_names((load_bundled_yaml('regions.yml') or {}).get('regions', []))
     present = {get_partition_for_region(r) for r in names}
     return sorted(set(names) | {r for r in bundled if get_partition_for_region(r) not in present})

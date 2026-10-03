@@ -16,7 +16,7 @@ from bedrock_usage_analyzer.aws.bedrock import endpoint_id, get_regional_profile
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.servicequotas import (
     QUOTA_MISSING, QUOTA_OK, list_quota_codes, lookup_quota)
-from bedrock_usage_analyzer.utils.yaml_handler import has_endpoint, load_fm_list, quota_slots
+from bedrock_usage_analyzer.utils.yaml_handler import fm_endpoints, has_endpoint, load_fm_list, quota_slots
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
 
 logger = logging.getLogger(__name__)
@@ -306,8 +306,13 @@ class BedrockAnalyzer:
                 logger.info(f"  {profile_prefix}.{model_id} is not offered in {self.region}; "
                             f"the report will show usage without limits")
             elif not any(quota_codes.values()) and profile_prefix != UNKNOWN_SOURCE:
+                profiles = sorted((fm_endpoints(self._fm_list(), model_id) or set()) - {'base'})
                 if self._endpoint_listed(model_id, profile_prefix):
                     fix = f"bua refresh fm-quotas {self.region}"
+                elif profile_prefix is None and profiles:
+                    # No on-demand endpoint: refreshing cannot add one, its profiles have the limits
+                    fix = "analyze one of its inference profiles instead: " + \
+                        ', '.join(endpoint_id(model_id, p) for p in profiles)
                 else:
                     # fm-quotas only maps endpoints already in the model list
                     fix = f"bua refresh fm-list {self.region}, then bua refresh fm-quotas {self.region}"
@@ -315,7 +320,8 @@ class BedrockAnalyzer:
                             f"show usage without limits. To map them: {fix}")
             quotas = self._fetch_quotas(model_id, quota_codes, profile_prefix)
             if any(quotas.values()):
-                logger.info(f"  Quotas: TPM={quotas['tpm']}, RPM={quotas['rpm']}, TPD={quotas['tpd']}")
+                logger.info(f"  Quotas: TPM={quotas['tpm']}, RPM={quotas['rpm']}, TPD={quotas['tpd']}, "
+                            f"concurrent={quotas.get('concurrent')}")
 
             # Step 3: Fetch all data upfront with configured granularities
             # Data reuse optimization: if all periods use same granularity, only fetch once

@@ -4,6 +4,7 @@
 """Inference profile discovery for Bedrock models"""
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, FrozenSet, Iterable, List, Optional
 
 from bedrock_usage_analyzer.core.errors import is_access_denied
@@ -24,6 +25,7 @@ UNKNOWN_SOURCE = 'unknown'
 
 # Attempts at listing application profiles per run before giving up on transient errors
 MAX_LISTING_ATTEMPTS = 2
+TAG_WORKERS = 8
 
 # Regions behind the country-level Asia Pacific profiles, extended at run time from the
 # listed profiles. Used only for copies of a country profile the region does not list.
@@ -85,21 +87,22 @@ class InferenceProfileFetcher:
     def _list_once(self, kind: str) -> List[Dict]:
         """List inference profiles of ``kind`` once per run.
 
-        A permission error is permanent. A throttle or network blip gets one more try from
-        the next caller, then the run stops retrying (each try can take a while with
-        retries and timeouts). A successful listing is kept even if a later one fails.
+        A permission error is permanent. A throttle or network blip is retried right away,
+        within the same call, so every report of the run sees the same listing; after
+        MAX_LISTING_ATTEMPTS the run stops retrying (each try can take a while with retries
+        and timeouts). A successful listing is kept even if a later one fails.
         """
         state = self._listings[kind]
-        if state['error'] is not None:
-            raise state['error']
-        if state['result'] is None:
+        while state['result'] is None:
+            if state['error'] is not None:
+                raise state['error']
             try:
                 state['result'] = list_inference_profiles(self.bedrock_client, kind)
             except Exception as e:
                 state['failures'] += 1
                 if is_access_denied(e) or state['failures'] >= MAX_LISTING_ATTEMPTS:
                     state['error'] = e
-                raise
+                logger.debug(f"Listing {kind} inference profiles failed (attempt {state['failures']}): {e}")
         return state['result']
 
     def _load_system_profiles(self) -> List[Dict]:
@@ -368,6 +371,7 @@ class InferenceProfileFetcher:
                            f"This report covers {target_endpoint} only, without its application profiles.")
             app_profiles = []
         matched = 0
+        selected = []
         for app in app_profiles:
             if wanted:
                 if app['id'] not in wanted:
@@ -377,6 +381,13 @@ class InferenceProfileFetcher:
             matched += 1
             profiles.append(app['id'])
             profile_names[app['id']] = app['name']
+            selected.append(app)
+        # One ListTagsForResource per profile: in parallel, so many profiles do not add up
+        todo = [a for a in selected if a['arn'] and a['arn'] not in self._tags_cache]
+        if len(todo) > 1:
+            with ThreadPoolExecutor(max_workers=min(TAG_WORKERS, len(todo))) as pool:
+                list(pool.map(lambda a: self._get_tags(a['arn'], a['id']), todo))
+        for app in selected:
             profile_metadata[app['id']] = {'id': app['id'], 'tags': self._get_tags(app['arn'], app['id'])}
 
         logger.info(f"  Profile discovery: {matched} application profiles matched")
