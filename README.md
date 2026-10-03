@@ -143,8 +143,8 @@ Note: You need to replace some part with your own account ID and the region used
 In AWS GovCloud (US), write the ARNs with the `aws-us-gov` partition (`arn:aws-us-gov:bedrock:...`).
 
 **Additional permissions explained:**
-- `account:ListRegions` - List enabled AWS regions (for `bedrock-usage-analyzer refresh regions`)
-- `ec2:DescribeRegions` - Fallback region listing where `account:ListRegions` is unavailable (for example in GovCloud)
+- `account:ListRegions` - List enabled AWS regions (for `bedrock-usage-analyzer refresh regions`, and for `refresh quota-index` when there is no regions.yml for the credentials' partition)
+- `ec2:DescribeRegions` - Fallback region listing where `account:ListRegions` is unavailable (for example in GovCloud); used by the same commands
 - `bedrock:ListFoundationModels` - List all foundation models (for `bedrock-usage-analyzer refresh fm-list`)
 - `servicequotas:ListServiceQuotas` - List all Bedrock quotas (for `bedrock-usage-analyzer refresh fm-quotas`)
 - `servicequotas:GetServiceQuota` - Check every mapped quota code in each region (for `bedrock-usage-analyzer refresh quota-index`)

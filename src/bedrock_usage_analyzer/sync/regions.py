@@ -124,11 +124,13 @@ def _fetch_via_ec2(region: Optional[str]) -> List[str]:
     return [r['RegionName'] for r in response.get('Regions', [])]
 
 
-def fetch_enabled_regions(partition: Optional[str] = None, region: Optional[str] = None) -> List[str]:
+def fetch_enabled_regions(partition: Optional[str] = None, region: Optional[str] = None,
+                          static_fallback: bool = True) -> List[str]:
     """Fetch the regions enabled for the account in the credentials' partition.
 
-    Tries the Account Management API first, then EC2 DescribeRegions, then
-    botocore's static region list for Bedrock in that partition.
+    Tries the Account Management API first, then EC2 DescribeRegions, then (unless
+    ``static_fallback`` is False, which returns [] instead) the SDK's static region list
+    for Bedrock in that partition, which also has opt-in regions.
     """
     hint = region or region_hint()
     # Without working credentials the static fallback below would silently
@@ -147,6 +149,10 @@ def fetch_enabled_regions(partition: Optional[str] = None, region: Optional[str]
             errors.append(f"{name}: {e}")
             logger.debug(f"{name} failed: {e}")
 
+    if not static_fallback:
+        for err in errors:
+            logger.debug(f"Could not list enabled regions via {err}")
+        return []
     import boto3
     static = boto3.session.Session().get_available_regions('bedrock', partition)
     if static:

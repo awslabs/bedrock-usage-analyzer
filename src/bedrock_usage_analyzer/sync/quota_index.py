@@ -22,12 +22,10 @@ CSV_HEADERS = ['model_id', 'endpoint', 'quota_type', 'quota_code', 'quota_name',
 
 
 def _account_regions(partition: str):
-    """Regions the account has enabled in ``partition``, or [] if they cannot be listed."""
+    """Regions the account has enabled in ``partition`` (account:ListRegions, else
+    ec2:DescribeRegions), or [] if neither works: no guess from a static list."""
     from bedrock_usage_analyzer.sync.regions import fetch_enabled_regions
-    try:
-        return fetch_enabled_regions(partition)
-    except SystemExit:
-        return []
+    return fetch_enabled_regions(partition, static_fallback=False)
 
 
 class QuotaIndexGenerator:
@@ -107,9 +105,14 @@ class QuotaIndexGenerator:
         if not known:
             # No regions.yml of this partition yet: ask the account which regions it enabled
             # (the bundled list also has opt-in regions it may not have)
-            known = set(_account_regions(self._partition) or
-                        filter_regions_by_partition(load_region_names(), self._partition))
-        fm_files.sort(key=lambda item: (item[0] not in homes, item[0] not in enabled, item[0]))
+            known = set(_account_regions(self._partition))
+            if not known:
+                known = set(filter_regions_by_partition(load_region_names(), self._partition))
+                logger.warning("  Could not list the account's enabled regions (account:ListRegions or "
+                               "ec2:DescribeRegions); checking the bundled regions, opt-in ones included. "
+                               "Run 'bua refresh regions' to limit the check to enabled regions.")
+        # Callable regions first, so each endpoint is validated in a region that can answer
+        fm_files.sort(key=lambda item: (item[0] not in homes, item[0] not in known, item[0]))
 
         logger.info(f"Found {len(fm_files)} fm-list files")
 

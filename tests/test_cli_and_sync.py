@@ -414,3 +414,12 @@ def test_fm_list_refresh_adds_base_when_a_listed_model_gains_on_demand(monkeypat
     saved = load_yaml(str(tmp_path / 'data' / 'fm-list-ap-south-1.yml'))['models'][0]
     assert 'base' in saved['endpoints']
     assert saved['endpoints']['apac']['quotas']['tpm']['code'] == 'L-A'        # kept
+
+
+def test_fm_list_for_a_region_of_another_partition_explains(monkeypatch):
+    import argparse
+    from bedrock_usage_analyzer.sync import fm_list
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.credentials_partition_or_exit', lambda region=None: 'aws')
+    monkeypatch.setattr(fm_list, 'refresh_region', lambda *a, **k: pytest.fail('must not refresh'))
+    with pytest.raises(SystemExit):
+        cli.cmd_refresh_fm_list(argparse.Namespace(region='us-gov-west-1', update_bundle=False))

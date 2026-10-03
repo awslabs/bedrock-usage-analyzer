@@ -171,3 +171,9 @@ def test_partition_probed_even_without_a_region_hint(monkeypatch):
     asked = []
     monkeypatch.setattr(r, 'probe_if_rejected', lambda region, error=None: asked.append(region) or {'Partition': 'aws-us-gov'})
     assert r.credentials_partition_or_exit() == 'aws-us-gov' and asked == [None]
+
+
+def test_account_region_listing_without_static_fallback(monkeypatch):
+    monkeypatch.setattr(r, '_fetch_via_account_api', lambda region: (_ for _ in ()).throw(RuntimeError('denied')))
+    monkeypatch.setattr(r, '_fetch_via_ec2', lambda region: (_ for _ in ()).throw(RuntimeError('denied')))
+    assert r.fetch_enabled_regions('aws', 'us-east-1', static_fallback=False) == []

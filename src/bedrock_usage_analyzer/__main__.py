@@ -154,6 +154,11 @@ def cmd_refresh_fm_list(args):
         if not is_valid_region_name(args.region):
             logger.error(f"Invalid region format: {args.region}")
             sys.exit(1)
+        # Same partition check as the other refresh commands (GovCloud region, commercial
+        # credentials): a plain explanation instead of an 'invalid token' API error
+        from bedrock_usage_analyzer.sync.regions import credentials_partition_or_exit
+        from bedrock_usage_analyzer.utils.ui import require_credentials_partition
+        require_credentials_partition(args.region, credentials_partition_or_exit(args.region))
         refresh_region(args.region, update_bundle=args.update_bundle)
     else:
         # Only the regions the current credentials can call
