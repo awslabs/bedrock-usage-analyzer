@@ -381,3 +381,21 @@ def test_fm_quotas_drops_saved_codes_missing_from_the_listing(monkeypatch):
         'tpm': None, 'rpm': {'code': 'L-OK', 'name': 'y'}, 'tpd': {'code': 'L-UNLISTED', 'name': 'z'}}
     qm.QuotaMapper._drop_unlisted_saved_codes(fm, set(), 'us-east-1')          # failed listing: no change
     assert fm['endpoints']['base']['quotas']['rpm']['code'] == 'L-OK'
+
+
+def test_fm_quotas_confirms_each_unlisted_code_once(monkeypatch):
+    shared = {'code': 'L-SHARED', 'name': 'x'}
+    fm = {'model_id': 'm', 'endpoints': {'jp': {'quotas': {'tpm': dict(shared)}},
+                                         'apac': {'quotas': {'tpm': dict(shared)}}}}
+    asked = []
+    monkeypatch.setattr(qm, 'check_quota', lambda code, region: asked.append(code) or ('ok', {}))
+    qm.QuotaMapper._drop_unlisted_saved_codes(fm, {'L-OTHER'}, 'ap-northeast-1', {})
+    assert asked == ['L-SHARED']
+
+
+def test_scrub_conflicting_reports_and_nulls():
+    from bedrock_usage_analyzer.sync.quota_rules import scrub_conflicting
+    quotas = {'tpm': {'code': 'L-G', 'name': 'Global cross-region model inference tokens per minute for X'},
+              'rpm': {'code': 'L-R', 'name': 'Cross-region model inference requests per minute for X'}}
+    removed = scrub_conflicting('x.model-v1:0', 'us', quotas, {'us'})
+    assert [m for m, _, _ in removed] == ['tpm'] and quotas['tpm'] is None and quotas['rpm']['code'] == 'L-R'

@@ -279,9 +279,8 @@ class UserInputs:
 
     def _get_profile_fetcher(self) -> InferenceProfileFetcher:
         if self.profile_fetcher is None:
-            on_demand = [m['model_id'] for m in self._load_fm_list(self.region)
-                         if 'base' in (m.get('endpoints') or {})]
-            self.profile_fetcher = InferenceProfileFetcher(create_client('bedrock', self.region), on_demand)
+            self.profile_fetcher = InferenceProfileFetcher.for_region(
+                create_client('bedrock', self.region), self._load_fm_list(self.region))
         return self.profile_fetcher
 
     def _parse_model_id(self, model_id):

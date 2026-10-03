@@ -90,3 +90,18 @@ def mapping_conflict(model_id: str, endpoint_type: str, quota_name: Optional[str
     if version and versions and version not in versions:
         return f"quota is for version {'/'.join(sorted(versions))}, model is {version}"
     return None
+
+
+def scrub_conflicting(model_id: str, endpoint_type: str, quotas: Optional[dict], regional_prefixes):
+    """Null, in place, the codes in ``quotas`` that contradict this model endpoint.
+
+    Returns [(metric, quota, reason)] for each code removed, so callers can log it.
+    """
+    removed = []
+    for metric, quota in list((quotas or {}).items()):
+        if isinstance(quota, dict):
+            reason = mapping_conflict(model_id, endpoint_type, quota.get('name'), regional_prefixes)
+            if reason:
+                removed.append((metric, quota, reason))
+                quotas[metric] = None
+    return removed

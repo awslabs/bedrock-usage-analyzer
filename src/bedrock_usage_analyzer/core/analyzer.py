@@ -9,7 +9,7 @@ import traceback
 from datetime import datetime
 
 from bedrock_usage_analyzer.core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
-from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict
+from bedrock_usage_analyzer.sync.quota_rules import scrub_conflicting
 from bedrock_usage_analyzer.core.metrics_fetcher import CloudWatchMetricsFetcher
 from bedrock_usage_analyzer.core.output_generator import OutputGenerator
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
@@ -47,8 +47,7 @@ class BedrockAnalyzer:
             self.bedrock_client = profile_fetcher.bedrock_client
         else:
             self.bedrock_client = create_client('bedrock', region)
-            on_demand = [m['model_id'] for m in self._fm_list() if 'base' in (m.get('endpoints') or {})]
-            self.profile_fetcher = InferenceProfileFetcher(self.bedrock_client, on_demand)
+            self.profile_fetcher = InferenceProfileFetcher.for_region(self.bedrock_client, self._fm_list())
         self.metrics_fetcher = CloudWatchMetricsFetcher(self.cloudwatch_client, self.tz_api_format)
         self.output_generator = None  # Initialized in analyze() with output_dir
     
@@ -97,13 +96,9 @@ class BedrockAnalyzer:
                 return {}
             # Skip codes that contradict this model or endpoint (e.g. saved by an older
             # version, before the mapping checks existed) instead of showing another limit
-            regional = set(get_regional_profile_prefixes())
-            for metric, quota in list(quotas.items()):
-                if isinstance(quota, dict):
-                    reason = mapping_conflict(model_id, endpoint_key, quota.get('name'), regional)
-                    if reason:
-                        logger.info(f"  Ignoring {metric} quota {quota.get('code')}: {reason}")
-                        quotas[metric] = None
+            for metric, quota, reason in scrub_conflicting(
+                    model_id, endpoint_key, quotas, set(get_regional_profile_prefixes())):
+                logger.info(f"  Ignoring {metric} quota {quota.get('code')}: {reason}")
             return quotas
 
         return {}

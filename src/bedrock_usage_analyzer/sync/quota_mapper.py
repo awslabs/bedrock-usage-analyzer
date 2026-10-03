@@ -14,7 +14,7 @@ from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_pat
 from bedrock_usage_analyzer.aws.servicequotas import QUOTA_MISSING, check_quota, fetch_service_quotas
 from bedrock_usage_analyzer.aws.bedrock_llm import extract_common_name, extract_quota_codes
 from bedrock_usage_analyzer.aws.bedrock import get_endpoint_quota_keywords, get_regional_profile_prefixes
-from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict
+from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict, scrub_conflicting
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,7 @@ class QuotaMapper:
         self.common_name_cache = {}
         self.lcode_cache = {}
         self._listed_codes = {}  # region -> quota codes of its listing
+        self._quota_checks = {}  # (code, region) -> GetServiceQuota status
         
     def run(self, update_bundle: bool = False):
         """Execute quota mapping for all regions
@@ -109,7 +110,7 @@ class QuotaMapper:
             # (written by older versions) go even when nothing new replaces them
             self._drop_conflicting_saved_codes(fm, regional)
             # The region's quotas were just listed: a saved code not in the list is gone
-            self._drop_unlisted_saved_codes(fm, listed_codes, region)
+            self._drop_unlisted_saved_codes(fm, listed_codes, region, self._quota_checks)
 
             if not endpoints_to_process:
                 logger.info("⊘ (no endpoints)")
@@ -155,7 +156,7 @@ class QuotaMapper:
         logger.info(f"  ✓ Updated {updated_count} models\n")
     
     @staticmethod
-    def _drop_unlisted_saved_codes(fm: Dict, listed_codes, region: str) -> None:
+    def _drop_unlisted_saved_codes(fm: Dict, listed_codes, region: str, checks: Optional[Dict] = None) -> None:
         """Null saved codes that the region's quota listing lacks and Service Quotas confirms missing.
 
         A listing can leave out a quota whose applied value is unavailable, so a code absent
@@ -163,11 +164,18 @@ class QuotaMapper:
         """
         if not listed_codes:
             return
+        checks = {} if checks is None else checks  # (code, region) -> status, shared by endpoints
+
+        def missing(code):
+            if (code, region) not in checks:
+                checks[(code, region)] = check_quota(code, region)[0]
+            return checks[(code, region)] == QUOTA_MISSING
+
         for endpoint_type, endpoint in (fm.get('endpoints') or {}).items():
             quotas = (endpoint or {}).get('quotas') or {}
             for metric, value in quotas.items():
                 if isinstance(value, dict) and value.get('code') and value['code'] not in listed_codes \
-                        and check_quota(value['code'], region)[0] == QUOTA_MISSING:
+                        and missing(value['code']):
                     logger.info(f"  Dropping {value['code']} for {fm['model_id']} ({endpoint_type}): "
                                 f"does not exist in {region}")
                     quotas[metric] = None
@@ -175,10 +183,7 @@ class QuotaMapper:
     @staticmethod
     def _drop_conflicting_saved_codes(fm: Dict, regional) -> None:
         for endpoint_type, endpoint_value in (fm.get('endpoints') or {}).items():
-            saved = (endpoint_value or {}).get('quotas') or {}
-            for metric, value in list(saved.items()):
-                if isinstance(value, dict) and mapping_conflict(fm['model_id'], endpoint_type, value.get('name'), regional):
-                    saved[metric] = None
+            scrub_conflicting(fm['model_id'], endpoint_type, (endpoint_value or {}).get('quotas'), regional)
 
     def _get_endpoints_to_process(self, fm: Dict) -> List[str]:
         """Determine which endpoints to process for a model"""

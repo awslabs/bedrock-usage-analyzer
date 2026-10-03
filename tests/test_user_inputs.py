@@ -422,7 +422,7 @@ def test_cli_accepts_system_profile_with_new_prefix(inputs):
     from conftest import system_profile, arn
     inputs.profile_fetcher.bedrock_client.system.append(
         system_profile(f"kr.{HAIKU}", [arn('ap-northeast-2', HAIKU), arn('ap-northeast-9', HAIKU)]))
-    inputs.profile_fetcher._system_profiles = None
+    inputs.profile_fetcher = type(inputs.profile_fetcher)(inputs.profile_fetcher.bedrock_client)
     assert inputs._parse_model_id(f"kr.{HAIKU}") == {'model_id': HAIKU, 'profile_prefix': 'kr'}
     # Base model IDs with two dots stay base models
     assert inputs._parse_model_id('deepseek.v3.2') == {'model_id': 'deepseek.v3.2', 'profile_prefix': None}

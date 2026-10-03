@@ -50,6 +50,12 @@ class InferenceProfileFetcher:
     'jp.' copy even though all of them route to ap-* regions.
     """
 
+    @classmethod
+    def for_region(cls, bedrock_client, fm_models: Optional[List[Dict]]) -> 'InferenceProfileFetcher':
+        """Fetcher that knows which models of the region's fm-list have an on-demand endpoint."""
+        on_demand = [m['model_id'] for m in fm_models or [] if 'base' in (m.get('endpoints') or {})]
+        return cls(bedrock_client, on_demand)
+
     def __init__(self, bedrock_client, on_demand_models: Optional[Iterable[str]] = None):
         self.bedrock_client = bedrock_client
         # Models with an on-demand ('base') endpoint in the region's fm-list
@@ -60,25 +66,38 @@ class InferenceProfileFetcher:
         self._system_ids: set = set()
         self._country_regions = {p: set(r) for p, r in COUNTRY_PROFILE_REGIONS.items()}
         self._app_profiles: Optional[List[Dict]] = None
-        self._listing_error: Optional[Exception] = None
-        self._listing_failures = 0
-        self._system_error: Optional[Exception] = None
-        self._system_failures = 0
+        # Per listing type: the result, the error the run gave up on, and failed attempts
+        self._listings: Dict[str, Dict] = {kind: {'result': None, 'error': None, 'failures': 0}
+                                           for kind in ('SYSTEM_DEFINED', 'APPLICATION')}
+        self._by_model: Dict[str, List] = {}   # model ID -> [(routing set, profile IDs)]
+        self._listed_prefixes: set = set()
         self._tags_cache: Dict[str, Dict[str, str]] = {}
 
     # ------------------------------------------------------------------ listing
 
-    def _load_system_profiles(self) -> List[Dict]:
-        if self._system_error is not None:
-            raise self._system_error  # given up for this run, like the application listing
-        if self._system_profiles is None:
+    def _list_once(self, kind: str) -> List[Dict]:
+        """List inference profiles of ``kind`` once per run.
+
+        A permission error is permanent. A throttle or network blip gets one more try from
+        the next caller, then the run stops retrying (each try can take a while with
+        retries and timeouts). A successful listing is kept even if a later one fails.
+        """
+        state = self._listings[kind]
+        if state['error'] is not None:
+            raise state['error']
+        if state['result'] is None:
             try:
-                profiles = list_inference_profiles(self.bedrock_client, 'SYSTEM_DEFINED')
+                state['result'] = list_inference_profiles(self.bedrock_client, kind)
             except Exception as e:
-                self._system_failures += 1
-                if is_access_denied(e) or self._system_failures >= MAX_LISTING_ATTEMPTS:
-                    self._system_error = e
+                state['failures'] += 1
+                if is_access_denied(e) or state['failures'] >= MAX_LISTING_ATTEMPTS:
+                    state['error'] = e
                 raise
+        return state['result']
+
+    def _load_system_profiles(self) -> List[Dict]:
+        if self._system_profiles is None:
+            profiles = self._list_once('SYSTEM_DEFINED')
             self._system_profiles = profiles
             prefix_regions: Dict[str, set] = {}
             for profile in profiles:
@@ -89,10 +108,20 @@ class InferenceProfileFetcher:
                     # is offered only in Tokyo and Osaka), so keep every candidate
                     self._system_by_arns.setdefault(arns, []).append(profile['inferenceProfileId'])
                     regions = {region_from_arn(a) for a in arns}
+                    self._listed_prefixes.add(profile['inferenceProfileId'].split('.', 1)[0])
                     if all(regions):  # region-bound (global profiles have a region-less ARN)
                         prefix = profile['inferenceProfileId'].split('.', 1)[0]
                         prefix_regions.setdefault(prefix, set()).update(regions)
             self._learn_country_geographies(prefix_regions)
+            # Candidates per model, so resolving one application profile only looks at its model
+            for arn_set, ids in self._system_by_arns.items():
+                for profile_id in ids:
+                    model = profile_id.split('.', 1)[-1]
+                    entry = next((e for e in self._by_model.setdefault(model, []) if e[0] == arn_set), None)
+                    if entry is None:
+                        self._by_model[model].append((arn_set, [profile_id]))
+                    else:
+                        entry[1].append(profile_id)
         return self._system_profiles
 
     def _learn_country_geographies(self, prefix_regions: Dict[str, set]) -> None:
@@ -113,31 +142,22 @@ class InferenceProfileFetcher:
         Each entry: id, name, arn, status, model_id, profile_prefix (None for a
         base-model copy) and source (the endpoint ID it was copied from).
         """
-        if self._listing_error is not None:
-            # Given up for this run: not retried by every caller
-            raise self._listing_error
         if self._app_profiles is None:
-            logger.info("  Listing application inference profiles...")
-            try:
-                raw = list_inference_profiles(self.bedrock_client, 'APPLICATION')
-                self._load_system_profiles()
-            except Exception as e:
-                # A permission error is permanent. A throttle or network blip gets one more
-                # try from the next caller, then the run stops retrying (each try can take
-                # a while with retries and timeouts)
-                self._listing_failures += 1
-                if is_access_denied(e) or self._listing_failures >= MAX_LISTING_ATTEMPTS:
-                    self._listing_error = e
-                raise
+            if self._listings['APPLICATION']['result'] is None:
+                logger.info("  Listing application inference profiles...")
+            raw = self._list_once('APPLICATION')
+            self._load_system_profiles()
             profiles = []
             for profile in raw:
                 arns = [m.get('modelArn', '') for m in profile.get('models', [])]
                 sources = self.resolve_sources(arns)
                 if sources:
                     source = sources[0]
-                    if source in self._system_ids and '.' in source:
-                        # A listed system profile: its first segment is the prefix, even one
-                        # launched after this release (e.g. a new 'kr.' geography)
+                    first = source.split('.', 1)[0]
+                    if '.' in source and (source in self._system_ids or first in self._listed_prefixes
+                                          or first in self._country_regions):
+                        # A listed system profile or a known geography: the first segment is
+                        # the prefix, even one launched after this release (e.g. 'kr.')
                         prefix, model_id = source.split('.', 1)
                     else:
                         model_id, prefix = split_profile_id(source)
@@ -204,9 +224,8 @@ class InferenceProfileFetcher:
         regions = {region_from_arn(a) for a in arns}
         routes_globally = '' in regions
         candidates = [(system_arns, ids) for system_arns, ids in (
-            (s, [p for p in ids if p.split('.', 1)[-1] == model_id and
-                 (routes_globally or not p.startswith('global.'))])
-            for s, ids in self._system_by_arns.items()) if len(system_arns) > 1 and ids]
+            (s, [p for p in ids if routes_globally or not p.startswith('global.')])
+            for s, ids in self._by_model.get(model_id, [])) if len(system_arns) > 1 and ids]
 
         # A copy inside one country geography (au, jp, in) whose profile is listed is a copy of
         # that profile, even when it also fits inside the wider apac.* set (issue #7)
@@ -243,9 +262,9 @@ class InferenceProfileFetcher:
 
     def _country_of(self, regions) -> Optional[str]:
         """The country prefix (jp, au, kr, ...) whose regions contain all of ``regions``."""
-        listed = {p.split('.', 1)[0] for p in self._system_ids}
         for prefix, members in sorted(self._country_regions.items()):
-            if regions and set(regions) <= members and (prefix in self.prefix_map or prefix in listed):
+            if regions and set(regions) <= members and \
+                    (prefix in self.prefix_map or prefix in self._listed_prefixes):
                 return prefix
         return None
 

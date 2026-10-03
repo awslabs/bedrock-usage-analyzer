@@ -268,7 +268,7 @@ def test_throttled_listing_is_retried_but_denied_is_cached(sydney_bedrock):
     for _ in range(2):
         with pytest.raises(RuntimeError):
             denied.list_application_profiles()
-    assert denied._listing_error is not None
+    assert denied._listings['APPLICATION']['error'] is not None
 
 
 def test_listing_failure_is_reported_as_a_warning(sydney_bedrock, caplog):
@@ -448,3 +448,33 @@ def test_failed_system_listing_is_not_retried_forever():
         with pytest.raises(RuntimeError):
             fetcher.is_system_profile('x')
     assert len(calls) == 2                                   # MAX_LISTING_ATTEMPTS, then cached
+
+
+def test_learned_country_guess_keeps_the_real_model_id():
+    """No system profile of this model is listed; the kr.* guess still splits into prefix and model."""
+    other = 'anthropic.claude-sonnet-x-v1:0'
+    kr = [arn('ap-northeast-2', HAIKU), arn('ap-northeast-9', HAIKU)]
+    apac = kr + [arn('ap-southeast-1', HAIKU)]
+    fetcher = InferenceProfileFetcher(FakeBedrock(
+        system=[system_profile(f"kr.{HAIKU}", kr), system_profile(f"apac.{HAIKU}", apac)],
+        application=[app_profile('krsonnet001', 's', [arn('ap-northeast-2', other), arn('ap-northeast-9', other)])]))
+    app = fetcher.list_application_profiles()[0]
+    assert (app['model_id'], app['profile_prefix']) == (other, 'kr')
+
+
+def test_application_listing_is_kept_when_system_listing_fails_once():
+    calls = []
+
+    class Flaky(FakeBedrock):
+        def list_inference_profiles(self, **kwargs):
+            calls.append(kwargs.get('typeEquals'))
+            if kwargs.get('typeEquals') == 'SYSTEM_DEFINED' and calls.count('SYSTEM_DEFINED') == 1:
+                raise RuntimeError('ThrottlingException')
+            return super().list_inference_profiles(**kwargs)
+
+    fetcher = InferenceProfileFetcher(Flaky(application=[app_profile('auapp000009', 'a', AU_ARNS)],
+                                            system=[system_profile(f"au.{HAIKU}", AU_ARNS)]))
+    with pytest.raises(RuntimeError):
+        fetcher.list_application_profiles()
+    assert len(fetcher.list_application_profiles()) == 1
+    assert calls.count('APPLICATION') == 1                    # not listed again

@@ -13,7 +13,7 @@ from bedrock_usage_analyzer.utils.csv_handler import write_csv
 from bedrock_usage_analyzer.utils.paths import list_data_files, get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import check_quota, list_quota_codes, QUOTA_ERROR, QUOTA_OK, QUOTA_MISSING
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
-from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict
+from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict, scrub_conflicting
 
 logger = logging.getLogger(__name__)
 
@@ -318,24 +318,24 @@ class QuotaIndexGenerator:
         for model in data.get('models', []):
             for endpoint, endpoint_data in (model.get('endpoints') or {}).items():
                 quotas = (endpoint_data or {}).get('quotas') or {}
+                # Contradicting this model/endpoint by the stored name (the same rule the
+                # analyzer and fm-quotas apply), then codes the index flagged or the region lacks
+                removed = [(t, q, 'mismatch') for t, q, _ in
+                           scrub_conflicting(model['model_id'], endpoint, quotas, regional)]
                 for quota_type, quota in quotas.items():
                     if not isinstance(quota, dict):
                         continue
                     code = quota.get('code')
-                    slot = (model['model_id'], endpoint, quota_type, code)
-                    reason = None
-                    if slot in mismatched:
-                        reason = 'mismatch'
-                    elif mapping_conflict(model['model_id'], endpoint, quota.get('name'), regional):
-                        reason = 'mismatch'
+                    if (model['model_id'], endpoint, quota_type, code) in mismatched:
+                        removed.append((quota_type, quota, 'mismatch'))
                     elif code and self._missing_in(code, region):
-                        reason = 'missing'
-                    if reason:
-                        reasons.add(reason)
-                        logger.info(f"  Removing {model['model_id']} -> {endpoint} -> {quota_type} ({code}) "
-                                    f"in {region}: {reason}")
-                        quotas[quota_type] = None
-                        modified = True
+                        removed.append((quota_type, quota, 'missing'))
+                for quota_type, quota, reason in removed:
+                    reasons.add(reason)
+                    logger.info(f"  Removing {model['model_id']} -> {endpoint} -> {quota_type} "
+                                f"({quota.get('code')}) in {region}: {reason}")
+                    quotas[quota_type] = None
+                    modified = True
 
         if not modified:
             return
