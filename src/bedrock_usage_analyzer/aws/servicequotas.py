@@ -26,18 +26,8 @@ def fetch_service_quotas(region: str, service_code: str = 'bedrock') -> Optional
         List of quota dictionaries, or None if the list could not be fetched
         (callers must not treat a failure as "no quotas")
     """
-    try:
-        client = create_client('service-quotas', region)
-        quotas = []
-
-        paginator = client.get_paginator('list_service_quotas')
-        for page in paginator.paginate(ServiceCode=service_code):
-            quotas.extend(page.get('Quotas', []))
-
-        return quotas
-    except Exception as e:
-        print(f"Error fetching quotas for {region}: {e}", file=sys.stderr)
-        return None
+    quotas = list_quota_codes(region, service_code)  # logs the error itself
+    return None if quotas is None else list(quotas.values())
 
 
 _clients: Dict[str, object] = {}
@@ -62,7 +52,7 @@ def list_quota_codes(region: str, service_code: str = 'bedrock') -> Optional[Dic
             quotas.update((q['QuotaCode'], q) for q in page.get('Quotas', []) if q.get('QuotaCode'))
         return quotas
     except Exception as e:
-        logger.debug(f"Could not list {service_code} quotas in {region}: {e}")
+        logger.warning(f"  Could not list {service_code} quotas in {region}: {e}")
         return None
 
 

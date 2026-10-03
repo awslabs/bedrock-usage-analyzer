@@ -11,7 +11,7 @@ import sys
 from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
 from bedrock_usage_analyzer.utils.csv_handler import write_csv
 from bedrock_usage_analyzer.utils.paths import list_data_files, get_writable_path, get_bundle_path, get_data_path
-from bedrock_usage_analyzer.aws.servicequotas import check_quota, list_quota_codes, QUOTA_OK, QUOTA_MISSING
+from bedrock_usage_analyzer.aws.servicequotas import check_quota, list_quota_codes, QUOTA_ERROR, QUOTA_OK, QUOTA_MISSING
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
 from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict
 
@@ -33,6 +33,8 @@ class QuotaIndexGenerator:
         # Filled by _cleanup_errors: per-(code, region) lookup results, regional prefixes,
         # and slots already known to contradict their model/endpoint
         self._region_checks = {}
+        self._listings = {}  # region -> {code: quota} from ListServiceQuotas (None: not listed)
+        self._checked_regions = set()  # regions the account can call (regions.yml)
         self._regional = set()
         self._mismatched = set()
         # Parsed fm-lists of the credentials' partition, by region (read once per run)
@@ -86,6 +88,10 @@ class QuotaIndexGenerator:
         from bedrock_usage_analyzer.utils.partition import PARTITION_HOME_REGIONS
         enabled = set(read_region_file(get_writable_path('regions.yml')))
         homes = set(PARTITION_HOME_REGIONS.values())
+        # Only regions the account can call are validated and cleaned: an opt-in region it
+        # has not enabled answers every lookup with an error (its codes are kept as they are)
+        from bedrock_usage_analyzer.sync.regions import load_region_names
+        known = enabled or set(load_region_names())
         fm_files.sort(key=lambda item: (item[0] not in homes, item[0] not in enabled, item[0]))
 
         logger.info(f"Found {len(fm_files)} fm-list files")
@@ -113,6 +119,8 @@ class QuotaIndexGenerator:
                 # Merge endpoints from this region, to the dictionary that aggregates the partition
                 self._merge_endpoints(key, model, region)
 
+        # Without any regions list, every fm-list region of the partition is checked
+        self._checked_regions = (known or set(self._fm_data)) | homes
         logger.info(f"Loaded {len(self.models)} unique models\n")
 
     def _merge_endpoints(self, key, model: Dict, region: str):
@@ -196,11 +204,10 @@ class QuotaIndexGenerator:
         keys = sorted({(e['quota_code'], e['source_region']) for e in own})
         # One listing per region (a few paginated calls) instead of one call per code; the
         # cleanup reuses these listings and results
-        regions = sorted(set(self._fm_data) | {region for _, region in keys})
+        regions = sorted((set(self._fm_data) | {region for _, region in keys}) & self._checked_regions)
         with ThreadPoolExecutor(max_workers=8) as pool:
             self._listings = dict(zip(regions, pool.map(list_quota_codes, regions)))
-        self._region_checks = {}
-        cache = {key: self._lookup(*key) for key in keys}
+            cache = dict(zip(keys, pool.map(lambda key: self._lookup(*key), keys)))
 
         unverified = 0
         for entry in self.entries:
@@ -241,12 +248,10 @@ class QuotaIndexGenerator:
         # Quota availability differs by region: a code can exist in the entry's source region
         # and be missing in another (or the reverse), so every (code, region) pair an fm-list
         # uses is checked, and a code is removed only from the regions where it is missing
-        if not hasattr(self, '_region_checks'):
-            self._listings, self._region_checks = {}, {}
         self._regional = set(get_regional_profile_prefixes())
         self._mismatched = {(e['model_id'], e['endpoint'], e['quota_type'], e['quota_code'])
                             for e in self.mismatch_entries}
-        regions = sorted(self._fm_data)
+        regions = sorted(set(self._fm_data) & self._checked_regions)
         pending = {(slot[3], region) for region in regions
                    for slot in self._quota_slots_in(self._fm_data[region])}
         # Codes absent from a region's listing (or in a region that could not be listed) are
@@ -260,7 +265,8 @@ class QuotaIndexGenerator:
             self._region_checks[key] = QUOTA_OK  # in the region's listing
         # Every region file is also checked for mismatches by the quota name stored with each
         # code, because the index itself samples only one source region per model endpoint
-        for region in regions:
+        # Mismatches (by stored name, no API call) are cleaned in every region of the partition
+        for region in sorted(self._fm_data):
             self._cleanup_region_errors(region)
 
         # A code confirmed in any region is still a valid mapping for the index
@@ -283,12 +289,16 @@ class QuotaIndexGenerator:
 
     def _lookup(self, code: str, region: str):
         """(status, quota) from the region's listing, else from GetServiceQuota (recorded for the cleanup)."""
+        if region not in self._checked_regions:
+            return (QUOTA_ERROR, None)  # not enabled for the account: kept, not looked up
         listed = (self._listings.get(region) or {}).get(code)
         result = (QUOTA_OK, listed) if listed else check_quota(code, region)
         self._region_checks[(code, region)] = result[0]
         return result
 
     def _missing_in(self, code: str, region: str) -> bool:
+        if region not in self._checked_regions:
+            return False  # not enabled for the account: cannot be verified, kept
         key = (code, region)
         if key not in self._region_checks:
             self._region_checks[key] = check_quota(code, region)[0]

@@ -17,10 +17,10 @@ from ..utils.yaml_handler import load_fm_list
 from ..utils.ui import select_from_list
 from ..utils.paths import get_data_path
 from ..utils.partition import (
+    partition_mismatch,
     filter_regions_by_partition,
     get_caller_identity,
     get_partition_display_name,
-    get_partition_for_region,
     get_region_display_name,
     is_govcloud_region,
     is_token_rejection,
@@ -242,12 +242,9 @@ class UserInputs:
 
     def _check_region_partition(self, region):
         """Stop early when the region belongs to a different partition than the credentials."""
-        region_partition = get_partition_for_region(region)
-        if self.partition and region_partition != self.partition:
-            logger.error(f"\nRegion {region} is in {get_partition_display_name(region_partition)}, but the "
-                         f"credentials are for {get_partition_display_name(self.partition)}.")
-            logger.error("Use credentials for that partition (e.g. AWS_PROFILE=...) or pick a region in "
-                         "the credentials' partition.")
+        problem = partition_mismatch(region, self.partition)
+        if problem:
+            logger.error(f"\n{problem}")
             sys.exit(1)
 
     def _select_region(self):

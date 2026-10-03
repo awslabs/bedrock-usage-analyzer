@@ -337,3 +337,19 @@ def test_quota_index_uses_region_listings_and_confirms_absent_codes(monkeypatch,
     assert confirmed == [('L-ABC', 'ap-southeast-2')]          # only the code absent from a listing
     sydney = load_yaml(str(tmp_path / 'data' / 'fm-list-ap-southeast-2.yml'))
     assert sydney['models'][0]['endpoints']['base']['quotas']['tpm'] is None
+
+
+def test_quota_index_skips_regions_the_account_has_not_enabled(monkeypatch, tmp_path, no_bundle, commercial_creds):
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1']})
+    for region in ('af-south-1', 'us-east-1'):
+        save_yaml(str(tmp_path / 'data' / f'fm-list-{region}.yml'), {'models': [
+            {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': {
+                'tpm': {'code': 'L-1', 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
+    listed, asked = [], []
+    monkeypatch.setattr(quota_index, 'list_quota_codes', lambda region: listed.append(region) or None)
+    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: asked.append(region) or ('ok', {'QuotaName': 'n'}))
+    quota_index.QuotaIndexGenerator().run()
+    assert 'af-south-1' not in listed + asked                 # opt-in region not enabled: no calls
+    cape = load_yaml(str(tmp_path / 'data' / 'fm-list-af-south-1.yml'))
+    assert cape['models'][0]['endpoints']['base']['quotas']['tpm']['code'] == 'L-1'   # kept

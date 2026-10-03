@@ -100,6 +100,16 @@ def get_partition_display_name(partition: str) -> str:
     return _PARTITION_NAMES.get(partition, partition)
 
 
+def partition_mismatch(region: str, credentials_partition: Optional[str]) -> Optional[str]:
+    """Why ``region`` cannot be used with credentials of ``credentials_partition`` (None if it can)."""
+    region_partition = get_partition_for_region(region)
+    if not credentials_partition or region_partition == credentials_partition:
+        return None
+    return (f"Region {region} is in {get_partition_display_name(region_partition)}, but the credentials "
+            f"are for {get_partition_display_name(credentials_partition)}. Use credentials for that "
+            f"partition (e.g. AWS_PROFILE=...) or pick a region in the credentials' partition.")
+
+
 def get_region_display_name(region: Optional[str]) -> str:
     """Human-readable region name, e.g. 'AWS GovCloud (US-West)'."""
     if not region:

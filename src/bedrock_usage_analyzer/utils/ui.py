@@ -79,11 +79,11 @@ def require_credentials_partition(bedrock_region: str, credential_regions: list)
 
     e.g. GovCloud credentials with a commercial Bedrock region: every LLM call would fail.
     """
-    from bedrock_usage_analyzer.utils.partition import get_partition_for_region
-    if credential_regions and \
-            get_partition_for_region(bedrock_region) != get_partition_for_region(credential_regions[0]):
-        print(f"\nBedrock region {bedrock_region} is not in the credentials' partition "
-              f"(regions available: {', '.join(credential_regions)}).", file=sys.stderr)
+    from bedrock_usage_analyzer.utils.partition import get_partition_for_region, partition_mismatch
+    problem = credential_regions and partition_mismatch(
+        bedrock_region, get_partition_for_region(credential_regions[0]))
+    if problem:
+        print(f"\nBedrock calls: {problem}", file=sys.stderr)
         sys.exit(1)
 
 
