@@ -121,12 +121,16 @@ class QuotaIndexGenerator:
         for region, fm_file in fm_files:
             loaded = load_data_file(fm_file)
             data = loaded if isinstance(loaded, dict) else {}
-            data['models'] = valid_models(loaded)  # malformed entries skipped, not fatal
+            if not isinstance(data.get('models'), list):
+                data['models'] = []
+            # Malformed entries are skipped, not fatal, and kept as they are when the file is
+            # written back (the valid entries are the same dicts, so cleanups reach the file)
+            models = valid_models(data)
             partition = get_partition_for_region(region)
             if partition == self._partition:
                 self._fm_data[region] = data
 
-            for model in data['models']:
+            for model in models:
                 key = (partition, model['model_id'])
 
                 if key not in self.models:
@@ -279,7 +283,7 @@ class QuotaIndexGenerator:
                             for e in self.mismatch_entries}
         regions = sorted(set(self._fm_data) & self._checked_regions)
         pending = {(slot[3], region) for region in regions
-                   for slot in quota_slots(self._fm_data[region].get('models'))}
+                   for slot in quota_slots(valid_models(self._fm_data[region]))}
         # Codes absent from a region's listing (or in a region that could not be listed) are
         # confirmed one by one, so a code is never removed on the listing alone
         unresolved = sorted(k for k in pending - set(self._region_checks)
@@ -321,7 +325,7 @@ class QuotaIndexGenerator:
 
         modified = False
         reasons = set()
-        for model in data.get('models', []):
+        for model in valid_models(data):
             for endpoint, endpoint_data in (model.get('endpoints') or {}).items():
                 quotas = (endpoint_data or {}).get('quotas') or {}
                 # Contradicting this model/endpoint by the stored name (the same rule the

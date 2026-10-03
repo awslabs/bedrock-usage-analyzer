@@ -427,6 +427,20 @@ def test_quota_index_tolerates_malformed_fm_lists(monkeypatch, tmp_path, no_bund
     assert 'L-1' in (tmp_path / 'data' / 'quota-index.csv').read_text()
 
 
+def test_quota_index_cleanup_keeps_malformed_entries_in_the_user_file(monkeypatch, tmp_path, no_bundle, commercial_creds):
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1']})
+    user_file = tmp_path / 'data' / 'fm-list-us-east-1.yml'
+    save_yaml(str(user_file), {'models': [{'model-id': 'typo', 'endpoints': {}}, {
+        'model_id': 'amazon.nova-lite-v1:0', 'endpoints': {'base': {'quotas': {
+            'tpm': {'code': 'L-X', 'name': 'Cross-region model inference tokens per minute for Amazon Nova Lite'}}}}}]})
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: ('ok', {'QuotaName': 'n'}))
+    quota_index.QuotaIndexGenerator().run()
+    models = load_yaml(str(user_file))['models']
+    assert models[0] == {'model-id': 'typo', 'endpoints': {}}                  # kept as written
+    assert models[1]['endpoints']['base']['quotas']['tpm'] is None             # mismatch removed
+
+
 def test_fm_quotas_tolerates_null_endpoints(monkeypatch):
     mapper = qm.QuotaMapper('us-east-1', 'm')
     assert mapper._get_endpoints_to_process({'model_id': 'x', 'endpoints': None}) == []

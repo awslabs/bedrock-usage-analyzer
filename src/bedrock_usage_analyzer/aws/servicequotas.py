@@ -4,7 +4,6 @@
 """AWS Service Quotas operations"""
 
 import logging
-import sys
 import threading
 from typing import List, Dict, Optional
 
@@ -78,13 +77,31 @@ def check_quota(quota_code: str, region: str, service_code: str = 'bedrock'):
         response = regional_client(region).get_service_quota(ServiceCode=service_code, QuotaCode=quota_code)
         return QUOTA_OK, response.get('Quota', {})
     except ClientError as e:
-        if e.response.get('Error', {}).get('Code') == 'NoSuchResourceException':
+        code = e.response.get('Error', {}).get('Code')
+        if code == 'NoSuchResourceException':
             return QUOTA_MISSING, None
-        print(f"Error fetching quota {quota_code}: {e}", file=sys.stderr)
+        _report_lookup_error(quota_code, region, code, e)
         return QUOTA_ERROR, None
     except Exception as e:
-        print(f"Error fetching quota {quota_code}: {e}", file=sys.stderr)
+        _report_lookup_error(quota_code, region, type(e).__name__, e)
         return QUOTA_ERROR, None
+
+
+_reported_errors = set()
+_reported_lock = threading.Lock()
+
+
+def _report_lookup_error(quota_code: str, region: str, kind, error) -> None:
+    """Warn once per region and kind of error; bulk lookups would otherwise print one line per code."""
+    key = (region, kind)
+    with _reported_lock:
+        first = key not in _reported_errors
+        _reported_errors.add(key)
+    if first:
+        logger.warning(f"Error fetching quota {quota_code} in {region}: {error} "
+                       f"(further {kind} errors in {region} are logged at debug level)")
+    else:
+        logger.debug(f"Error fetching quota {quota_code} in {region}: {error}")
 
 
 

@@ -34,6 +34,11 @@ COUNTRY_PROFILE_REGIONS = {
 }
 
 
+def _model_of(arns) -> Optional[str]:
+    """The model a profile serves: the first model ID of its routed ARNs."""
+    return min((m for m in map(model_id_from_arn, arns) if m), default=None)
+
+
 def _specific_first(profile_ids: List[str], countries=()) -> List[str]:
     """Order candidates: country geographies (jp, au, kr, ...) first, global.* last."""
     def rank(profile_id):
@@ -72,7 +77,6 @@ class InferenceProfileFetcher:
         self._listings: Dict[str, Dict] = {kind: {'result': None, 'error': None, 'failures': 0}
                                            for kind in ('SYSTEM_DEFINED', 'APPLICATION')}
         self._by_model: Dict[str, List] = {}   # model ID -> [(routing set, profile IDs)]
-        self._listed_prefixes: set = set()
         self._parts: Dict[str, tuple] = {}     # listed system profile ID -> (prefix, model ID)
         self._tags_cache: Dict[str, Dict[str, str]] = {}
 
@@ -112,7 +116,6 @@ class InferenceProfileFetcher:
                     self._system_by_arns.setdefault(arns, []).append(profile['inferenceProfileId'])
                     regions = {region_from_arn(a) for a in arns}
                     prefix = profile['inferenceProfileId'].split('.', 1)[0]
-                    self._listed_prefixes.add(prefix)
                     if all(regions):  # region-bound (global profiles have a region-less ARN)
                         prefix_regions.setdefault(prefix, set()).update(regions)
             self._learn_country_geographies(prefix_regions)
@@ -162,10 +165,10 @@ class InferenceProfileFetcher:
                     (prefix, model_id), source = endpoints[0], sources[0]
                 else:
                     # Still listed (it can be analyzed by ID), but no endpoint or quotas are implied
-                    model_ids = sorted({m for m in (model_id_from_arn(a) for a in arns) if m})
-                    if not model_ids:
+                    model_id = _model_of(arns)
+                    if not model_id:
                         continue
-                    source, model_id, prefix = None, model_ids[0], UNKNOWN_SOURCE
+                    source, prefix = None, UNKNOWN_SOURCE
                     logger.info(f"  Note: could not tell which endpoint {profile['inferenceProfileId']} "
                                 f"was copied from")
                 profiles.append({
@@ -197,18 +200,19 @@ class InferenceProfileFetcher:
         arns = [a for a in model_arns if a]
         if not arns:
             return []
-        model_ids = sorted({m for m in (model_id_from_arn(a) for a in arns) if m})
-        if not model_ids:
+        model_id = _model_of(arns)
+        if not model_id:
             return []
-        model_id = model_ids[0]
         arn_set = frozenset(arns)
 
         self._load_system_profiles()
         exact = self._system_by_arns.get(arn_set)
-        if exact and len(arn_set) > 1:
+        # A lone region-less ARN routes globally, so it is never a base-model copy
+        lone_regional = len(arn_set) == 1 and bool(region_from_arn(next(iter(arn_set))))
+        if exact and not lone_regional:
             return self._pairs(exact)
 
-        if len(arn_set) == 1:
+        if lone_regional:
             # A base-model copy, unless a system profile routes to exactly this one ARN: the
             # two cannot be told apart, so the profile belongs to both endpoints. The first
             # one decides the quotas: the on-demand endpoint when the model has one, else the

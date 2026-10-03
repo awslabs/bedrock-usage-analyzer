@@ -9,7 +9,7 @@ import functools
 import sys
 from typing import Dict, List, Optional
 
-from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list, quota_slots, save_yaml
+from bedrock_usage_analyzer.utils.yaml_handler import load_data_file, quota_slots, save_yaml, valid_models
 from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, fetch_service_quotas, is_missing
 from bedrock_usage_analyzer.aws.bedrock_llm import extract_common_name, extract_quota_codes
@@ -44,6 +44,7 @@ class QuotaMapper:
         self.lcode_cache = {}
         self._listed_codes = {}  # region -> quota codes of its listing
         self._quota_checks = {}  # (code, region) -> GetServiceQuota status
+        self._fm_files = {}  # region -> parsed fm-list file, written back whole
         
     def run(self, update_bundle: bool = False):
         """Execute quota mapping for all regions
@@ -295,16 +296,27 @@ class QuotaMapper:
         return common_name
     
     def _load_fm_list(self, region: str) -> Optional[List[Dict]]:
-        """Load FM list for region (None when there is none or it cannot be read)"""
+        """Load FM list for region (None when there is none or it cannot be read)
+
+        Malformed entries and other top-level keys stay in the file when it is saved; the
+        valid entries returned here are the same dicts, so updates reach the file.
+        """
         try:
-            return load_fm_list(region)
+            data = load_data_file(f'fm-list-{region}.yml')
         except Exception:
             return None
+        if data is None:
+            return None
+        data = data if isinstance(data, dict) else {}
+        if not isinstance(data.get('models'), list):
+            data['models'] = []
+        self._fm_files[region] = data
+        return valid_models(data)
     
     def _save_fm_list(self, region: str, fm_list: List[Dict]):
         """Save FM list for region"""
         output_file = get_writable_path(f'fm-list-{region}.yml')
-        data = {'models': fm_list}
+        data = self._fm_files.get(region) or {'models': fm_list}
         save_yaml(str(output_file), data)
         logger.info(f"  ✓ Saved: {output_file}")
         

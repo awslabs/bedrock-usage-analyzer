@@ -8,13 +8,11 @@ import re
 import json
 import logging
 from datetime import datetime, timedelta
-from jinja2 import Environment, FileSystemLoader, select_autoescape
+from jinja2 import Environment, PackageLoader, select_autoescape
 
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quotas_console_url
 
 logger = logging.getLogger(__name__)
-
-TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), '..', 'templates')
 
 
 def safe_filename(label: str) -> str:
@@ -38,7 +36,7 @@ class OutputGenerator:
         # This is a static report writer, not a Flask app; escaping is covered by
         # tests/test_analyzer_and_output.py::test_report_escapes_markup_and_script_breakout.
         self._env = Environment(  # nosemgrep: python.flask.security.xss.audit.direct-use-of-jinja2.direct-use-of-jinja2
-            loader=FileSystemLoader(TEMPLATES_DIR),
+            loader=PackageLoader('bedrock_usage_analyzer', 'templates'),  # works from a zip install too
             autoescape=select_autoescape(['html']),
         )
         self._env.filters['https_url'] = https_url

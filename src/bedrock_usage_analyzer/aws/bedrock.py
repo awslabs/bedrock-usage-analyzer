@@ -129,8 +129,8 @@ def get_default_region_prefix_map() -> Dict[str, str]:
     Returns:
         Dict mapping region prefix to system profile prefix (e.g., {'us': 'us', 'ap': 'apac'})
     """
-    mapping = _load_prefix_mapping()
-    result = {m['prefix']: m['prefix'] for m in mapping if m['is_regional']}
+    # Same source and fallback as get_regional_profile_prefixes
+    result = {prefix: prefix for prefix in get_regional_profile_prefixes()}
     result['ap'] = 'apac'  # Special case: 'ap' region prefix maps to 'apac' system profile
     return result
 

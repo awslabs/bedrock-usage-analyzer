@@ -497,7 +497,6 @@ def test_narrowest_geography_wins_when_learned_sets_overlap():
     fetcher = InferenceProfileFetcher(FakeBedrock())
     fetcher._country_regions = {'jp': {'ap-northeast-1', 'ap-northeast-3'},
                                 'aa': {'ap-northeast-1', 'ap-northeast-3', 'ap-northeast-2'}}
-    fetcher._listed_prefixes = {'jp', 'aa'}                   # 'aa' sorts first but is wider
     assert fetcher._country_of({'ap-northeast-1', 'ap-northeast-3'}) == 'jp'
 
 
@@ -507,3 +506,13 @@ def test_global_copy_is_never_credited_to_a_regional_profile():
     fetcher = InferenceProfileFetcher(FakeBedrock(system=[system_profile(f"us.{HAIKU}", us)],
                                                   application=[app_profile('globalold01', 'g', glob)]))
     assert fetcher.list_application_profiles()[0]['sources'] == [f"global.{HAIKU}"]   # not us.*
+
+
+def test_copy_of_a_region_less_arn_is_global_not_base():
+    """A lone region-less ARN only routes globally, even when the model is on demand."""
+    only_global = [f"arn:aws:bedrock:::foundation-model/{HAIKU}"]
+    listed = InferenceProfileFetcher(FakeBedrock(system=[system_profile(f"global.{HAIKU}", only_global)]),
+                                     on_demand_models=[HAIKU])
+    assert listed.resolve_endpoints(only_global) == [('global', HAIKU)]
+    unlisted = InferenceProfileFetcher(FakeBedrock(), on_demand_models=[HAIKU])
+    assert unlisted.resolve_endpoints(only_global) == [('global', HAIKU)]
