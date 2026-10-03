@@ -66,6 +66,17 @@ def quota_versions(quota_name: str) -> Set[str]:
     return {_canonical(v) for v in _NAME_VERSION.findall(quota_name)}
 
 
+# What each metric's quota name says (every bundled mapping matches)
+METRIC_KEYWORDS = {'tpm': 'tokens per minute', 'rpm': 'requests per minute',
+                   'tpd': 'tokens per day', 'concurrent': 'concurrent'}
+
+
+def measures_metric(metric: str, quota_name: Optional[str]) -> bool:
+    """True when ``quota_name`` is a quota of ``metric`` (an RPM quota is not a TPM one)."""
+    keyword = METRIC_KEYWORDS.get(metric)
+    return not keyword or keyword in (quota_name or '').lower()
+
+
 def mapping_conflict(model_id: str, endpoint_type: str, quota_name: Optional[str],
                      regional_prefixes) -> Optional[str]:
     """Return why ``quota_name`` cannot be a quota of this model endpoint, or None."""

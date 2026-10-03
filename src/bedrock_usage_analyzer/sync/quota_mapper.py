@@ -14,7 +14,7 @@ from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_pat
 from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, is_missing, list_quota_codes
 from bedrock_usage_analyzer.aws.bedrock_llm import extract_common_name, extract_quota_codes
 from bedrock_usage_analyzer.aws.bedrock import get_endpoint_quota_keywords, get_regional_profile_prefixes
-from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict, scrub_conflicting
+from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict, measures_metric, scrub_conflicting
 
 logger = logging.getLogger(__name__)
 
@@ -242,17 +242,18 @@ class QuotaMapper:
 
     @staticmethod
     def _drop_invalid_choices(quota_mapping, candidates, model_id, endpoint_type):
-        """Reject LLM picks outside the candidate list.
+        """Reject LLM picks outside the candidate list or of another metric.
 
         The candidates were already filtered with mapping_conflict, so a pick inside the
-        list cannot contradict the model or endpoint.
+        list cannot contradict the model or endpoint; it can still be the RPM quota picked
+        for TPM.
         """
         if not quota_mapping:
             return quota_mapping
         by_code = {c['code']: c['name'] for c in candidates}
         cleaned = {}
         for metric, choice in quota_mapping.items():
-            if choice and choice.get('code') in by_code:
+            if choice and choice.get('code') in by_code and measures_metric(metric, by_code[choice['code']]):
                 cleaned[metric] = {'code': choice['code'], 'name': by_code[choice['code']]}
             else:
                 if choice:

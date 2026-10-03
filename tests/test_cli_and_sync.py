@@ -205,7 +205,7 @@ def test_keyword_match_treats_hyphens_as_spaces(monkeypatch, tmp_path):
     assert [q['code'] for q in mapper._find_matching_quotas(quotas, 'gpt-oss', 'base')] == ['L-5D8F2F54']
 
 
-def test_fetch_service_quotas_returns_none_on_error(monkeypatch):
+def test_quota_listing_failure_is_none_but_fetch_keeps_its_empty_list(monkeypatch):
     from bedrock_usage_analyzer.aws import servicequotas
 
     class Client:
@@ -213,7 +213,10 @@ def test_fetch_service_quotas_returns_none_on_error(monkeypatch):
             raise RuntimeError('InvalidPaginationTokenException')
 
     monkeypatch.setattr(servicequotas, 'create_client', lambda *a, **k: Client())
-    assert servicequotas.fetch_service_quotas('sa-east-1') is None
+    assert servicequotas.list_quota_codes('sa-east-1') is None
+    assert servicequotas.fetch_service_quotas('sa-east-1') == []                 # contract from main
+    monkeypatch.setattr(servicequotas, 'check_quota', lambda code, region, service_code='bedrock': ('missing', None))
+    assert servicequotas.get_quota_details('L-1', 'sa-east-1') is None
 
 
 def _index_fixture(tmp_path, codes):

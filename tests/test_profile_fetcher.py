@@ -113,11 +113,14 @@ def test_resolve_application_profile_by_id_arn_or_name(sydney_bedrock):
 
 
 def test_other_sources_for_model(sydney_bedrock):
-    fetcher = InferenceProfileFetcher(sydney_bedrock)
+    fetcher = InferenceProfileFetcher(sydney_bedrock, on_demand_models=[HAIKU])
     assert fetcher.other_sources_for_model(HAIKU, 'apac') == {}   # never triggers a listing
     fetcher.list_application_profiles()
     assert fetcher.other_sources_for_model(HAIKU, 'apac') == {'au': 1, 'global': 1, 'jp': 1, 'base': 1}
     assert fetcher.other_sources_for_model(NOVA, 'apac') == {}
+    profile_only = InferenceProfileFetcher(sydney_bedrock)                  # no on-demand endpoint
+    profile_only.list_application_profiles()
+    assert 'base' not in profile_only.other_sources_for_model(HAIKU, 'apac')
 
 
 def test_closest_match_when_routing_set_changed():
@@ -522,3 +525,12 @@ def test_malformed_system_profile_is_skipped_not_half_indexed():
         system=[{'models': [{'modelArn': arn('us-east-1', HAIKU)}]}, system_profile(f"au.{HAIKU}", AU_ARNS)],
         application=[app_profile('auapp000010', 'a', AU_ARNS)]))
     assert fetcher.list_application_profiles()[0]['sources'] == [f"au.{HAIKU}"]
+
+
+def test_lone_arn_of_another_region_is_not_a_base_copy():
+    """A base copy routes to the model in its own region; Tokyo-only routing seen from Sydney is not one."""
+    client = FakeBedrock(system=[system_profile(f"jp.{HAIKU}", JP_ARNS)])
+    client.meta = type('Meta', (), {'region_name': 'ap-southeast-2'})()
+    fetcher = InferenceProfileFetcher(client, on_demand_models=[HAIKU])
+    assert fetcher.resolve_endpoints([arn('ap-northeast-1', HAIKU)]) == [('jp', HAIKU)]
+    assert fetcher.resolve_endpoints([arn('ap-southeast-2', HAIKU)])[0] == (None, HAIKU)

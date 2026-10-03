@@ -14,19 +14,19 @@ from bedrock_usage_analyzer.aws.client_factory import create_client
 logger = logging.getLogger(__name__)
 
 
-def fetch_service_quotas(region: str, service_code: str = 'bedrock') -> Optional[List[Dict]]:
-    """Fetch all service quotas for Bedrock
+def fetch_service_quotas(region: str, service_code: str = 'bedrock') -> List[Dict]:
+    """Fetch all service quotas for Bedrock (kept from earlier releases)
 
     Args:
         region: AWS region
         service_code: AWS service code (default: bedrock)
 
     Returns:
-        List of quota dictionaries, or None if the list could not be fetched
-        (callers must not treat a failure as "no quotas")
+        List of quota dictionaries; [] if the list could not be fetched. Code that must tell
+        a failure from "no quotas" uses list_quota_codes, which returns None on failure.
     """
     quotas = list_quota_codes(region, service_code)  # logs the error itself
-    return None if quotas is None else list(quotas.values())
+    return [] if quotas is None else list(quotas.values())
 
 
 _clients: Dict[str, object] = {}
@@ -86,6 +86,12 @@ def check_quota(quota_code: str, region: str, service_code: str = 'bedrock'):
         _report_lookup_error(quota_code, region, type(e).__name__, e)
         return QUOTA_ERROR, None
 
+
+
+def get_quota_details(quota_code: str, region: str, service_code: str = 'bedrock') -> Optional[Dict]:
+    """Details of one quota, or None when it does not exist or cannot be read (kept from earlier releases)."""
+    status, quota = check_quota(quota_code, region, service_code)
+    return quota if status == QUOTA_OK else None
 
 _reported_errors = set()
 _reported_lock = threading.Lock()

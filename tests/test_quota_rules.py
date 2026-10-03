@@ -450,3 +450,11 @@ def test_quota_index_lists_bundled_files_of_a_zipped_package(monkeypatch):
     from bedrock_usage_analyzer.utils import paths
     monkeypatch.setattr(paths, 'list_data_files', lambda pattern='*.yml': [])   # no file paths (zip)
     assert 'fm-list-us-east-1.yml' in paths.list_data_names('fm-list-*.yml')
+
+
+def test_llm_pick_of_another_metric_is_rejected():
+    candidates = [{'code': 'L-RPM', 'name': 'Cross-region model inference requests per minute for X'},
+                  {'code': 'L-TPM', 'name': 'Cross-region model inference tokens per minute for X'}]
+    picked = {'tpm': {'code': 'L-RPM', 'name': ''}, 'rpm': {'code': 'L-RPM', 'name': ''}}
+    cleaned = qm.QuotaMapper._drop_invalid_choices(picked, candidates, 'x.m', 'us')
+    assert cleaned['tpm'] is None and cleaned['rpm']['code'] == 'L-RPM'

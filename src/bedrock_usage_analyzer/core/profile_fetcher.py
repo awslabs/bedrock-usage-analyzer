@@ -70,6 +70,7 @@ class InferenceProfileFetcher:
         # Models with an on-demand ('base') endpoint in the region's fm-list
         self.on_demand_models = set(on_demand_models or ())
         self.prefix_map = get_default_region_prefix_map()
+        self._region = getattr(getattr(bedrock_client, 'meta', None), 'region_name', None)
         self._system_profiles: Optional[List[Dict]] = None
         self._system_by_arns: Dict[FrozenSet[str], List[str]] = {}
         self._system_ids: set = set()
@@ -172,13 +173,13 @@ class InferenceProfileFetcher:
                 endpoints = self.resolve_endpoints(arns)
                 sources = [endpoint_id(m, p) for p, m in endpoints]
                 if endpoints:
-                    (prefix, model_id), source = endpoints[0], sources[0]
+                    prefix, model_id = endpoints[0]
                 else:
                     # Still listed (it can be analyzed by ID), but no endpoint or quotas are implied
                     model_id = _model_of(arns)
                     if not model_id:
                         continue
-                    source, prefix = None, UNKNOWN_SOURCE
+                    prefix = UNKNOWN_SOURCE
                     logger.info(f"  Note: could not tell which endpoint {profile['inferenceProfileId']} "
                                 f"was copied from")
                 profiles.append({
@@ -188,7 +189,7 @@ class InferenceProfileFetcher:
                     'status': profile.get('status'),
                     'model_id': model_id,
                     'profile_prefix': prefix,
-                    'source': source,
+                    'source': sources[0] if sources else None,  # the one shown to the user
                     'sources': sources,
                 })
             logger.info(f"  Found {len(profiles)} application inference profile(s)")
@@ -217,8 +218,10 @@ class InferenceProfileFetcher:
 
         self._load_system_profiles()
         exact = self._system_by_arns.get(arn_set)
-        # A lone region-less ARN routes globally, so it is never a base-model copy
-        lone_regional = len(arn_set) == 1 and bool(region_from_arn(next(iter(arn_set))))
+        # A base-model copy routes to the model in the profile's own region: a lone region-less
+        # ARN (global routing) or a lone ARN of another region is never one
+        lone_region = region_from_arn(next(iter(arn_set))) if len(arn_set) == 1 else ''
+        lone_regional = bool(lone_region) and lone_region == (self._region or lone_region)
         if exact and not lone_regional:
             return self._pairs(exact)
 
@@ -376,7 +379,6 @@ class InferenceProfileFetcher:
             logger.warning(f"  WARNING: Could not list {failed} inference profiles ({e}). This report "
                            f"covers {target_endpoint} only, without its application profiles.")
             app_profiles = []
-        matched = 0
         selected = []
         for app in app_profiles:
             if wanted:
@@ -384,7 +386,6 @@ class InferenceProfileFetcher:
                     continue
             elif target_endpoint not in app['sources']:
                 continue
-            matched += 1
             profiles.append(app['id'])
             profile_names[app['id']] = app['name']
             selected.append(app)
@@ -396,7 +397,7 @@ class InferenceProfileFetcher:
         for app in selected:
             profile_metadata[app['id']] = {'id': app['id'], 'tags': self._get_tags(app['arn'], app['id'])}
 
-        logger.info(f"  Profile discovery: {matched} application profiles matched")
+        logger.info(f"  Profile discovery: {len(selected)} application profiles matched")
         return profiles, profile_names, profile_metadata
 
     def other_sources_for_model(self, model_id: str, profile_prefix: Optional[str]) -> Dict[str, int]:
@@ -412,8 +413,9 @@ class InferenceProfileFetcher:
         for app in app_profiles:
             # Profiles with an unknown source are not pointed to: there is no endpoint to pick
             # and only to endpoints that can be selected (a retired profile's guessed source cannot)
-            if app['model_id'] == model_id and app['sources'] and target not in app['sources'] and \
-                    (app['profile_prefix'] is None or app['source'] in self._system_ids):
+            selectable = app['source'] in self._system_ids if app['profile_prefix'] else \
+                app['model_id'] in self.on_demand_models  # 'base' is offered only for on-demand models
+            if app['model_id'] == model_id and app['sources'] and target not in app['sources'] and selectable:
                 key = app['profile_prefix'] or 'base'
                 counts[key] = counts.get(key, 0) + 1
         return counts
