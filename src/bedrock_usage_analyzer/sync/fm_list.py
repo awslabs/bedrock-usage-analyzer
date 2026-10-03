@@ -57,6 +57,12 @@ def refresh_region(region_name: str, update_bundle: bool = False):
     """
     logger.info(f"\nProcessing region: {region_name}")
 
+    # Models first: a region the account cannot call is skipped before anything else is
+    # listed or written
+    models = fetch_foundation_models(region_name)
+    if models is None:
+        return
+
     # List the system inference profiles once; both the prefix discovery and the
     # model -> profile map below are built from it
     logger.info("  Fetching inference profiles...")
@@ -125,12 +131,7 @@ def refresh_region(region_name: str, update_bundle: bool = False):
     logger.info(f"  ({len(discovered)} discovered, {len(new_entries)} new, {len(all_prefixes)} total prefixes)")
     
     output_file = get_writable_path(f'fm-list-{region_name}.yml')
-    
-    # Fetch foundation models
-    models = fetch_foundation_models(region_name)
-    if models is None:
-        return
-    
+
     # Load existing models to preserve quota mappings
     # User copy if present, else the bundled list, so refreshing never drops quota mappings
     existing_models = load_existing_models(region_name)

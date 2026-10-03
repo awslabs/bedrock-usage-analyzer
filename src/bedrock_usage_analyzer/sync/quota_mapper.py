@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 
 from bedrock_usage_analyzer.utils.yaml_handler import fm_file_data, load_data_file, quota_slots, save_yaml, valid_models
 from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
-from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, fetch_service_quotas, is_missing
+from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, is_missing, list_quota_codes
 from bedrock_usage_analyzer.aws.bedrock_llm import extract_common_name, extract_quota_codes
 from bedrock_usage_analyzer.aws.bedrock import get_endpoint_quota_keywords, get_regional_profile_prefixes
 from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict, scrub_conflicting
@@ -87,12 +87,13 @@ class QuotaMapper:
         """Process quota mapping for a single region"""
         logger.info(f"Region: {region}")
         
-        quotas = fetch_service_quotas(region)
-        if quotas is None:
+        listing = list_quota_codes(region)  # code -> quota; logs the error itself
+        if listing is None:
             # Listing failed (throttling, pagination error, service not in region):
             # leave this region's saved mappings untouched
             logger.info("  ⊘ Could not list service quotas, skipping region\n")
             return
+        quotas = list(listing.values())
         logger.info(f"  Found {len(quotas)} quotas")
         
         fm_list = self._load_fm_list(region)
@@ -101,10 +102,11 @@ class QuotaMapper:
             return
         
         logger.info(f"  Mapping quotas for {len(fm_list)} models...")
+        before = copy.deepcopy(fm_list)
         
         updated_count = 0
         regional = set(get_regional_profile_prefixes())
-        listed_codes = {q.get('QuotaCode') for q in quotas}
+        listed_codes = set(listing)
         self._listed_codes[region] = listed_codes  # reused for every model and endpoint
         # First: saved codes that contradict their model/endpoint (written by older versions)
         # go even when nothing new replaces them, and need no lookup
@@ -164,8 +166,12 @@ class QuotaMapper:
             else:
                 logger.info("✗ (no mappings)")
         
-        self._save_fm_list(region, fm_list)
-        logger.info(f"  ✓ Updated {updated_count} models\n")
+        if fm_list != before:
+            self._save_fm_list(region, fm_list)
+            logger.info(f"  ✓ Updated {updated_count} models\n")
+        else:
+            # A user copy written without changes would hide later bundled updates
+            logger.info("  No changes, nothing written\n")
     
     @staticmethod
     def _drop_unlisted_saved_codes(fm: Dict, listed_codes, region: str, checks: Optional[Dict] = None) -> None:
@@ -204,7 +210,9 @@ class QuotaMapper:
                           endpoint_type: str, quotas: List[Dict]) -> Optional[Dict]:
         """Get quota mapping for a specific endpoint"""
         cache_key = (model_id, endpoint_type if endpoint_type in ['base', 'cross-region', 'global'] else 'cross-region')
-        region_codes = self._listed_codes.get(region) or {q.get('QuotaCode') for q in quotas}
+        region_codes = self._listed_codes.get(region)
+        if region_codes is None:  # called without _process_region (the region's listing)
+            region_codes = {q.get('QuotaCode') for q in quotas}
         cached = self.lcode_cache.get(cache_key)
         # Codes are shared across regions, but a region may lack a quota: reuse the cached
         # mapping only when every code in it exists in this region

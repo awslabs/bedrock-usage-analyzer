@@ -79,6 +79,11 @@ def fm_endpoints(models, model_id):
     return None
 
 
+def has_endpoint(models, model_id, prefix):
+    """True when the fm-list has ``model_id`` with the endpoint of ``prefix`` (None: base)."""
+    return (prefix or 'base') in (fm_endpoints(models, model_id) or set())
+
+
 def quota_slots(models):
     """(model ID, endpoint, metric, code) of every mapped quota in parsed fm-list models.
 

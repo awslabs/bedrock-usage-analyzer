@@ -11,9 +11,9 @@ from typing import Dict, List, Optional, Sequence, Union
 from ..aws.bedrock import region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
 from ..core.errors import troubleshooting_hint
-from ..core.profile_fetcher import InferenceProfileFetcher
+from ..core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
 from ..sync.regions import load_region_names
-from ..utils.yaml_handler import fm_endpoints, load_fm_list
+from ..utils.yaml_handler import fm_endpoints, has_endpoint, load_fm_list
 from ..utils.ui import select_from_list
 from ..utils.partition import (
     partition_mismatch,
@@ -55,11 +55,19 @@ def parse_selection(text: str, count: int) -> List[int]:
     return sorted(i - 1 for i in indices)
 
 
+def _source_key(model_id: str, prefix, profile_ids) -> tuple:
+    """Grouping key for application profiles: their source endpoint. Profiles whose source is
+    unknown may come from different endpoints, so each one keeps a report of its own."""
+    if prefix == UNKNOWN_SOURCE:
+        return (model_id, prefix, tuple(profile_ids))
+    return (model_id, prefix)
+
+
 def group_application_profiles(profiles: Sequence[Dict]) -> List[Dict]:
     """Turn selected application profiles into one model config per source endpoint."""
     groups: Dict[tuple, Dict] = {}
     for app in profiles:
-        key = (app['model_id'], app['profile_prefix'])
+        key = _source_key(app['model_id'], app['profile_prefix'], [app['id']])
         config = groups.setdefault(key, {
             'model_id': app['model_id'],
             'profile_prefix': app['profile_prefix'],
@@ -84,7 +92,7 @@ def merge_application_configs(configs: Sequence[Dict]) -> List[Dict]:
             if config not in merged:
                 merged.append(config)
             continue
-        key = (config['model_id'], config['profile_prefix'])
+        key = _source_key(config['model_id'], config['profile_prefix'], ids)
         if key in by_source:
             target = by_source[key]['application_profile_ids']
             target.extend(i for i in ids if i not in target)
@@ -363,7 +371,7 @@ class UserInputs:
         model_id, prefix = split_profile_id(value)
         # The region's fm-list exists here: collect() exits earlier when it is missing
         # A bare model ID is an endpoint only when the model is invokable on demand
-        return (prefix or 'base') in (fm_endpoints(self._load_fm_list(self.region), model_id) or set())
+        return has_endpoint(self._load_fm_list(self.region), model_id, prefix)
 
     def _find_application_profile(self, identifier):
         """Look up an application profile, or None if absent or the list cannot be read."""
@@ -426,7 +434,10 @@ class UserInputs:
             return None
 
         # Get unique providers
-        providers = sorted(set(m['provider'] for m in fm_list))
+        def provider_of(model):
+            return str(model.get('provider') or 'Unknown')  # a hand-edited entry may have none
+
+        providers = sorted(set(map(provider_of, fm_list)))
 
         # Select provider
         logger.info(f"\nHint: To refresh models, run: bua refresh fm-list {region}")
@@ -439,7 +450,7 @@ class UserInputs:
         )
 
         # Filter models by provider
-        provider_models = [m for m in fm_list if m['provider'] == provider]
+        provider_models = [m for m in fm_list if provider_of(m) == provider]
 
         # Select model
         selected_model = select_from_list(

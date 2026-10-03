@@ -137,7 +137,7 @@ def test_partial_new_mapping_keeps_other_saved_metrics(monkeypatch, tmp_path):
     saved = {'tpm': {'code': 'L-A', 'name': 'a'}, 'rpm': {'code': 'L-B', 'name': 'b'}, 'tpd': None}
     save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [
         {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': saved}}}]})
-    monkeypatch.setattr(qm, 'fetch_service_quotas', lambda region: [])
+    monkeypatch.setattr(qm, 'list_quota_codes', lambda region: {})
     monkeypatch.setattr(qm, 'extract_common_name', lambda *a: 'nova')
     monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition', lambda _=None: ('aws', None))
     mapper = qm.QuotaMapper('us-east-1', 'model', 'us-east-1')
@@ -177,7 +177,7 @@ def test_saved_conflicting_codes_are_dropped_on_refresh(monkeypatch, tmp_path):
     wrong = {'code': 'L-GL46', 'name': 'Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6'}
     save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [
         {'model_id': SONNET4, 'provider': 'Anthropic', 'endpoints': {'us': {'quotas': {'tpd': wrong}}}}]})
-    monkeypatch.setattr(qm, 'fetch_service_quotas', lambda region: [])
+    monkeypatch.setattr(qm, 'list_quota_codes', lambda region: {})
     monkeypatch.setattr(qm, 'extract_common_name', lambda *a: 'claude')
     monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition', lambda _=None: ('aws', None))
     mapper = qm.QuotaMapper('us-east-1', 'model', 'us-east-1')
@@ -230,7 +230,7 @@ def test_mapper_drops_conflicts_even_without_common_name(monkeypatch, tmp_path):
     wrong = {'code': 'L-GL46', 'name': 'Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6'}
     save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [
         {'model_id': SONNET4, 'provider': 'Anthropic', 'endpoints': {'us': {'quotas': {'tpm': wrong}}}}]})
-    monkeypatch.setattr(qm, 'fetch_service_quotas', lambda region: [])
+    monkeypatch.setattr(qm, 'list_quota_codes', lambda region: {})
     monkeypatch.setattr(qm, 'extract_common_name', lambda *a: None)      # LLM failed
     monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition', lambda _=None: ('aws', None))
     qm.QuotaMapper('us-east-1', 'model', 'us-east-1').run()

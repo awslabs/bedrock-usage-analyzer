@@ -43,7 +43,8 @@ class QuotaIndexGenerator:
         self._listings = {}  # region -> {code: quota} from ListServiceQuotas (None: not listed)
         self._checked_regions = set()  # regions the account can call (regions.yml)
         self._files_written = 0  # fm-list files the cleanup rewrote
-        self._removed = 0  # quota codes the cleanup removed (or would remove from bundled lists)
+        self._removed = 0  # quota codes removed from files that were written
+        self._left_in_bundle = 0  # codes to remove that only bundled lists (not written) have
         self._regional = set()
         self._mismatched = set()
         # Parsed fm-lists of the credentials' partition, by region (read once per run)
@@ -321,7 +322,7 @@ class QuotaIndexGenerator:
         regional, mismatched = self._regional, self._mismatched
         data = self._fm_data[region]  # only the credentials' partition is cleaned
 
-        modified = False
+        modified = 0  # codes removed in this region
         reasons = set()
         for model in valid_models(data):
             for endpoint, endpoint_data in (model.get('endpoints') or {}).items():
@@ -343,8 +344,7 @@ class QuotaIndexGenerator:
                     logger.info(f"  Removing {model['model_id']} -> {endpoint} -> {quota_type} "
                                 f"({quota.get('code')}) in {region}: {reason}")
                     quotas[quota_type] = None
-                    modified = True
-                    self._removed += 1
+                    modified += 1
 
         if not modified:
             return
@@ -352,17 +352,23 @@ class QuotaIndexGenerator:
         # Only an existing user copy is rewritten. Creating one from a bundled list would hide
         # every later bundled update for that region; the analyzer applies the same checks
         # when it reads quotas, so bundled lists are corrected by maintainers (--update-bundle).
+        written = False
         if user_file.exists():
             save_yaml(str(user_file), data)
             self._files_written += 1
+            written = True
             logger.info(f"  ✓ Updated {user_file}")
         bundle_path = get_bundle_path() if self.update_bundle else None
         if bundle_path:
             bundle_file = bundle_path / f'fm-list-{region}.yml'
             save_yaml(str(bundle_file), data)
             self._files_written += 1
+            written = True
             logger.info(f"  ✓ Updated {bundle_file} (bundled)")
-        elif not user_file.exists():
+        if written:
+            self._removed += modified
+        else:
+            self._left_in_bundle += modified
             # The analyzer re-applies the mismatch checks; a missing code is looked up and
             # reported as missing, then the report shows usage without that limit
             effect = 'the analyzer skips mismatched codes' if reasons == {'mismatch'} else \
@@ -397,11 +403,11 @@ class QuotaIndexGenerator:
                 logger.info(f"✓ Generated {bundle_file} (bundled)")
         
         # Codes removed in any region (not only index entries), and only files really written
-        if self._removed and self._files_written:
+        if self._removed:
             logger.info(f"✓ Removed {self._removed} quota code(s) from {self._files_written} fm-list file(s)")
-        elif self._removed:
-            logger.info(f"{self._removed} quota code(s) to remove were found only in bundled lists, which "
-                        f"were left unchanged (maintainers: --update-bundle)")
+        if self._left_in_bundle:
+            logger.info(f"{self._left_in_bundle} quota code(s) to remove were found only in bundled lists, "
+                        f"which were left unchanged (maintainers: --update-bundle)")
 
 
 def main():

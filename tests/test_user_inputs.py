@@ -12,6 +12,7 @@ from bedrock_usage_analyzer.core.profile_fetcher import InferenceProfileFetcher
 from bedrock_usage_analyzer.core.user_inputs import (
     UserInputs,
     group_application_profiles,
+    merge_application_configs,
     parse_selection,
 )
 
@@ -110,6 +111,14 @@ def test_group_application_profiles_by_source():
         {'model_id': 'm', 'profile_prefix': 'au', 'application_profile_ids': ['a', 'b']},
         {'model_id': 'm', 'profile_prefix': None, 'application_profile_ids': ['c']},
     ]
+
+
+def test_profiles_of_unknown_source_are_not_aggregated():
+    apps = [{'id': 'a', 'model_id': 'm', 'profile_prefix': 'unknown'},
+            {'id': 'b', 'model_id': 'm', 'profile_prefix': 'unknown'}]
+    assert [c['application_profile_ids'] for c in group_application_profiles(apps)] == [['a'], ['b']]
+    configs = [{'model_id': 'm', 'profile_prefix': 'unknown', 'application_profile_ids': [i]} for i in 'ab']
+    assert len(merge_application_configs(configs)) == 2
 
 
 def test_interactive_application_profile_selection(inputs, monkeypatch):

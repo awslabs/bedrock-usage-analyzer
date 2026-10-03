@@ -16,7 +16,7 @@ from bedrock_usage_analyzer.aws.bedrock import endpoint_id, get_regional_profile
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.servicequotas import (
     QUOTA_MISSING, QUOTA_OK, list_quota_codes, lookup_quota)
-from bedrock_usage_analyzer.utils.yaml_handler import fm_endpoints, load_fm_list, quota_slots
+from bedrock_usage_analyzer.utils.yaml_handler import has_endpoint, load_fm_list, quota_slots
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ class BedrockAnalyzer:
 
     def _endpoint_listed(self, model_id, profile_prefix) -> bool:
         """True when the region's fm-list has this model with this endpoint."""
-        return (profile_prefix or 'base') in (fm_endpoints(self._fm_list(), model_id) or set())
+        return has_endpoint(self._fm_list(), model_id, profile_prefix)
 
     def _fm_list(self):
         """The region's fm-list models, parsed once per run (every target reads the same file)."""

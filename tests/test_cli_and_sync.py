@@ -96,7 +96,7 @@ def test_quota_mapper_keeps_unmapped_endpoints(monkeypatch, tmp_path):
     save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [
         {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon',
          'endpoints': {'base': {'quotas': {}}, 'us': {'quotas': {}}}}]})
-    monkeypatch.setattr(qm, 'fetch_service_quotas', lambda region: [{'QuotaName': 'x'}])
+    monkeypatch.setattr(qm, 'list_quota_codes', lambda region: {'L-X': {'QuotaName': 'x', 'QuotaCode': 'L-X'}})
     monkeypatch.setattr(qm, 'extract_common_name', lambda *a: 'nova')
     monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition', lambda _=None: ('aws', None))
     mapper = qm.QuotaMapper('us-east-1', 'model', 'us-east-1')
@@ -171,16 +171,27 @@ def test_quota_mapper_keeps_saved_codes_when_no_new_match(monkeypatch, tmp_path)
     """A keyword miss or failed LLM call must not wipe correct codes (seen with GPT OSS Safeguard)."""
     saved = {'base': {'quotas': {'tpm': {'code': 'L-5D8F2F54', 'name': 'TPM'}}}}
     mapper = _mapper_fixture(monkeypatch, tmp_path, saved)
-    monkeypatch.setattr(qm, 'fetch_service_quotas', lambda region: [])
+    monkeypatch.setattr(qm, 'list_quota_codes', lambda region: {})
     monkeypatch.setattr(mapper, '_get_quota_mapping', lambda *a: None)
     mapper.run()
     assert _saved_endpoints(tmp_path) == saved
 
 
+def test_quota_mapper_writes_nothing_without_changes(monkeypatch, tmp_path):
+    """No user copy of an unchanged list: it would hide later bundled updates."""
+    mapper = _mapper_fixture(monkeypatch, tmp_path, {'base': {'quotas': {}}})
+    saved = []
+    monkeypatch.setattr(qm, 'list_quota_codes', lambda region: {})
+    monkeypatch.setattr(mapper, '_get_quota_mapping', lambda *a: None)
+    monkeypatch.setattr(mapper, '_save_fm_list', lambda *a: saved.append(a))
+    mapper.run()
+    assert saved == []
+
+
 def test_quota_mapper_skips_region_when_listing_fails(monkeypatch, tmp_path):
     saved = {'base': {'quotas': {'tpm': {'code': 'L-5D8F2F54', 'name': 'TPM'}}}}
     mapper = _mapper_fixture(monkeypatch, tmp_path, saved)
-    monkeypatch.setattr(qm, 'fetch_service_quotas', lambda region: None)
+    monkeypatch.setattr(qm, 'list_quota_codes', lambda region: None)
     calls = []
     monkeypatch.setattr(mapper, '_get_quota_mapping', lambda *a: calls.append(a))
     mapper.run()
@@ -320,7 +331,7 @@ def test_fm_list_refresh_writes_only_new_prefixes_to_user_file(monkeypatch, tmp_
     new = {'prefix': 'mx', 'quota_keyword': 'cross-region', 'description': 'cross-region inference profile',
            'is_regional': True, 'source': 'discovered'}
     monkeypatch.setattr(fm_list, 'discover_prefix_mapping', lambda region, profiles=None: [new])
-    monkeypatch.setattr(fm_list, 'fetch_foundation_models', lambda region: None)
+    monkeypatch.setattr(fm_list, 'fetch_foundation_models', lambda region: [])
     monkeypatch.setattr(fm_list, 'fetch_all_inference_profiles', lambda region: [])
     fm_list.refresh_region('mx-central-1')
     saved = load_yaml(str(tmp_path / 'data' / 'prefix-mapping.yml'))['prefixes']
