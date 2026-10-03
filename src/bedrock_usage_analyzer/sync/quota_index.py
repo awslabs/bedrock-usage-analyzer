@@ -11,7 +11,7 @@ import sys
 from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
 from bedrock_usage_analyzer.utils.csv_handler import write_csv
 from bedrock_usage_analyzer.utils.paths import list_data_files, get_writable_path, get_bundle_path
-from bedrock_usage_analyzer.aws.servicequotas import check_quota, confirm_statuses, list_quota_codes, lookup_quota, QUOTA_ERROR, QUOTA_OK, QUOTA_MISSING
+from bedrock_usage_analyzer.aws.servicequotas import check_quota, confirm_statuses, is_missing, list_quota_codes, lookup_quota, QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
 from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict, scrub_conflicting
 
@@ -303,10 +303,7 @@ class QuotaIndexGenerator:
     def _missing_in(self, code: str, region: str) -> bool:
         if region not in self._checked_regions:
             return False  # not enabled for the account: cannot be verified, kept
-        key = (code, region)
-        if key not in self._region_checks:
-            self._region_checks[key] = check_quota(code, region)[0]
-        return self._region_checks[key] == QUOTA_MISSING
+        return is_missing(code, region, self._region_checks, lookup=lambda c, r: check_quota(c, r))
 
     def _cleanup_region_errors(self, region: str):
         """Null out codes missing in this region or contradicting their model/endpoint (user copy, else bundled)"""

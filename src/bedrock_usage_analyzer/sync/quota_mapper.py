@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 
 from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list, save_yaml
 from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
-from bedrock_usage_analyzer.aws.servicequotas import QUOTA_MISSING, check_quota, confirm_statuses, fetch_service_quotas
+from bedrock_usage_analyzer.aws.servicequotas import check_quota, confirm_statuses, fetch_service_quotas, is_missing
 from bedrock_usage_analyzer.aws.bedrock_llm import extract_common_name, extract_quota_codes
 from bedrock_usage_analyzer.aws.bedrock import get_endpoint_quota_keywords, get_regional_profile_prefixes
 from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict, scrub_conflicting
@@ -177,9 +177,7 @@ class QuotaMapper:
         checks = {} if checks is None else checks  # (code, region) -> status, shared by endpoints
 
         def missing(code):
-            if (code, region) not in checks:
-                checks[(code, region)] = check_quota(code, region)[0]
-            return checks[(code, region)] == QUOTA_MISSING
+            return is_missing(code, region, checks, lookup=lambda c, r: check_quota(c, r))
 
         for endpoint_type, endpoint in (fm.get('endpoints') or {}).items():
             quotas = (endpoint or {}).get('quotas') or {}

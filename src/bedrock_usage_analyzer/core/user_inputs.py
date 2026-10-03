@@ -202,9 +202,10 @@ class UserInputs:
                 if is_token_rejection(e) else None
             if identity is None:
                 self._exit_no_identity(e, region)
-            # Only a default region (AWS_REGION / config) was in another partition: the region
-            # picker below lists the credentials' partition
-            logger.warning(f"  Ignoring default region {region_hint()}: the credentials are for "
+            # Only a default region (AWS_REGION / config), or none, was in another partition:
+            # the region picker below lists the credentials' partition
+            where = f"default region {region_hint()}" if region_hint() else "the default STS endpoint"
+            logger.warning(f"  Ignoring {where}: the credentials are for "
                            f"{get_partition_display_name(identity['Partition'])}")
         self.partition = identity['Partition']
         logger.info(f"  Account: {identity['Account']}")
@@ -230,8 +231,6 @@ class UserInputs:
         identity when found and ``region`` was only a default (not --region);
         exits with a plain explanation when the user named that region.
         """
-        if not region:
-            return None
         # Shared with the refresh commands; the lookup goes through this module's
         # get_caller_identity so it can be stubbed in tests
         identity = probe_other_partitions(region, lookup=lambda r: get_caller_identity(r, probe=True))

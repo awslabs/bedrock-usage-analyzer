@@ -479,3 +479,15 @@ def test_application_listing_is_kept_when_system_listing_fails_once():
     resolved = fetcher.list_application_profiles()           # system listing recovered
     assert resolved[0]['sources'] == [f"au.{HAIKU}"]
     assert calls.count('APPLICATION') == 1                    # not listed again
+
+
+def test_learned_country_ranks_before_a_regional_profile_with_the_same_set():
+    se = [arn('eu-north-1', HAIKU), arn('eu-north-9', HAIKU)]
+    eu = se + [arn('eu-west-1', HAIKU)]
+    fetcher = InferenceProfileFetcher(FakeBedrock(
+        system=[system_profile(f"se.{HAIKU}", se), system_profile(f"eu.{HAIKU}", eu),
+                system_profile(f"eu.{NOVA}", [arn('eu-north-1', NOVA), arn('eu-north-9', NOVA)])],
+        application=[app_profile('sesame00001', 's', [arn('eu-north-1', NOVA), arn('eu-north-9', NOVA)])]))
+    fetcher.list_application_profiles()
+    from bedrock_usage_analyzer.core.profile_fetcher import _specific_first
+    assert _specific_first([f"eu.{NOVA}", f"se.{NOVA}"], fetcher._country_regions)[0] == f"se.{NOVA}"

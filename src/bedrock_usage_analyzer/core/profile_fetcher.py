@@ -34,10 +34,12 @@ COUNTRY_PROFILE_REGIONS = {
 }
 
 
-def _specific_first(profile_ids: List[str]) -> List[str]:
-    """Order candidates so geography-specific prefixes (jp, au) come before apac/global."""
-    broad = ('apac.', 'global.')
-    return sorted(dict.fromkeys(profile_ids), key=lambda p: (p.startswith(broad), p))
+def _specific_first(profile_ids: List[str], countries=()) -> List[str]:
+    """Order candidates: country geographies (jp, au, kr, ...) first, global.* last."""
+    def rank(profile_id):
+        prefix = profile_id.split('.', 1)[0]
+        return (prefix not in countries, prefix == 'global', profile_id)
+    return sorted(dict.fromkeys(profile_ids), key=rank)
 
 
 class InferenceProfileFetcher:
@@ -205,7 +207,7 @@ class InferenceProfileFetcher:
         self._load_system_profiles()
         exact = self._system_by_arns.get(arn_set)
         if exact and len(arn_set) > 1:
-            return _specific_first(exact)
+            return _specific_first(exact, self._country_regions)
 
         if len(arn_set) == 1:
             # A base-model copy, unless a system profile routes to exactly this one ARN: the
@@ -213,8 +215,8 @@ class InferenceProfileFetcher:
             # one decides the quotas: the on-demand endpoint when the model has one, else the
             # system profile (the model may have no on-demand endpoint at all).
             if model_id in self.on_demand_models:
-                return [model_id] + _specific_first(exact or [])
-            return _specific_first(exact or []) + [model_id]
+                return [model_id] + _specific_first(exact or [], self._country_regions)
+            return _specific_first(exact or [], self._country_regions) + [model_id]
 
         # The routing set no longer equals any listed profile (sets change over time). Only
         # listed profiles of this model are candidates, so the source always exists in the
@@ -238,7 +240,7 @@ class InferenceProfileFetcher:
             if arn_set < system_arns:
                 supersets.setdefault(len(system_arns), []).extend(ids)
         if supersets:
-            return _specific_first(supersets[min(supersets)])
+            return _specific_first(supersets[min(supersets)], self._country_regions)
 
         # Closest system profile for the same model (a region was also removed)
         best, best_score = [], 0.0
@@ -252,7 +254,7 @@ class InferenceProfileFetcher:
             elif score == best_score:
                 best = best + ids
         if best:
-            return _specific_first(best)
+            return _specific_first(best, self._country_regions)
 
         # Nothing comparable is listed for this model: guess from the regions
         inferred = self._infer_from_regions(arns, model_id)
@@ -260,7 +262,8 @@ class InferenceProfileFetcher:
 
     def _country_of(self, regions) -> Optional[str]:
         """The country prefix (jp, au, kr, ...) whose regions contain all of ``regions``."""
-        for prefix, members in sorted(self._country_regions.items()):
+        # The narrowest geography first: learned sets can nest or overlap
+        for prefix, members in sorted(self._country_regions.items(), key=lambda kv: (len(kv[1]), kv[0])):
             if regions and set(regions) <= members and \
                     (prefix in self.prefix_map or prefix in self._listed_prefixes):
                 return prefix

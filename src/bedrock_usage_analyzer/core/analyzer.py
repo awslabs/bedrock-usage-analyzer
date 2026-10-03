@@ -139,7 +139,7 @@ class BedrockAnalyzer:
             status, quota = lookup_quota(
                 code, self.region, self._quota_listings, use_listing=self._use_quota_listing,
                 check=lambda c, r: check_quota(c, r, client=self.sq_client),
-                lister=lambda r: list_quota_codes(r))
+                lister=lambda r: list_quota_codes(r, quiet_denied=True))
             if status == QUOTA_OK and quota.get('Value') is None:
                 logger.info(f"  Warning: {quota_type} quota {code} has no value; not shown")
             elif status == QUOTA_OK:

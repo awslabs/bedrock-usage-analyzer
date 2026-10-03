@@ -304,7 +304,7 @@ def test_report_json_keeps_discovery_order(tmp_path):
 
 def test_quotas_come_from_the_region_listing(analyzer, monkeypatch):
     monkeypatch.setattr(analyzer_module, 'list_quota_codes',
-                        lambda region: {'L-1': {'QuotaCode': 'L-1', 'Value': 123.0}})
+                        lambda region, **_: {'L-1': {'QuotaCode': 'L-1', 'Value': 123.0}})
     asked = []
     monkeypatch.setattr(analyzer_module, 'check_quota', lambda code, region, client=None: asked.append(code) or ('missing', None))
     analyzer._use_quota_listing = True                        # set by analyze() for many codes

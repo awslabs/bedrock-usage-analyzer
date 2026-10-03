@@ -43,7 +43,8 @@ def regional_client(region: str):
         return _clients[region]
 
 
-def list_quota_codes(region: str, service_code: str = 'bedrock') -> Optional[Dict[str, Dict]]:
+def list_quota_codes(region: str, service_code: str = 'bedrock',
+                     quiet_denied: bool = False) -> Optional[Dict[str, Dict]]:
     """All quotas of the service in a region by code (one paginated listing), or None on error."""
     try:
         quotas = {}
@@ -53,8 +54,9 @@ def list_quota_codes(region: str, service_code: str = 'bedrock') -> Optional[Dic
         return quotas
     except Exception as e:
         from bedrock_usage_analyzer.core.errors import is_access_denied
-        # Without servicequotas:ListServiceQuotas, callers fall back to GetServiceQuota per code
-        (logger.debug if is_access_denied(e) else logger.warning)(
+        # quiet_denied: the caller (the analyzer) falls back to GetServiceQuota per code, so a
+        # missing servicequotas:ListServiceQuotas permission is not worth a warning there
+        (logger.debug if quiet_denied and is_access_denied(e) else logger.warning)(
             f"  Could not list {service_code} quotas in {region}: {e}")
         return None
 
@@ -116,3 +118,8 @@ def lookup_quota(code: str, region: str, listings: Dict, check=None, lister=None
         if listed:
             return QUOTA_OK, listed
     return (check or check_quota)(code, region)
+
+
+def is_missing(code: str, region: str, cache: Dict, lookup=None) -> bool:
+    """True when Service Quotas says ``code`` does not exist in ``region`` (result cached)."""
+    return confirm_statuses([(code, region)], cache, lookup=lookup)[(code, region)] == QUOTA_MISSING

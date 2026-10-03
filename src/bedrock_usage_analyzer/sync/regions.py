@@ -71,14 +71,16 @@ def credentials_partition_or_exit(region: Optional[str] = None) -> str:
     """
     hint = region or region_hint()
     partition = detect_credentials_partition(hint)
-    if partition is None and hint:
-        # The named region may belong to another partition than the credentials (for example
-        # us-gov-west-1 with commercial credentials); STS there rejects a valid identity
+    if partition is None:
+        # The region (or, without one, global STS in the commercial partition) may belong to
+        # another partition than the credentials; STS there rejects a valid identity
         identity = probe_other_partitions(hint)
         if identity:
             partition = identity['Partition']
+            where = hint or 'the default (commercial) STS endpoint'
+            asked = get_partition_display_name(get_partition_for_region(hint)) if hint else 'AWS Commercial'
             logger.warning(f"The credentials are for {get_partition_display_name(partition)}, "
-                           f"but {hint} is in {get_partition_display_name(get_partition_for_region(hint))}.")
+                           f"but {where} is in {asked}.")
     if partition is None:
         logger.error("Could not read the caller identity; check your AWS credentials "
                      "(aws sts get-caller-identity); for GovCloud set AWS_REGION, e.g. AWS_REGION=us-gov-west-1.")

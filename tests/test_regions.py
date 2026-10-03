@@ -161,3 +161,11 @@ def test_partition_found_when_named_region_is_in_another_partition(monkeypatch, 
     monkeypatch.setattr(r, 'probe_other_partitions', lambda region: {'Partition': 'aws'})
     assert r.credentials_partition_or_exit('us-gov-west-1') == 'aws'
     assert 'credentials are for AWS Commercial, but us-gov-west-1 is in AWS GovCloud (US)' in caplog.text
+
+
+def test_partition_probed_even_without_a_region_hint(monkeypatch):
+    monkeypatch.setattr(r, 'region_hint', lambda: None)
+    monkeypatch.setattr(r, 'detect_credentials_partition', lambda region=None: None)
+    asked = []
+    monkeypatch.setattr(r, 'probe_other_partitions', lambda region: asked.append(region) or {'Partition': 'aws-us-gov'})
+    assert r.credentials_partition_or_exit() == 'aws-us-gov' and asked == [None]

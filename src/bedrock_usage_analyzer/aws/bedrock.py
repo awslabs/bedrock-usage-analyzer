@@ -24,6 +24,7 @@ FALLBACK_PROFILE_PREFIXES = frozenset({'us', 'eu', 'apac', 'jp', 'au', 'ca', 'in
 
 # Cache for prefix mapping to avoid repeated file reads
 _prefix_mapping_cache = None
+_profile_prefixes_cache = None  # (mapping it was built from, frozenset)
 
 
 def _read_prefixes(path) -> List[Dict]:
@@ -136,11 +137,15 @@ def get_default_region_prefix_map() -> Dict[str, str]:
 
 def get_profile_prefixes() -> frozenset:
     """All system inference profile prefixes, from prefix-mapping.yml (fallback set without it)."""
-    try:
-        mapped = {m['prefix'] for m in _load_prefix_mapping() if m.get('prefix') != 'base'}
-    except FileNotFoundError:
-        mapped = set()
-    return frozenset(mapped) if mapped else FALLBACK_PROFILE_PREFIXES
+    global _profile_prefixes_cache
+    if _profile_prefixes_cache is None or _profile_prefixes_cache[0] is not _prefix_mapping_cache:
+        # Rebuilt only when the prefix mapping was (re)loaded
+        try:
+            mapped = {m['prefix'] for m in _load_prefix_mapping() if m.get('prefix') != 'base'}
+        except FileNotFoundError:
+            mapped = set()
+        _profile_prefixes_cache = (_prefix_mapping_cache, frozenset(mapped) if mapped else FALLBACK_PROFILE_PREFIXES)
+    return _profile_prefixes_cache[1]
 
 
 def split_profile_id(endpoint_id: str) -> Tuple[str, Optional[str]]:

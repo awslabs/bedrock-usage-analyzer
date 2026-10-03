@@ -29,7 +29,7 @@ def isolated_env(tmp_path, monkeypatch):
     from bedrock_usage_analyzer.sync import quota_index
     monkeypatch.setattr(quota_index, 'list_quota_codes', lambda region: None)
     from bedrock_usage_analyzer.core import analyzer
-    monkeypatch.setattr(analyzer, 'list_quota_codes', lambda region: None)
+    monkeypatch.setattr(analyzer, 'list_quota_codes', lambda region, **_: None)
     yield
     partition.clear_cache()
     bedrock_module._prefix_mapping_cache = None
