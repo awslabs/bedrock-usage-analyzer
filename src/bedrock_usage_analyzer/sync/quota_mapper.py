@@ -9,7 +9,8 @@ import functools
 import sys
 from typing import Dict, List, Optional
 
-from bedrock_usage_analyzer.utils.yaml_handler import endpoint_quotas, fm_file_data, load_data_file, quota_slots, save_yaml, valid_models
+from bedrock_usage_analyzer.utils.yaml_handler import (
+    endpoint_quotas, fm_file_data, load_data_file, model_endpoints, quota_slots, save_yaml, valid_models)
 from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, is_missing, list_quota_codes
 from bedrock_usage_analyzer.aws.bedrock_llm import extract_common_name, extract_quota_codes
@@ -204,13 +205,17 @@ class QuotaMapper:
 
     def _get_endpoints_to_process(self, fm: Dict) -> List[str]:
         """Determine which endpoints to process for a model"""
-        # Simply return the keys from the endpoints dict
-        return list(fm.get('endpoints') or {})
+        # The keys of the endpoints mapping ({} for a hand-edited non-mapping value)
+        return list(model_endpoints(fm))
     
     def _get_quota_mapping(self, region: str, model_id: str, common_name: str, 
                           endpoint_type: str, quotas: List[Dict]) -> Optional[Dict]:
         """Get quota mapping for a specific endpoint"""
-        cache_key = (model_id, endpoint_type if endpoint_type in ['base', 'cross-region', 'global'] else 'cross-region')
+        if self._match_rules is None:  # the same for every region, model and endpoint of a run
+            self._match_rules = (get_endpoint_quota_keywords(), set(get_regional_profile_prefixes()))
+        if endpoint_type not in self._match_rules[0]:
+            return None  # not a known endpoint type: no quota keyword, nothing cached applies
+        cache_key =(model_id, endpoint_type if endpoint_type in ['base', 'cross-region', 'global'] else 'cross-region')
         region_codes = self._listed_codes.get(region)
         if region_codes is None:  # called without _process_region (the region's listing)
             region_codes = {q.get('QuotaCode') for q in quotas}

@@ -506,3 +506,15 @@ def test_hand_edited_endpoints_value_is_no_endpoints():
     models = [{'model_id': 'x', 'endpoints': 'TODO'}, {'model_id': 'y', 'endpoints': ['us']}]
     assert fm_endpoints(models, 'x') == set() and fm_endpoints(models, 'y') == set()
     assert model_endpoints({'endpoints': {'us': None}}) == {'us': None}
+
+
+def test_valid_models_turn_a_non_mapping_endpoints_value_into_none():
+    from bedrock_usage_analyzer.core.profile_fetcher import InferenceProfileFetcher
+    from bedrock_usage_analyzer.sync.quota_mapper import QuotaMapper
+    from bedrock_usage_analyzer.utils.yaml_handler import valid_models
+    models = valid_models({'models': [{'model_id': 'x', 'endpoints': 'database'}]})
+    assert models[0]['endpoints'] == {}
+    assert InferenceProfileFetcher.for_region(object(), [{'model_id': 'x', 'endpoints': 'database'}]).on_demand_models == set()
+    mapper = QuotaMapper('us-east-1', 'm')
+    assert mapper._get_endpoints_to_process({'model_id': 'x', 'endpoints': 'TODO'}) == []
+    assert mapper._get_quota_mapping('us-east-1', 'x', 'x', 'T', []) is None   # unknown endpoint type

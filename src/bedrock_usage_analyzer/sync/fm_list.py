@@ -6,7 +6,7 @@
 import logging
 from typing import List, Dict
 
-from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list, load_yaml, save_yaml, valid_models
+from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list, load_yaml, model_endpoints, save_yaml, valid_models
 from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.bedrock import (
     fetch_foundation_models,
@@ -157,7 +157,7 @@ def refresh_region(region_name: str, update_bundle: bool = False):
         
         # Preserve existing endpoints/quotas if they exist
         if model_id in existing_models:
-            model['endpoints'] = dict(existing_models[model_id].get('endpoints') or {})
+            model['endpoints'] = dict(model_endpoints(existing_models[model_id]))
             if not profiles_listed and existing_models[model_id].get('inference_profiles'):
                 # The listing failed: the saved profiles stay with the endpoints they belong to
                 model['inference_profiles'] = existing_models[model_id]['inference_profiles']

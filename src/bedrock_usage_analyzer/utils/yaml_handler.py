@@ -54,7 +54,12 @@ def valid_models(data):
     """The usable model entries of parsed fm-list ``data``: 'models: null', a non-mapping file
     and entries without a model_id are skipped. The one rule every reader applies."""
     models = data.get('models') if isinstance(data, dict) else None
-    return [m for m in models or [] if isinstance(m, dict) and m.get('model_id')]
+    valid = [m for m in models or [] if isinstance(m, dict) and m.get('model_id')]
+    for model in valid:
+        if 'endpoints' in model and not isinstance(model['endpoints'], (dict, type(None))):
+            # A hand-edited 'endpoints: TODO' or 'endpoints: [us]': no endpoints, for every reader
+            model['endpoints'] = {}
+    return valid
 
 
 def save_yaml(filepath, data):

@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, FrozenSet, Iterable, List, Optional
 
 from bedrock_usage_analyzer.core.errors import is_access_denied
+from bedrock_usage_analyzer.utils.yaml_handler import model_endpoints
 from bedrock_usage_analyzer.aws.bedrock import (
     endpoint_id,
     get_default_region_prefix_map,
@@ -63,7 +64,7 @@ class InferenceProfileFetcher:
     def for_region(cls, bedrock_client, fm_models: Optional[List[Dict]],
                    region: Optional[str] = None) -> 'InferenceProfileFetcher':
         """Fetcher that knows which models of the region's fm-list have an on-demand endpoint."""
-        on_demand = [m['model_id'] for m in fm_models or [] if 'base' in (m.get('endpoints') or {})]
+        on_demand = [m['model_id'] for m in fm_models or [] if 'base' in model_endpoints(m)]
         return cls(bedrock_client, on_demand, region)
 
     def __init__(self, bedrock_client, on_demand_models: Optional[Iterable[str]] = None,
