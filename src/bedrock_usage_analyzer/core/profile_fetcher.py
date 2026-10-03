@@ -181,6 +181,10 @@ class InferenceProfileFetcher:
                     # Still listed (it can be analyzed by ID), but no endpoint or quotas are implied
                     model_id = _model_of(arns)
                     if not model_id:
+                        # Not a foundation-model copy (e.g. a custom model): this tool has no
+                        # metrics or quotas for it, so it is left out, but not silently
+                        logger.info(f"  Note: skipping {profile['inferenceProfileId']}: it routes to no "
+                                    f"foundation model")
                         continue
                     prefix = UNKNOWN_SOURCE
                     logger.info(f"  Note: could not tell which endpoint {profile['inferenceProfileId']} "
@@ -206,10 +210,11 @@ class InferenceProfileFetcher:
 
         Usually one. Several when system profiles share the exact routing set, in which
         case the API gives no way to tell them apart and the profile belongs to each.
-        Order: exact match with a multi-region system profile, then a single model ARN
-        (base model copy), then the narrowest system profile containing every routed
-        region, then the closest system profile for the same model, then a region-prefix
-        heuristic.
+        Order: exact match with a multi-region system profile, then a single model ARN of
+        this region (base model copy), then the listed country profile (au, jp, ...) whose
+        geography contains every routed region, then the narrowest system profile
+        containing every routed region, then the closest system profile for the same
+        model, then a region-prefix heuristic.
         """
         arns = [a for a in model_arns if a]
         if not arns:

@@ -278,6 +278,10 @@ def test_check_quota_statuses(monkeypatch):
     monkeypatch.setattr(sq, 'create_client', lambda *a, **k: client_for('NoSuchResourceException', None))
     sq._clients.clear()
     assert sq.check_quota('L-1', 'us-east-1') == (sq.QUOTA_OK, {'QuotaName': 'default only'})
+    # Default lookup not allowed (a policy from before it was needed): the earlier rule applies
+    monkeypatch.setattr(sq, 'create_client', lambda *a, **k: client_for('NoSuchResourceException', 'AccessDeniedException'))
+    sq._clients.clear()
+    assert sq.check_quota('L-1', 'us-east-1')[0] == sq.QUOTA_MISSING
 
 
 def test_refresh_fm_list_all_regions_stops_without_partition(monkeypatch):

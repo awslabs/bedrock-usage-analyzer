@@ -323,8 +323,10 @@ def fetch_foundation_models(region: str) -> Optional[List[Dict]]:
         return models
     
     except Exception as e:
+        from bedrock_usage_analyzer.core.errors import is_access_denied
         error_msg = str(e)
-        if any(x in error_msg for x in ['AccessDenied', 'UnauthorizedOperation', 'not enabled', 'not subscribed']):
+        # The shared permission rule, plus the opt-in messages of a region not enabled
+        if is_access_denied(e) or any(x in error_msg for x in ['not enabled', 'not subscribed']):
             print(f"  ⊘ Skipping {region} (access denied or not enabled)", file=sys.stderr)
         else:
             print(f"  ✗ Failed to fetch models for {region}: {e}", file=sys.stderr)
