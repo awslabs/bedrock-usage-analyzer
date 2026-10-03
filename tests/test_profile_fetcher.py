@@ -534,3 +534,10 @@ def test_lone_arn_of_another_region_is_not_a_base_copy():
     fetcher = InferenceProfileFetcher(client, on_demand_models=[HAIKU])
     assert fetcher.resolve_endpoints([arn('ap-northeast-1', HAIKU)]) == [('jp', HAIKU)]
     assert fetcher.resolve_endpoints([arn('ap-southeast-2', HAIKU)])[0] == (None, HAIKU)
+
+
+def test_summary_with_null_models_is_skipped():
+    fetcher = InferenceProfileFetcher(FakeBedrock(
+        system=[{'inferenceProfileId': f"us.{HAIKU}", 'models': None}, system_profile(f"au.{HAIKU}", AU_ARNS)],
+        application=[{'inferenceProfileId': 'nullmodels1', 'models': None}, app_profile('auapp000011', 'a', AU_ARNS)]))
+    assert [p['id'] for p in fetcher.list_application_profiles()] == ['auapp000011']

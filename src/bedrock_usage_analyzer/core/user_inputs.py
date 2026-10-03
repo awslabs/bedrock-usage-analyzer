@@ -8,7 +8,7 @@ import sys
 import logging
 from typing import Dict, List, Optional, Sequence, Union
 
-from ..aws.bedrock import region_from_arn, split_profile_id
+from ..aws.bedrock import endpoint_id, region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
 from ..core.errors import troubleshooting_hint
 from ..core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
@@ -276,7 +276,7 @@ class UserInputs:
     def _get_profile_fetcher(self) -> InferenceProfileFetcher:
         if self.profile_fetcher is None:
             self.profile_fetcher = InferenceProfileFetcher.for_region(
-                create_client('bedrock', self.region), self._load_fm_list(self.region))
+                create_client('bedrock', self.region), self._load_fm_list(self.region), self.region)
         return self.profile_fetcher
 
     def _parse_model_id(self, model_id):
@@ -334,7 +334,7 @@ class UserInputs:
             prefix, base_model_id = value.split('.', 1)
         elif profile_only:
             # Listed, but offered only through inference profiles: the bare ID has no usage
-            options = ', '.join(f"{p}.{base_model_id}" for p in profile_only)
+            options = ', '.join(endpoint_id(base_model_id, p) for p in profile_only)
             logger.warning(f"  WARNING: {value} has no on-demand endpoint in {self.region}; its "
                            f"usage is under its inference profiles: {options}")
         elif not known_model and self.region:

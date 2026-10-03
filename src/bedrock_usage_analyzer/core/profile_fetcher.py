@@ -60,17 +60,20 @@ class InferenceProfileFetcher:
     """
 
     @classmethod
-    def for_region(cls, bedrock_client, fm_models: Optional[List[Dict]]) -> 'InferenceProfileFetcher':
+    def for_region(cls, bedrock_client, fm_models: Optional[List[Dict]],
+                   region: Optional[str] = None) -> 'InferenceProfileFetcher':
         """Fetcher that knows which models of the region's fm-list have an on-demand endpoint."""
         on_demand = [m['model_id'] for m in fm_models or [] if 'base' in (m.get('endpoints') or {})]
-        return cls(bedrock_client, on_demand)
+        return cls(bedrock_client, on_demand, region)
 
-    def __init__(self, bedrock_client, on_demand_models: Optional[Iterable[str]] = None):
+    def __init__(self, bedrock_client, on_demand_models: Optional[Iterable[str]] = None,
+                 region: Optional[str] = None):
         self.bedrock_client = bedrock_client
         # Models with an on-demand ('base') endpoint in the region's fm-list
         self.on_demand_models = set(on_demand_models or ())
         self.prefix_map = get_default_region_prefix_map()
-        self._region = getattr(getattr(bedrock_client, 'meta', None), 'region_name', None)
+        # The region the profiles live in (a base-model copy routes there); callers pass it
+        self._region = region or getattr(getattr(bedrock_client, 'meta', None), 'region_name', None)
         self._system_profiles: Optional[List[Dict]] = None
         self._system_by_arns: Dict[FrozenSet[str], List[str]] = {}
         self._system_ids: set = set()
@@ -109,15 +112,15 @@ class InferenceProfileFetcher:
     def _load_system_profiles(self) -> List[Dict]:
         if self._system_profiles is None:
             profiles = self._list_once('SYSTEM_DEFINED')
-            # Indexes are built from scratch and published only when complete, so a failure
-            # partway leaves nothing half-built for the next call
+            # Rebuilt from scratch on every attempt; _system_profiles is set last, so a failure
+            # partway makes the next call rebuild instead of using half-built indexes
             self._system_ids, self._system_by_arns, self._by_model, self._parts = set(), {}, {}, {}
             prefix_regions: Dict[str, set] = {}
             for profile in profiles:
                 if not profile.get('inferenceProfileId'):
                     continue  # malformed summary: nothing to index
                 self._system_ids.add(profile['inferenceProfileId'])
-                arns = frozenset(m.get('modelArn', '') for m in profile.get('models', []))
+                arns = frozenset(m.get('modelArn', '') for m in profile.get('models') or [])
                 if arns:
                     # Several profiles can share one routing set (jp.X and apac.X when a model
                     # is offered only in Tokyo and Osaka), so keep every candidate
@@ -169,7 +172,7 @@ class InferenceProfileFetcher:
             for profile in raw:
                 if not profile.get('inferenceProfileId'):
                     continue  # malformed summary: skip it, keep the others
-                arns = [m.get('modelArn', '') for m in profile.get('models', [])]
+                arns = [m.get('modelArn', '') for m in profile.get('models') or []]
                 endpoints = self.resolve_endpoints(arns)
                 sources = [endpoint_id(m, p) for p, m in endpoints]
                 if endpoints:
@@ -305,12 +308,9 @@ class InferenceProfileFetcher:
             return country
         groups = {region_group(r) for r in regions}
         if len(groups) == 1:
-            group = groups.pop()
-            if group not in self.prefix_map:
-                # No system profile family for this geography (sa, me, mx, ...): an ID like
-                # 'sa.<model>' would not exist, so leave the source unknown
-                return None
-            return self.prefix_map[group]
+            # None for a geography without a system profile family (sa, me, mx, ...): an ID
+            # like 'sa.<model>' would not exist, so the source stays unknown
+            return self.prefix_map.get(groups.pop())
         # Several region families without a region-less ARN: a regional profile spanning
         # them (us.* also routes to ca-central-1), not a global one. Which one cannot be told.
         return None

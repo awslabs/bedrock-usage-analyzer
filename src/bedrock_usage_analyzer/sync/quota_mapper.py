@@ -45,6 +45,7 @@ class QuotaMapper:
         self._listed_codes = {}  # region -> quota codes of its listing
         self._quota_checks = {}  # (code, region) -> GetServiceQuota status
         self._fm_files = {}  # region -> parsed fm-list file, written back whole
+        self._match_rules = None  # (endpoint quota keywords, regional prefixes)
         
     def run(self, update_bundle: bool = False):
         """Execute quota mapping for all regions
@@ -266,11 +267,12 @@ class QuotaMapper:
         """Find quotas matching the common name and endpoint type"""
         matching = []
 
-        endpoint_quota_keywords = get_endpoint_quota_keywords()
+        if self._match_rules is None:  # the same for every region, model and endpoint of a run
+            self._match_rules = (get_endpoint_quota_keywords(), set(get_regional_profile_prefixes()))
+        endpoint_quota_keywords, regional = self._match_rules
         required_keyword = endpoint_quota_keywords.get(endpoint_type)
         if not required_keyword:
             return matching
-        regional = set(get_regional_profile_prefixes())
 
         # Perform keyword search to find the potential quotas for a given base/common name of an FM.
         # Hyphens and spaces are treated alike: 'gpt-oss' must match "GPT OSS Safeguard 20B".

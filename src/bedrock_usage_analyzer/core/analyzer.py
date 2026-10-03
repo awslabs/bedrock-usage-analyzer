@@ -54,7 +54,7 @@ class BedrockAnalyzer:
             self.bedrock_client = profile_fetcher.bedrock_client
         else:
             self.bedrock_client = create_client('bedrock', region)
-            self.profile_fetcher = InferenceProfileFetcher.for_region(self.bedrock_client, self._fm_list())
+            self.profile_fetcher = InferenceProfileFetcher.for_region(self.bedrock_client, self._fm_list(), region)
         self.metrics_fetcher = CloudWatchMetricsFetcher(self.cloudwatch_client, self.tz_api_format)
         self.output_generator = None  # Initialized in analyze() with output_dir
     
@@ -301,7 +301,7 @@ class BedrockAnalyzer:
             # Step 2: Fetch quotas
             quota_codes = self._load_quota_codes(model_id, profile_prefix)
             if not any(quota_codes.values()) and profile_prefix not in (None, UNKNOWN_SOURCE) and \
-                    not self._system_profile_listed(f"{profile_prefix}.{model_id}"):
+                    not self._system_profile_listed(endpoint_id(model_id, profile_prefix)):
                 # e.g. a copy of a retired au.* profile: no quota exists to map
                 logger.info(f"  {profile_prefix}.{model_id} is not offered in {self.region}; "
                             f"the report will show usage without limits")
