@@ -252,7 +252,9 @@ class InferenceProfileFetcher:
         # and a global copy only to global.* (global profiles have their own quotas)
         candidates = [(system_arns, ids) for system_arns, ids in (
             (s, [p for p in ids if p.startswith('global.') == routes_globally])
-            for s, ids in self._by_model.get(model_id, [])) if len(system_arns) > 1 and ids]
+            for s, ids in self._by_model.get(model_id, [])) if ids]
+        # (single-region listed profiles included: a set can shrink to one region, and the
+        # copy is still theirs rather than a guessed endpoint the region does not list)
 
         # A copy inside one country geography (au, jp, in) whose profile is listed is a copy of
         # that profile, even when it also fits inside the wider apac.* set (issue #7).

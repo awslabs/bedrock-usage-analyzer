@@ -566,6 +566,14 @@ def test_profile_map_tolerates_null_models():
     assert [d['prefix'] for d in discover_prefix_mapping('ap-southeast-2', profiles)] == ['au']
 
 
+def test_copy_goes_to_the_only_listed_profile_even_when_it_routes_one_region():
+    """ap-northeast-1 lists only apac.X (shrunk to Tokyo); a copy routing Tokyo + Osaka is apac, not jp."""
+    fetcher = InferenceProfileFetcher(FakeBedrock(
+        system=[system_profile(f"apac.{HAIKU}", [arn('ap-northeast-1', HAIKU)])],
+        application=[app_profile('apacold0001', 'a', JP_ARNS)]))
+    assert fetcher.list_application_profiles()[0]['sources'] == [f"apac.{HAIKU}"]
+
+
 def test_country_copy_matches_a_listed_single_region_country_profile():
     """au.X now routes to Sydney only; an older copy still routing to Sydney + Melbourne is au, not apac."""
     apac = [arn(r, HAIKU) for r in ('ap-northeast-1', 'ap-southeast-1', 'ap-southeast-2', 'ap-southeast-4')]
