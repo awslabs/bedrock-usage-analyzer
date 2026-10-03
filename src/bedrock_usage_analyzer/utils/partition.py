@@ -91,6 +91,14 @@ def get_partition_for_region(region: Optional[str]) -> str:
     return COMMERCIAL
 
 
+def partition_region_prefix(region: Optional[str]) -> Optional[str]:
+    """Region-name prefix of a non-commercial partition ('us-gov', 'cn', 'eusc', ...), else None."""
+    for prefix, _ in _REGION_PREFIX_PARTITIONS:
+        if (region or '').startswith(prefix):
+            return prefix.rstrip('-')
+    return None
+
+
 def is_govcloud_region(region: Optional[str]) -> bool:
     """True for AWS GovCloud (US) regions such as us-gov-west-1."""
     return get_partition_for_region(region) == GOVCLOUD

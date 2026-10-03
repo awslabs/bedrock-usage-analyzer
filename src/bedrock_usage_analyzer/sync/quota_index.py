@@ -13,7 +13,7 @@ from bedrock_usage_analyzer.utils.csv_handler import write_csv
 from bedrock_usage_analyzer.utils.paths import list_data_names, get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, is_missing, list_quota_codes, lookup_quota, QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
-from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict, scrub_conflicting
+from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,7 @@ class QuotaIndexGenerator:
         self._left_in_bundle = 0  # codes to remove that only bundled lists (not written) have
         self._regional = set()
         self._mismatched = set()
+        self._mismatch_cache = {}  # region -> slots removed as mismatches
         # Parsed fm-lists of the credentials' partition, by region (read once per run)
         self._fm_data = {}
 
@@ -280,11 +281,12 @@ class QuotaIndexGenerator:
         self._regional = set(get_regional_profile_prefixes())
         self._mismatched = {(e['model_id'], e['endpoint'], e['quota_type'], e['quota_code'])
                             for e in self.mismatch_entries}
+        self._mismatch_cache = {}
         regions = sorted(set(self._fm_data) & self._checked_regions)
         # Codes the cleanup removes as mismatches anyway need no lookup
-        pending = {(code, region) for region in regions
-                   for model, endpoint, metric, code in quota_slots(valid_models(self._fm_data[region]))
-                   if not self._mismatch_slot(region, model, endpoint, metric, code)}
+        pending = {(slot[3], region) for region in regions
+                   for slot in quota_slots(valid_models(self._fm_data[region]))
+                   if slot not in self._mismatch_slots(region)}
         # Codes absent from a region's listing (or in a region that could not be listed) are
         # confirmed one by one, so a code is never removed on the listing alone
         unresolved = sorted(k for k in pending - set(self._region_checks)
@@ -319,20 +321,28 @@ class QuotaIndexGenerator:
             return False  # not enabled for the account: cannot be verified, kept
         return is_missing(code, region, self._region_checks)
 
-    def _mismatch_slot(self, region, model_id, endpoint, metric, code) -> bool:
-        """True when the cleanup will remove this saved code as a mismatch."""
-        if (model_id, endpoint, metric, code) in self._mismatched:
-            return True
-        for model in valid_models(self._fm_data[region]):
-            if model['model_id'] == model_id:
-                quota = (((model.get('endpoints') or {}).get(endpoint) or {}).get('quotas') or {}).get(metric)
-                name = quota.get('name') if isinstance(quota, dict) else None
-                return bool(mapping_conflict(model_id, endpoint, name, self._regional))
-        return False
+    def _mismatch_slots(self, region) -> set:
+        """(model, endpoint, metric, code) slots of a region that the cleanup removes as
+        mismatches: contradicting their model/endpoint by stored name, or flagged by the
+        index. Computed once per region; used both to skip lookups and to clean up."""
+        if region not in self._mismatch_cache:
+            slots = set()
+            for model in valid_models(self._fm_data[region]):
+                for endpoint, endpoint_data in (model.get('endpoints') or {}).items():
+                    quotas = (endpoint_data or {}).get('quotas') or {}
+                    for metric, quota in quotas.items():
+                        if not isinstance(quota, dict) or not quota.get('code'):
+                            continue
+                        slot = (model['model_id'], endpoint, metric, quota['code'])
+                        if slot in self._mismatched or mapping_conflict(
+                                model['model_id'], endpoint, quota.get('name'), self._regional):
+                            slots.add(slot)
+            self._mismatch_cache[region] = slots
+        return self._mismatch_cache[region]
 
     def _cleanup_region_errors(self, region: str):
         """Null out codes missing in this region or contradicting their model/endpoint (user copy, else bundled)"""
-        regional, mismatched = self._regional, self._mismatched
+        mismatches = self._mismatch_slots(region)
         data = self._fm_data[region]  # only the credentials' partition is cleaned
 
         modified = 0  # codes removed in this region
@@ -341,14 +351,13 @@ class QuotaIndexGenerator:
             for endpoint, endpoint_data in (model.get('endpoints') or {}).items():
                 quotas = (endpoint_data or {}).get('quotas') or {}
                 # Contradicting this model/endpoint by the stored name (the same rule the
-                # analyzer and fm-quotas apply), then codes the index flagged or the region lacks
-                removed = [(t, q, 'mismatch') for t, q, _ in
-                           scrub_conflicting(model['model_id'], endpoint, quotas, regional)]
+                # analyzer and fm-quotas apply) or flagged by the index, then codes the region lacks
+                removed = []
                 for quota_type, quota in quotas.items():
                     if not isinstance(quota, dict):
                         continue
                     code = quota.get('code')
-                    if (model['model_id'], endpoint, quota_type, code) in mismatched:
+                    if (model['model_id'], endpoint, quota_type, code) in mismatches:
                         removed.append((quota_type, quota, 'mismatch'))
                     elif code and self._missing_in(code, region):
                         removed.append((quota_type, quota, 'missing'))

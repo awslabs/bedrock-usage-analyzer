@@ -8,7 +8,7 @@ import logging
 from typing import List, Dict, Optional, Tuple
 
 from bedrock_usage_analyzer.aws.client_factory import create_client
-from bedrock_usage_analyzer.utils.partition import build_arn
+from bedrock_usage_analyzer.utils.partition import build_arn, partition_region_prefix
 
 logger = logging.getLogger(__name__)
 
@@ -169,20 +169,14 @@ def split_profile_id(endpoint_id: str) -> Tuple[str, Optional[str]]:
     return endpoint_id, None
 
 
-# Second name segments that mark a separate partition rather than a direction
-_PARTITION_SEGMENTS = {'gov', 'iso', 'isob', 'isof', 'isoe'}
-
-
 def region_group(region: str) -> str:
     """Region family used to guess a profile prefix.
 
     'eu-west-1' -> 'eu', 'us-gov-west-1' -> 'us-gov', 'us-iso-east-1' -> 'us-iso',
     so regions of other partitions never fall into a commercial family.
     """
-    parts = region.split('-')
-    if len(parts) > 2 and parts[1] in _PARTITION_SEGMENTS:
-        return f"{parts[0]}-{parts[1]}"
-    return parts[0]
+    # The partition table decides (one place for new partitions); commercial: first segment
+    return partition_region_prefix(region) or region.split('-')[0]
 
 
 def model_id_from_arn(arn: str) -> Optional[str]:

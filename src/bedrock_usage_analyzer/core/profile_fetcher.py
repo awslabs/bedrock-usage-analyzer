@@ -108,9 +108,13 @@ class InferenceProfileFetcher:
     def _load_system_profiles(self) -> List[Dict]:
         if self._system_profiles is None:
             profiles = self._list_once('SYSTEM_DEFINED')
-            self._system_profiles = profiles
+            # Indexes are built from scratch and published only when complete, so a failure
+            # partway leaves nothing half-built for the next call
+            self._system_ids, self._system_by_arns, self._by_model, self._parts = set(), {}, {}, {}
             prefix_regions: Dict[str, set] = {}
             for profile in profiles:
+                if not profile.get('inferenceProfileId'):
+                    continue  # malformed summary: nothing to index
                 self._system_ids.add(profile['inferenceProfileId'])
                 arns = frozenset(m.get('modelArn', '') for m in profile.get('models', []))
                 if arns:
@@ -131,6 +135,7 @@ class InferenceProfileFetcher:
                     self._by_model.setdefault(model, []).append((arn_set, ids))
                     for profile_id in ids:
                         self._parts[profile_id] = (profile_id.split('.', 1)[0], model)
+            self._system_profiles = profiles
         return self._system_profiles
 
     def _learn_country_geographies(self, prefix_regions: Dict[str, set]) -> None:

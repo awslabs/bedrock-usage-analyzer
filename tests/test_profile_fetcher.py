@@ -512,3 +512,17 @@ def test_copy_of_a_region_less_arn_is_global_not_base():
     assert listed.resolve_endpoints(only_global) == [('global', HAIKU)]
     unlisted = InferenceProfileFetcher(FakeBedrock(), on_demand_models=[HAIKU])
     assert unlisted.resolve_endpoints(only_global) == [('global', HAIKU)]
+
+
+def test_region_group_follows_the_partition_table():
+    assert region_group('eusc-de-east-1') == 'eusc'
+    assert region_group('us-isob-east-1') == 'us-isob'
+    assert region_group('cn-north-1') == 'cn'
+    assert region_group('ap-southeast-2') == 'ap'
+
+
+def test_malformed_system_profile_is_skipped_not_half_indexed():
+    fetcher = InferenceProfileFetcher(FakeBedrock(
+        system=[{'models': [{'modelArn': arn('us-east-1', HAIKU)}]}, system_profile(f"au.{HAIKU}", AU_ARNS)],
+        application=[app_profile('auapp000010', 'a', AU_ARNS)]))
+    assert fetcher.list_application_profiles()[0]['sources'] == [f"au.{HAIKU}"]
