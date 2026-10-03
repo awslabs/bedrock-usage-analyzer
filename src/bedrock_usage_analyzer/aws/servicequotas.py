@@ -73,8 +73,27 @@ def check_quota(quota_code: str, region: str, service_code: str = 'bedrock'):
         code does not exist, or (QUOTA_ERROR, None) for any other failure (throttling,
         network, permissions), which callers must not treat as "missing".
     """
+    client = None
     try:
-        response = regional_client(region).get_service_quota(ServiceCode=service_code, QuotaCode=quota_code)
+        client = regional_client(region)
+        response = client.get_service_quota(ServiceCode=service_code, QuotaCode=quota_code)
+        return QUOTA_OK, response.get('Quota', {})
+    except ClientError as e:
+        code = e.response.get('Error', {}).get('Code')
+        if code == 'NoSuchResourceException':
+            # GetServiceQuota also answers this for a quota whose applied value is not
+            # available (only its default): the code is missing only if the default is too
+            return _check_default_quota(client, quota_code, region, service_code)
+        _report_lookup_error(quota_code, region, code, e)
+        return QUOTA_ERROR, None
+    except Exception as e:
+        _report_lookup_error(quota_code, region, type(e).__name__, e)
+        return QUOTA_ERROR, None
+
+
+def _check_default_quota(client, quota_code: str, region: str, service_code: str):
+    try:
+        response = client.get_aws_default_service_quota(ServiceCode=service_code, QuotaCode=quota_code)
         return QUOTA_OK, response.get('Quota', {})
     except ClientError as e:
         code = e.response.get('Error', {}).get('Code')
@@ -85,7 +104,6 @@ def check_quota(quota_code: str, region: str, service_code: str = 'bedrock'):
     except Exception as e:
         _report_lookup_error(quota_code, region, type(e).__name__, e)
         return QUOTA_ERROR, None
-
 
 
 def get_quota_details(quota_code: str, region: str, service_code: str = 'bedrock') -> Optional[Dict]:

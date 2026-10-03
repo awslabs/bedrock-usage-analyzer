@@ -20,8 +20,9 @@ DEFAULT_MAX_POOL_CONNECTIONS = 50
 
 # Bulk data calls (metric fetches, quota lookups, LLM mapping) are throttled under load,
 # so they retry longer with client-side rate adaptation. Everything else, including the
-# Bedrock control-plane calls made while the user answers prompts, keeps botocore's
-# standard policy so a bad network fails in seconds, not minutes.
+# Bedrock control-plane calls made while the user answers prompts, uses the standard
+# policy with up to 4 attempts (max_attempts counts retries) and a 10 s connect timeout
+# per attempt, so a bad network fails in under a minute rather than many.
 _BULK_SERVICES = {'cloudwatch', 'service-quotas', 'bedrock-runtime'}
 
 

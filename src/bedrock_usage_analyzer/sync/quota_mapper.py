@@ -152,13 +152,14 @@ class QuotaMapper:
             if not isinstance(fm.get('endpoints'), dict):
                 fm['endpoints'] = {}  # 'endpoints: null' in a hand-edited or older list
             endpoints = fm['endpoints']
+            saved_quotas = dict(endpoint_quotas(fm))  # guarded: hand-edited endpoints have none
             for endpoint_type, new in endpoints_data.items():
-                saved = (endpoints.get(endpoint_type) or {}).get('quotas') or {}
-                merged = dict(saved)
+                merged = dict(saved_quotas.get(endpoint_type) or {})
                 merged.update({metric: value for metric, value in new['quotas'].items() if value})
                 for metric in new['quotas']:
                     merged.setdefault(metric, None)
-                endpoints[endpoint_type] = {**(endpoints.get(endpoint_type) or {}), 'quotas': merged}
+                current = endpoints.get(endpoint_type)
+                endpoints[endpoint_type] = {**(current if isinstance(current, dict) else {}), 'quotas': merged}
 
             if endpoints_data:
                 updated_count += 1

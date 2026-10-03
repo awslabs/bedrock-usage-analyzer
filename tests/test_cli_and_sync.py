@@ -256,12 +256,17 @@ def test_check_quota_statuses(monkeypatch):
     from botocore.exceptions import ClientError
     from bedrock_usage_analyzer.aws import servicequotas as sq
 
-    def client_for(error_code):
+    def client_for(error_code, default_error='NoSuchResourceException'):
         class Client:
             def get_service_quota(self, **_):
                 if error_code:
                     raise ClientError({'Error': {'Code': error_code, 'Message': 'x'}}, 'GetServiceQuota')
                 return {'Quota': {'QuotaName': 'n'}}
+
+            def get_aws_default_service_quota(self, **_):
+                if default_error:
+                    raise ClientError({'Error': {'Code': default_error, 'Message': 'x'}}, 'GetAWSDefaultServiceQuota')
+                return {'Quota': {'QuotaName': 'default only'}}
         return Client()
 
     for code, expected in ((None, sq.QUOTA_OK), ('NoSuchResourceException', sq.QUOTA_MISSING),
@@ -269,6 +274,10 @@ def test_check_quota_statuses(monkeypatch):
         monkeypatch.setattr(sq, 'create_client', lambda *a, _c=code, **k: client_for(_c))
         sq._clients.clear()
         assert sq.check_quota('L-1', 'us-east-1')[0] == expected
+    # No applied value (only the default): the code exists, it is not removed as missing
+    monkeypatch.setattr(sq, 'create_client', lambda *a, **k: client_for('NoSuchResourceException', None))
+    sq._clients.clear()
+    assert sq.check_quota('L-1', 'us-east-1') == (sq.QUOTA_OK, {'QuotaName': 'default only'})
 
 
 def test_refresh_fm_list_all_regions_stops_without_partition(monkeypatch):

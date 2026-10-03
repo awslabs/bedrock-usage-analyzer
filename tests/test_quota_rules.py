@@ -470,3 +470,29 @@ def test_quota_index_tells_unchecked_regions_from_api_errors(monkeypatch, tmp_pa
     monkeypatch.setattr(quota_index, '_account_regions', lambda partition: ['us-east-1'])
     quota_index.QuotaIndexGenerator().run()
     assert 'not enabled for this account' in caplog.text and 'API errors' not in caplog.text
+
+
+def test_quota_index_tolerates_non_mapping_quotas(monkeypatch, tmp_path, no_bundle, commercial_creds):
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1', 'us-west-2']})
+    for region in ('us-east-1', 'us-west-2'):
+        save_yaml(str(tmp_path / 'data' / f'fm-list-{region}.yml'), {'models': [
+            {'model_id': 'amazon.nova-lite-v1:0', 'endpoints': {'us': {'quotas': 'TODO'}, 'base': 'TODO'}}]})
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: ('ok', {}))
+    quota_index.QuotaIndexGenerator().run()                  # no crash
+    assert (tmp_path / 'data' / 'quota-index.csv').exists()
+
+
+def test_fm_quotas_merge_tolerates_a_hand_edited_endpoint(monkeypatch, tmp_path):
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1']})
+    save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [
+        {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': 'TODO'}}]})
+    monkeypatch.setattr(qm, 'list_quota_codes', lambda region: {})
+    monkeypatch.setattr(qm, 'extract_common_name', lambda *a: 'nova')
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition', lambda _=None: ('aws', None))
+    mapper = qm.QuotaMapper('us-east-1', 'model', 'us-east-1')
+    monkeypatch.setattr(mapper, '_get_quota_mapping', lambda *a: {'tpm': {'code': 'L-N', 'name': 'n'}})
+    mapper.run()
+    saved = load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]['endpoints']['base']
+    assert saved == {'quotas': {'tpm': {'code': 'L-N', 'name': 'n'}}}

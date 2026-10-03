@@ -71,6 +71,7 @@ This tool requires different IAM permissions depending on which features you use
         "bedrock:ListTagsForResource",
         "cloudwatch:GetMetricData",
         "servicequotas:GetServiceQuota",
+        "servicequotas:GetAWSDefaultServiceQuota",
         "servicequotas:ListServiceQuotas"
       ],
       "Resource": "*"
@@ -85,6 +86,7 @@ This tool requires different IAM permissions depending on which features you use
 - `bedrock:ListTagsForResource` - Retrieve tags for inference profiles (for metadata display)
 - `cloudwatch:GetMetricData` - Fetch CloudWatch metrics for token usage (TPM, RPM, TPD, throttles)
 - `servicequotas:GetServiceQuota` - Retrieve service quota limits for visualization
+- `servicequotas:GetAWSDefaultServiceQuota` - Read the default value of a quota that has no applied value (GetServiceQuota does not return those)
 - `servicequotas:ListServiceQuotas` - Optional: when many quota codes are analyzed in one run, read them in one listing (without it, each code is looked up separately)
 
 **Note:** This option uses the bundled metadata files that come with the package.
@@ -107,7 +109,8 @@ Note: You need to replace some part with your own account ID and the region used
         "bedrock:ListInferenceProfiles",
         "bedrock:ListTagsForResource",
         "cloudwatch:GetMetricData",
-        "servicequotas:GetServiceQuota"
+        "servicequotas:GetServiceQuota",
+        "servicequotas:GetAWSDefaultServiceQuota"
       ],
       "Resource": "*"
     },
@@ -119,7 +122,8 @@ Note: You need to replace some part with your own account ID and the region used
         "ec2:DescribeRegions",
         "bedrock:ListFoundationModels",
         "servicequotas:ListServiceQuotas",
-        "servicequotas:GetServiceQuota"
+        "servicequotas:GetServiceQuota",
+        "servicequotas:GetAWSDefaultServiceQuota"
       ],
       "Resource": "*"
     },
@@ -147,7 +151,7 @@ In AWS GovCloud (US), write the ARNs with the `aws-us-gov` partition (`arn:aws-u
 - `ec2:DescribeRegions` - Fallback region listing where `account:ListRegions` is unavailable (for example in GovCloud); used by the same commands
 - `bedrock:ListFoundationModels` - List all foundation models (for `bedrock-usage-analyzer refresh fm-list`)
 - `servicequotas:ListServiceQuotas` - List all Bedrock quotas (for `bedrock-usage-analyzer refresh fm-quotas`)
-- `servicequotas:GetServiceQuota` - Check every mapped quota code in each region (for `bedrock-usage-analyzer refresh quota-index`)
+- `servicequotas:GetServiceQuota`, `servicequotas:GetAWSDefaultServiceQuota` - Check every mapped quota code in each region before a code is removed as missing (for `bedrock-usage-analyzer refresh quota-index` and `refresh fm-quotas`)
 - `bedrock:InvokeModel` - Invoke Claude models for intelligent quota mapping (for `bedrock-usage-analyzer refresh fm-quotas` only, restricted to Claude models)
 
 #### Security Best Practices

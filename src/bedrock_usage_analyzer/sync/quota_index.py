@@ -153,10 +153,13 @@ class QuotaIndexGenerator:
 
     def _merge_endpoints(self, key, model: Dict, region: str):
         """Merge endpoints from model into existing model entry"""
-        new_endpoints = model.get('endpoints') or {}
+        new_endpoints = model.get('endpoints') if isinstance(model.get('endpoints'), dict) else {}
 
         for endpoint_type, endpoint_data in new_endpoints.items():
-            endpoint_data = endpoint_data if isinstance(endpoint_data, dict) else {}  # 'us: null'
+            # 'us: null' or a hand-edited 'us: TODO' / 'quotas: TODO' is kept without quotas
+            endpoint_data = dict(endpoint_data) if isinstance(endpoint_data, dict) else {}
+            if not isinstance(endpoint_data.get('quotas'), dict):
+                endpoint_data.pop('quotas', None)
             existing_endpoints = self.models[key]['endpoints']
 
             if endpoint_type not in existing_endpoints:

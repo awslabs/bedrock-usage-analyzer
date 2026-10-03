@@ -235,6 +235,10 @@ def test_concurrent_quota_is_fetched_and_missing_codes_explained(analyzer, caplo
                 raise ClientError({'Error': {'Code': 'NoSuchResourceException', 'Message': 'x'}}, 'GetServiceQuota')
             return {'Quota': {'Value': 7.0}}
 
+        def get_aws_default_service_quota(self, ServiceCode, QuotaCode):
+            from botocore.exceptions import ClientError
+            raise ClientError({'Error': {'Code': 'NoSuchResourceException', 'Message': 'x'}}, 'GetAWSDefaultServiceQuota')
+
     monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.regional_client', lambda region: Quotas())
     quotas = analyzer._fetch_quotas(HAIKU, {'concurrent': {'code': 'L-C', 'name': 'c'},
                                             'tpm': {'code': 'L-GONE', 'name': 't'}}, None)
