@@ -257,7 +257,7 @@ def test_quota_index_keeps_other_partitions_rows(monkeypatch, tmp_path, no_bundl
     quota_index.QuotaIndexGenerator().run()
     csv_text = (tmp_path / 'data' / 'quota-index.csv').read_text()
     assert 'L-COMM' in csv_text and 'L-GOV' in csv_text
-    assert checked == ['L-GOV']
+    assert set(checked) == {'L-GOV'}                  # never the other partition's codes
 
 
 def test_quota_index_prefers_home_and_enabled_regions_and_writes_partition(monkeypatch, tmp_path, no_bundle, commercial_creds):
@@ -270,7 +270,7 @@ def test_quota_index_prefers_home_and_enabled_regions_and_writes_partition(monke
     checked = []
     monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: checked.append(region) or ('ok', {'QuotaName': 'n'}))
     quota_index.QuotaIndexGenerator().run()
-    assert checked == ['us-east-1']                     # not the opt-in af-south-1
+    assert checked[0] == 'us-east-1'                    # validated in the home region, not af-south-1
     header = (tmp_path / 'data' / 'quota-index.csv').read_text().splitlines()[0]
     assert header.endswith(',partition')
 
@@ -302,3 +302,20 @@ def test_quota_index_tolerates_null_endpoints():
     gen._merge_endpoints(key, {'endpoints': {'us': None, 'base': {'quotas': None}}}, 'us-east-1')
     gen._extract_quota_entries()
     assert gen.entries == []
+
+
+def test_quota_index_removes_code_missing_only_outside_source_region(monkeypatch, tmp_path, no_bundle, commercial_creds):
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['ap-southeast-2', 'us-east-1']})
+    for region in ('ap-southeast-2', 'us-east-1'):
+        save_yaml(str(tmp_path / 'data' / f'fm-list-{region}.yml'), {'models': [
+            {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': {
+                'tpm': {'code': 'L-ABC', 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
+    monkeypatch.setattr(quota_index, 'check_quota', lambda code, region:
+                        ('missing', None) if region == 'ap-southeast-2' else ('ok', {'QuotaName': 'n'}))
+    quota_index.QuotaIndexGenerator().run()
+    sydney = load_yaml(str(tmp_path / 'data' / 'fm-list-ap-southeast-2.yml'))
+    virginia = load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))
+    assert sydney['models'][0]['endpoints']['base']['quotas']['tpm'] is None
+    assert virginia['models'][0]['endpoints']['base']['quotas']['tpm']['code'] == 'L-ABC'
+    assert 'L-ABC' in (tmp_path / 'data' / 'quota-index.csv').read_text()

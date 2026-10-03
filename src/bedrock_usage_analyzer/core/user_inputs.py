@@ -13,7 +13,7 @@ from ..aws.client_factory import create_client
 from ..core.errors import troubleshooting_hint
 from ..core.profile_fetcher import InferenceProfileFetcher
 from ..sync.regions import load_region_names
-from ..utils.yaml_handler import load_yaml
+from ..utils.yaml_handler import load_fm_list
 from ..utils.ui import select_from_list
 from ..utils.paths import get_data_path
 from ..utils.partition import (
@@ -193,40 +193,52 @@ class UserInputs:
         """Get current AWS account ID (and remember the credentials' partition)"""
 
         logger.info("Getting AWS account ID...")
+        self._region_given = bool(region)
         try:
             # Regional STS first (VPC endpoints), then the partition's home region
             identity = resolve_caller_identity(region, lookup=get_caller_identity)
         except Exception as e:
-            if is_token_rejection(e):
-                self._explain_partition_mismatch(region or region_hint())
-            logger.error(f"Failed to get AWS account ID: {e}")
-            hint = troubleshooting_hint(e, region or region_hint())
-            logger.error(hint or "Please configure AWS credentials in your current machine.")
-            if not region and not region_hint():
-                logger.error("For GovCloud or China credentials, pass --region (e.g. --region us-gov-west-1) "
-                             "or set AWS_REGION.")
-            sys.exit(1)
+            identity = self._explain_partition_mismatch(region or region_hint()) \
+                if is_token_rejection(e) else None
+            if identity is None:
+                self._exit_no_identity(e, region)
+            # Only a default region (AWS_REGION / config) was in another partition: the region
+            # picker below lists the credentials' partition
+            logger.warning(f"  Ignoring default region {region_hint()}: the credentials are for "
+                           f"{get_partition_display_name(identity['Partition'])}")
         self.partition = identity['Partition']
         logger.info(f"  Account: {identity['Account']}")
         if self.partition != 'aws':
             logger.info(f"  Partition: {get_partition_display_name(self.partition)}")
         return identity['Account']
 
+    @staticmethod
+    def _exit_no_identity(e, region):
+        logger.error(f"Failed to get AWS account ID: {e}")
+        hint = troubleshooting_hint(e, region or region_hint())
+        logger.error(hint or "Please configure AWS credentials in your current machine.")
+        if not region and not region_hint():
+            logger.error("For GovCloud or China credentials, pass --region (e.g. --region us-gov-west-1) "
+                         "or set AWS_REGION.")
+        sys.exit(1)
+
     def _explain_partition_mismatch(self, region):
         """If STS in ``region`` rejected the credentials, check whether they belong to another partition.
 
         STS of one partition rejects credentials of another with a generic
-        'invalid token' error, so ask STS without the region pin and report the
-        mismatch in plain terms.
+        'invalid token' error, so ask STS of the other partitions. Returns the
+        identity when found and ``region`` was only a default (not --region);
+        exits with a plain explanation when the user named that region.
         """
         if not region:
-            return
+            return None
         # Shared with the refresh commands; the lookup goes through this module's
         # get_caller_identity so it can be stubbed in tests
         identity = probe_other_partitions(region, lookup=lambda r: get_caller_identity(r, probe=True))
-        if identity:
+        if identity and self._region_given:
             self.partition = identity['Partition']
             self._check_region_partition(region)
+        return identity
 
     def _check_region_partition(self, region):
         """Stop early when the region belongs to a different partition than the credentials."""
@@ -608,8 +620,7 @@ class UserInputs:
     def _load_fm_list(self, region):
         """Load foundation models for region (parsed once per region)"""
         if region not in self._fm_lists:
-            data = load_yaml(get_data_path(f'fm-list-{region}.yml')) or {}
-            self._fm_lists[region] = data.get('models', []) or []
+            self._fm_lists[region] = load_fm_list(region) or []
         return self._fm_lists[region]
     
     def select_output_dir(self) -> str:

@@ -237,7 +237,7 @@ def test_concurrent_quota_is_fetched_and_missing_codes_explained(analyzer, caplo
     quotas = analyzer._fetch_quotas(HAIKU, {'concurrent': {'code': 'L-C', 'name': 'c'},
                                             'tpm': {'code': 'L-GONE', 'name': 't'}}, None)
     assert quotas['concurrent']['value'] == 7.0 and quotas['tpm'] is None
-    assert "run 'bua refresh quota-index'" in caplog.text
+    assert "does not exist in ap-southeast-2; shown without this limit" in caplog.text
 
 
 def test_report_is_well_formed_utf8(tmp_path):
@@ -292,3 +292,10 @@ def test_quota_without_value_is_skipped(analyzer):
             return {'Quota': {'QuotaName': 'x'}}
     analyzer.sq_client = Quotas()
     assert analyzer._fetch_quotas(HAIKU, {'tpm': {'code': 'L-1', 'name': 'n'}}, None)['tpm'] is None
+
+
+def test_report_json_keeps_discovery_order(tmp_path):
+    from bedrock_usage_analyzer.core.output_generator import OutputGenerator
+    env = OutputGenerator(str(tmp_path))._env
+    rendered = env.from_string('{{ d|tojson }}').render(d={'us.model': 1, 'abc000000001': 2})
+    assert rendered.index('us.model') < rendered.index('abc000000001')

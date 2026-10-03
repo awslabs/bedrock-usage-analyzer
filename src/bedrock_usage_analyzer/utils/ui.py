@@ -52,16 +52,11 @@ def select_from_list(
 
 def _claude_endpoints_in(region: str, limit: int = 12) -> list:
     """Invokable Claude endpoint IDs listed in the region's fm-list (Haiku first, then newest)."""
-    import os
     from bedrock_usage_analyzer.sync.quota_rules import model_version
-    from bedrock_usage_analyzer.utils.paths import get_data_path
-    from bedrock_usage_analyzer.utils.yaml_handler import load_yaml
-    path = get_data_path(f'fm-list-{region}.yml')
-    if not os.path.exists(path):
-        return []
+    from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list
     options = []
-    for model in (load_yaml(path) or {}).get('models', []) or []:
-        model_id = model.get('model_id', '')
+    for model in load_fm_list(region) or []:
+        model_id = model['model_id']
         if not model_id.startswith('anthropic.claude') or model_id.count(':') > 1:
             continue  # skip context-window variants such as ...-v1:0:200k
         endpoints = model.get('endpoints') or {}

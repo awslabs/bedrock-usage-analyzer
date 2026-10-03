@@ -5,9 +5,7 @@
 
 import numpy as np
 import logging
-import os
 import traceback
-import yaml
 from datetime import datetime
 
 from bedrock_usage_analyzer.core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
@@ -17,7 +15,7 @@ from bedrock_usage_analyzer.core.output_generator import OutputGenerator
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.servicequotas import QUOTA_MISSING, QUOTA_OK, check_quota
-from bedrock_usage_analyzer.utils.paths import get_data_path
+from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
 
 logger = logging.getLogger(__name__)
@@ -61,10 +59,15 @@ class BedrockAnalyzer:
 
     def _endpoint_listed(self, model_id, profile_prefix) -> bool:
         """True when the region's fm-list has this model with this endpoint."""
-        self._load_quota_codes(model_id, profile_prefix)  # loads the list once
         key = profile_prefix or 'base'
-        return any(m.get('model_id') == model_id and key in (m.get('endpoints') or {})
-                   for m in self._fm_models or [])
+        return any(m['model_id'] == model_id and key in (m.get('endpoints') or {})
+                   for m in self._fm_list())
+
+    def _fm_list(self):
+        """The region's fm-list models, parsed once per run (every target reads the same file)."""
+        if getattr(self, '_fm_models', None) is None:
+            self._fm_models = load_fm_list(self.region) or []
+        return self._fm_models
 
     def _load_quota_codes(self, model_id, profile_prefix=None):
         """Load quota codes for a model from FM list based on endpoint
@@ -78,17 +81,8 @@ class BedrockAnalyzer:
         """
         if profile_prefix == UNKNOWN_SOURCE:
             return {}
-        if getattr(self, '_fm_models', None) is None:
-            # Parsed once per run; every analyzed target reads the same region file
-            fm_file = get_data_path(f'fm-list-{self.region}.yml')
-            data = {}
-            if os.path.exists(fm_file):
-                with open(fm_file, 'r', encoding='utf-8') as f:
-                    data = yaml.safe_load(f) or {}
-            self._fm_models = data.get('models', []) or []
-
         endpoint_key = profile_prefix if profile_prefix else 'base'
-        for model in self._fm_models:
+        for model in self._fm_list():
             if model['model_id'] != model_id:
                 continue
             endpoints = model.get('endpoints') or {}
@@ -144,8 +138,10 @@ class BedrockAnalyzer:
                 quotas[key] = {'value': quota['Value'], 'code': code, 'name': quota_data.get('name'),
                                'url': get_service_quota_url(self.region, 'bedrock', code)}
             elif status == QUOTA_MISSING:
+                # Not shown. 'bua refresh quota-index' removes it from a user copy of the list;
+                # a bundled list is corrected in the next release
                 logger.info(f"  Warning: {quota_type} quota {code} does not exist in {self.region}; "
-                            f"run 'bua refresh quota-index' to clean up the mapping")
+                            f"shown without this limit")
             else:
                 logger.info(f"  Warning: Could not fetch {quota_type} quota {code} for {model_id}")
         

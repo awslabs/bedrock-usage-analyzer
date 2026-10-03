@@ -116,7 +116,8 @@ Note: You need to replace some part with your own account ID and the region used
         "account:ListRegions",
         "ec2:DescribeRegions",
         "bedrock:ListFoundationModels",
-        "servicequotas:ListServiceQuotas"
+        "servicequotas:ListServiceQuotas",
+        "servicequotas:GetServiceQuota"
       ],
       "Resource": "*"
     },
@@ -143,7 +144,8 @@ In AWS GovCloud (US), write the ARNs with the `aws-us-gov` partition (`arn:aws-u
 - `account:ListRegions` - List enabled AWS regions (for `bedrock-usage-analyzer refresh regions`)
 - `ec2:DescribeRegions` - Fallback region listing where `account:ListRegions` is unavailable (for example in GovCloud)
 - `bedrock:ListFoundationModels` - List all foundation models (for `bedrock-usage-analyzer refresh fm-list`)
-- `servicequotas:ListServiceQuotas` - List all Bedrock quotas (for `bedrock-usage-analyzer refresh fm-quotas` and `bedrock-usage-analyzer refresh quota-index`)
+- `servicequotas:ListServiceQuotas` - List all Bedrock quotas (for `bedrock-usage-analyzer refresh fm-quotas`)
+- `servicequotas:GetServiceQuota` - Check every mapped quota code in each region (for `bedrock-usage-analyzer refresh quota-index`)
 - `bedrock:InvokeModel` - Invoke Claude models for intelligent quota mapping (for `bedrock-usage-analyzer refresh fm-quotas` only, restricted to Claude models)
 
 #### Security Best Practices

@@ -42,6 +42,9 @@ class OutputGenerator:
             autoescape=select_autoescape(['html']),
         )
         self._env.filters['https_url'] = https_url
+        # |tojson sorts keys by default; keep discovery order so the analyzed endpoint stays
+        # the first chart series (colour and legend order)
+        self._env.policies['json.dumps_kwargs'] = {'sort_keys': False}
 
     def generate(self, results):
         """Generate JSON and HTML output files with interactive graphs"""

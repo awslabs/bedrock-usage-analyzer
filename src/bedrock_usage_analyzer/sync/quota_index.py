@@ -234,20 +234,17 @@ class QuotaIndexGenerator:
         else:
             logger.info(f"\nCleaning up {len(self.error_entries)} missing and "
                         f"{len(self.mismatch_entries)} mismatched entries...")
-        stale = {(e['model_id'], e['endpoint'], e['quota_type'], e['quota_code']) for e in self.error_entries}
-        # Quota availability differs by region: a code missing in the entry's source
-        # region can exist elsewhere, so re-check it in every region before removing it
+        # Quota availability differs by region: a code can exist in the entry's source region
+        # and be missing in another (or the reverse), so every (code, region) pair an fm-list
+        # uses is checked, and a code is removed only from the regions where it is missing
         self._region_checks = {
             (e['quota_code'], e['source_region']): QUOTA_MISSING for e in self.error_entries}
         self._regional = set(get_regional_profile_prefixes())
         self._mismatched = {(e['model_id'], e['endpoint'], e['quota_type'], e['quota_code'])
                             for e in self.mismatch_entries}
         regions = sorted(self._fm_data)
-        # Look up, in parallel, every (code, region) pair the cleanup will ask about
-        pending = set()
-        if stale:
-            pending = {(slot[3], region) for region in regions
-                       for slot in self._stale_slots_in(self._fm_data[region], stale)}
+        pending = {(slot[3], region) for region in regions
+                   for slot in self._quota_slots_in(self._fm_data[region])}
         pending = sorted(pending - set(self._region_checks))
         with ThreadPoolExecutor(max_workers=8) as pool:
             for key, result in zip(pending, pool.map(lambda k: check_quota(*k), pending)):
@@ -255,7 +252,7 @@ class QuotaIndexGenerator:
         # Every region file is also checked for mismatches by the quota name stored with each
         # code, because the index itself samples only one source region per model endpoint
         for region in regions:
-            self._cleanup_region_errors(region, stale)
+            self._cleanup_region_errors(region)
 
         # A code confirmed in any region is still a valid mapping for the index
         confirmed = {code for (code, _), status in self._region_checks.items() if status == QUOTA_OK}
@@ -265,15 +262,15 @@ class QuotaIndexGenerator:
                 self.error_entries.remove(entry)
 
     @staticmethod
-    def _stale_slots_in(data, stale):
-        """(model, endpoint, type, code) slots of one parsed fm-list that are in ``stale``."""
-        for model in data.get('models', []):
+    def _quota_slots_in(data):
+        """(model, endpoint, type, code) of every mapped quota in one parsed fm-list."""
+        for model in data.get('models') or []:
             for endpoint, endpoint_data in (model.get('endpoints') or {}).items():
-                for quota_type, quota in ((endpoint_data or {}).get('quotas') or {}).items():
-                    if isinstance(quota, dict):
-                        slot = (model['model_id'], endpoint, quota_type, quota.get('code'))
-                        if slot in stale:
-                            yield slot
+                if not isinstance(endpoint_data, dict):
+                    continue
+                for quota_type, quota in (endpoint_data.get('quotas') or {}).items():
+                    if isinstance(quota, dict) and quota.get('code'):
+                        yield (model['model_id'], endpoint, quota_type, quota['code'])
 
     def _missing_in(self, code: str, region: str) -> bool:
         key = (code, region)
@@ -281,7 +278,7 @@ class QuotaIndexGenerator:
             self._region_checks[key] = check_quota(code, region)[0]
         return self._region_checks[key] == QUOTA_MISSING
 
-    def _cleanup_region_errors(self, region: str, stale):
+    def _cleanup_region_errors(self, region: str):
         """Null out codes missing in this region or contradicting their model/endpoint (user copy, else bundled)"""
         regional, mismatched = self._regional, self._mismatched
         data = self._fm_data.get(region)
@@ -289,6 +286,7 @@ class QuotaIndexGenerator:
             data = load_yaml(get_data_path(f'fm-list-{region}.yml')) or {}
 
         modified = False
+        reasons = set()
         for model in data.get('models', []):
             for endpoint, endpoint_data in (model.get('endpoints') or {}).items():
                 quotas = (endpoint_data or {}).get('quotas') or {}
@@ -302,9 +300,10 @@ class QuotaIndexGenerator:
                         reason = 'mismatch'
                     elif mapping_conflict(model['model_id'], endpoint, quota.get('name'), regional):
                         reason = 'mismatch'
-                    elif slot in stale and self._missing_in(code, region):
+                    elif code and self._missing_in(code, region):
                         reason = 'missing'
                     if reason:
+                        reasons.add(reason)
                         logger.info(f"  Removing {model['model_id']} -> {endpoint} -> {quota_type} ({code}) "
                                     f"in {region}: {reason}")
                         quotas[quota_type] = None
@@ -325,7 +324,12 @@ class QuotaIndexGenerator:
             save_yaml(str(bundle_file), data)
             logger.info(f"  ✓ Updated {bundle_file} (bundled)")
         elif not user_file.exists():
-            logger.info(f"  (bundled list for {region} left unchanged; the analyzer skips these codes)")
+            # The analyzer re-applies the mismatch checks; a missing code is looked up and
+            # reported as missing, then the report shows usage without that limit
+            effect = 'the analyzer skips mismatched codes' if reasons == {'mismatch'} else \
+                'the analyzer skips mismatched codes and shows usage without the missing limits'
+            logger.info(f"  (bundled list for {region} left unchanged ({effect}); a maintainer fixes "
+                        f"it with --update-bundle)")
 
     def _generate_csv(self):
         """Generate CSV file with valid entries"""

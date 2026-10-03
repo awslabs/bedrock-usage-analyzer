@@ -306,8 +306,22 @@ def test_mismatch_uses_configured_region_when_no_flag(monkeypatch, caplog):
             return {'Account': '1', 'Arn': 'arn:aws-us-gov:iam::1:user/a', 'Partition': 'aws-us-gov'}
         raise RuntimeError('InvalidClientTokenId')
     monkeypatch.setattr(ui_module, 'get_caller_identity', identity)
+    # Only a default region: the run continues with the credentials' partition (the region
+    # picker then lists GovCloud regions)
+    inputs = UserInputs()
+    assert inputs._get_current_account(None) == '1'
+    assert inputs.partition == 'aws-us-gov'
+    assert 'Ignoring default region us-west-2: the credentials are for AWS GovCloud (US)' in caplog.text
+
+
+def test_mismatch_with_region_flag_exits(monkeypatch, caplog):
+    def identity(region=None, **_):
+        if region == 'us-gov-west-1':
+            return {'Account': '1', 'Arn': 'arn:aws-us-gov:iam::1:user/a', 'Partition': 'aws-us-gov'}
+        raise RuntimeError('InvalidClientTokenId')
+    monkeypatch.setattr(ui_module, 'get_caller_identity', identity)
     with pytest.raises(SystemExit):
-        UserInputs()._get_current_account(None)
+        UserInputs()._get_current_account('us-west-2')
     assert 'but the credentials are for AWS GovCloud (US)' in caplog.text
 
 
@@ -387,8 +401,8 @@ def test_interactive_rounds_merge_profiles_of_one_endpoint(inputs, monkeypatch):
 
 def test_fm_list_is_parsed_once(inputs, monkeypatch):
     calls = []
-    real = ui_module.load_yaml
-    monkeypatch.setattr(ui_module, 'load_yaml', lambda path: calls.append(path) or real(path))
+    real = ui_module.load_fm_list
+    monkeypatch.setattr(ui_module, 'load_fm_list', lambda region: calls.append(region) or real(region))
     inputs._load_fm_list('us-east-1')
     inputs._load_fm_list('us-east-1')
     assert len(calls) == 1

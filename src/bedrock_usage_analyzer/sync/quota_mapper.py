@@ -8,8 +8,8 @@ import copy
 import sys
 from typing import Dict, List, Optional
 
-from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
-from bedrock_usage_analyzer.utils.paths import get_data_path, get_writable_path, get_bundle_path
+from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list, save_yaml
+from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import fetch_service_quotas
 from bedrock_usage_analyzer.aws.bedrock_llm import extract_common_name, extract_quota_codes
 from bedrock_usage_analyzer.aws.bedrock import get_endpoint_quota_keywords, get_regional_profile_prefixes
@@ -183,8 +183,7 @@ class QuotaMapper:
             self.bedrock_region, self.model_id, model_id,
             endpoint_type, matching_quotas
         )
-        quota_mapping = self._drop_invalid_choices(quota_mapping, matching_quotas, model_id, endpoint_type,
-                                                   set(get_regional_profile_prefixes()))
+        quota_mapping = self._drop_invalid_choices(quota_mapping, matching_quotas, model_id, endpoint_type)
 
         if quota_mapping and cache_key not in self.lcode_cache:
             self.lcode_cache[cache_key] = quota_mapping
@@ -192,16 +191,18 @@ class QuotaMapper:
         return quota_mapping
 
     @staticmethod
-    def _drop_invalid_choices(quota_mapping, candidates, model_id, endpoint_type, regional=None):
-        """Reject LLM picks outside the candidate list or contradicting the model/endpoint."""
+    def _drop_invalid_choices(quota_mapping, candidates, model_id, endpoint_type):
+        """Reject LLM picks outside the candidate list.
+
+        The candidates were already filtered with mapping_conflict, so a pick inside the
+        list cannot contradict the model or endpoint.
+        """
         if not quota_mapping:
             return quota_mapping
         by_code = {c['code']: c['name'] for c in candidates}
-        regional = set(get_regional_profile_prefixes()) if regional is None else regional
         cleaned = {}
         for metric, choice in quota_mapping.items():
-            if choice and choice.get('code') in by_code and not mapping_conflict(
-                    model_id, endpoint_type, by_code[choice['code']], regional):
+            if choice and choice.get('code') in by_code:
                 cleaned[metric] = {'code': choice['code'], 'name': by_code[choice['code']]}
             else:
                 if choice:
@@ -253,11 +254,9 @@ class QuotaMapper:
         return common_name
     
     def _load_fm_list(self, region: str) -> Optional[List[Dict]]:
-        """Load FM list for region"""
+        """Load FM list for region (None when there is none or it cannot be read)"""
         try:
-            fm_file = get_data_path(f'fm-list-{region}.yml')
-            data = load_yaml(fm_file)
-            return data.get('models', [])
+            return load_fm_list(region)
         except Exception:
             return None
     
