@@ -564,3 +564,13 @@ def test_profile_map_tolerates_null_models():
                 system_profile(f"au.{HAIKU}", AU_ARNS)]
     assert build_profile_map(profiles) == {HAIKU: ['au']}
     assert [d['prefix'] for d in discover_prefix_mapping('ap-southeast-2', profiles)] == ['au']
+
+
+def test_country_copy_matches_a_listed_single_region_country_profile():
+    """au.X now routes to Sydney only; an older copy still routing to Sydney + Melbourne is au, not apac."""
+    apac = [arn(r, HAIKU) for r in ('ap-northeast-1', 'ap-southeast-1', 'ap-southeast-2', 'ap-southeast-4')]
+    fetcher = InferenceProfileFetcher(FakeBedrock(
+        system=[system_profile(f"au.{HAIKU}", [arn('ap-southeast-2', HAIKU)]), system_profile(f"apac.{HAIKU}", apac)],
+        application=[app_profile('auold000001', 'a', AU_ARNS)]))
+    app = fetcher.list_application_profiles()[0]
+    assert (app['profile_prefix'], app['sources']) == ('au', [f"au.{HAIKU}"])

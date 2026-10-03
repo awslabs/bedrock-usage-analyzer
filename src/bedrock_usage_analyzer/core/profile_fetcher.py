@@ -254,7 +254,8 @@ class InferenceProfileFetcher:
         # report of its own, so crediting it would hide the copy's usage and limits.
         country = None if routes_globally else self._country_of(regions)
         country_id = f"{country}.{model_id}" if country else None
-        if country_id and any(country_id in ids for _, ids in candidates):
+        # Any listed profile of the model counts here, also one whose set shrank to one region
+        if country_id and any(country_id in ids for _, ids in self._by_model.get(model_id, [])):
             return [(country, model_id)]
 
         # Sets usually grow: the narrowest listed profile that contains every routed region
