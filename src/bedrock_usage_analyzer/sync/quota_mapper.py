@@ -9,7 +9,7 @@ import functools
 import sys
 from typing import Dict, List, Optional
 
-from bedrock_usage_analyzer.utils.yaml_handler import load_data_file, quota_slots, save_yaml, valid_models
+from bedrock_usage_analyzer.utils.yaml_handler import fm_file_data, load_data_file, quota_slots, save_yaml, valid_models
 from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, fetch_service_quotas, is_missing
 from bedrock_usage_analyzer.aws.bedrock_llm import extract_common_name, extract_quota_codes
@@ -307,10 +307,7 @@ class QuotaMapper:
             return None
         if data is None:
             return None
-        data = data if isinstance(data, dict) else {}
-        if not isinstance(data.get('models'), list):
-            data['models'] = []
-        self._fm_files[region] = data
+        data = self._fm_files[region] = fm_file_data(data)
         return valid_models(data)
     
     def _save_fm_list(self, region: str, fm_list: List[Dict]):

@@ -122,7 +122,7 @@ class InferenceProfileFetcher:
             # Candidates per model, so resolving one application profile only looks at its model
             # (each routing set is unique and all its profiles serve the same model)
             for arn_set, ids in self._system_by_arns.items():
-                model = next((m for m in map(model_id_from_arn, arn_set) if m), None)
+                model = _model_of(arn_set)
                 if model:
                     # Keyed like the lookup (the model of the routed ARNs, not the ID text)
                     self._by_model.setdefault(model, []).append((arn_set, ids))

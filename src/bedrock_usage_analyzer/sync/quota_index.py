@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict
 import sys
 
-from bedrock_usage_analyzer.utils.yaml_handler import load_data_file, quota_slots, save_yaml, valid_models
+from bedrock_usage_analyzer.utils.yaml_handler import fm_file_data, load_data_file, quota_slots, save_yaml, valid_models
 from bedrock_usage_analyzer.utils.csv_handler import write_csv
 from bedrock_usage_analyzer.utils.paths import list_data_names, get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, is_missing, list_quota_codes, lookup_quota, QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK
@@ -120,11 +120,9 @@ class QuotaIndexGenerator:
 
         for region, fm_file in fm_files:
             loaded = load_data_file(fm_file)
-            data = loaded if isinstance(loaded, dict) else {}
-            if not isinstance(data.get('models'), list):
-                data['models'] = []
             # Malformed entries are skipped, not fatal, and kept as they are when the file is
             # written back (the valid entries are the same dicts, so cleanups reach the file)
+            data = fm_file_data(loaded)
             models = valid_models(data)
             partition = get_partition_for_region(region)
             if partition == self._partition:

@@ -38,6 +38,18 @@ def load_fm_list(region):
     return None if data is None else valid_models(data)
 
 
+def fm_file_data(data):
+    """Parsed fm-list ``data`` as a dict whose 'models' is a list, ready to be written back.
+
+    Malformed entries and other top-level keys are kept; valid_models() of the result
+    returns the same entry dicts, so changes to them reach the file.
+    """
+    data = data if isinstance(data, dict) else {}
+    if not isinstance(data.get('models'), list):
+        data['models'] = []
+    return data
+
+
 def valid_models(data):
     """The usable model entries of parsed fm-list ``data``: 'models: null', a non-mapping file
     and entries without a model_id are skipped. The one rule every reader applies."""
