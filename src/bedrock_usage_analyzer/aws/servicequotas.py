@@ -100,12 +100,12 @@ def _check_default_quota(client, quota_code: str, region: str, service_code: str
         if code == 'NoSuchResourceException':
             return QUOTA_MISSING, None
         if is_access_denied(e):
-            # Policies written before this action was needed: keep the earlier rule
-            # (GetServiceQuota's NoSuchResource means missing) and say how to refine it
+            # A policy without this action: a default-only quota cannot be told from a missing
+            # one, so the code is kept (unverified) rather than deleted from the user's list
             _report_lookup_error(quota_code, region, 'default-denied', RuntimeError(
-                "servicequotas:GetAWSDefaultServiceQuota is not allowed, so a quota with only "
-                "a default value cannot be told from a missing one; grant it to keep such codes"))
-            return QUOTA_MISSING, None
+                "servicequotas:GetAWSDefaultServiceQuota is not allowed, so codes with only a "
+                "default value cannot be verified and are kept; grant it to check them"))
+            return QUOTA_ERROR, None
         _report_lookup_error(quota_code, region, code, e)
         return QUOTA_ERROR, None
     except Exception as e:

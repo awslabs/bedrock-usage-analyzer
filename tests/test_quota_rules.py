@@ -487,6 +487,8 @@ def test_update_bundle_cleans_the_checkout_file_not_the_user_copy(monkeypatch, t
     quota_index.QuotaIndexGenerator().run(update_bundle=True)
     written = load_yaml(str(checkout / 'fm-list-us-east-1.yml'))['models'][0]['endpoints']
     assert 'us' in written and written['base']['quotas']['tpm'] is None   # newer entry kept, code removed
+    user_copy = load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]['endpoints']
+    assert 'us' not in user_copy                                          # not overwritten with the checkout's list
 
 
 def test_fm_quotas_update_bundle_reads_and_writes_the_checkout(monkeypatch, tmp_path):

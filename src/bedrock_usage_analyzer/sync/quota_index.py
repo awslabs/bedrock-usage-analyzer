@@ -119,8 +119,13 @@ class QuotaIndexGenerator:
 
         logger.info(f"Found {len(fm_files)} fm-list files")
 
+        checkout = get_bundle_path() if self.update_bundle else None
         for region, fm_file in fm_files:
-            loaded = load_data_file(fm_file)
+            # --update-bundle indexes and cleans the checkout's lists (the files it rewrites),
+            # as fm-quotas does, not the maintainer's user copies
+            checkout_file = checkout / fm_file if checkout else None
+            loaded = load_yaml(str(checkout_file)) if checkout_file and checkout_file.exists() \
+                else load_data_file(fm_file)
             # Malformed entries are skipped, not fatal, and kept as they are when the file is
             # written back (the valid entries are the same dicts, so cleanups reach the file)
             data = fm_file_data(loaded)
@@ -383,12 +388,13 @@ class QuotaIndexGenerator:
         # every later bundled update for that region; the analyzer applies the same checks
         # when it reads quotas, so bundled lists are corrected by maintainers (--update-bundle).
         written = False
-        if user_file.exists():
+        bundle_path = get_bundle_path() if self.update_bundle else None
+        # With --update-bundle `data` is the checkout's list: never written over a user copy
+        if user_file.exists() and not bundle_path:
             save_yaml(str(user_file), data)
             self._files_written += 1
             written = True
             logger.info(f"  ✓ Updated {user_file}")
-        bundle_path = get_bundle_path() if self.update_bundle else None
         if bundle_path:
             bundle_file = bundle_path / f'fm-list-{region}.yml'
             # The same removals applied to the checkout's file being rewritten: `data` may be

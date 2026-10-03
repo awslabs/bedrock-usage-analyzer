@@ -6,6 +6,7 @@
 import numpy as np
 import logging
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from bedrock_usage_analyzer.core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
@@ -17,7 +18,7 @@ from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.servicequotas import (
     QUOTA_MISSING, QUOTA_OK, list_quota_codes, lookup_quota)
 from bedrock_usage_analyzer.utils.yaml_handler import (
-    has_endpoint, load_fm_list, model_endpoints, profile_endpoints, quota_slots)
+    has_endpoint, load_fm_list, model_endpoints, profile_endpoints)
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
 
 logger = logging.getLogger(__name__)
@@ -76,7 +77,7 @@ class BedrockAnalyzer:
             self._fm_models = load_fm_list(self.region) or []
         return self._fm_models
 
-    def _load_quota_codes(self, model_id, profile_prefix=None):
+    def _load_quota_codes(self, model_id, profile_prefix=None, quiet=False):
         """Load quota codes for a model from FM list based on endpoint
         
         Args:
@@ -106,7 +107,8 @@ class BedrockAnalyzer:
             # version, before the mapping checks existed) instead of showing another limit
             for metric, quota, reason in scrub_conflicting(
                     model_id, endpoint_key, quotas, set(get_regional_profile_prefixes())):
-                logger.info(f"  Ignoring {metric} quota {quota.get('code')}: {reason}")
+                if not quiet:
+                    logger.info(f"  Ignoring {metric} quota {quota.get('code')}: {reason}")
             return quotas
 
         return {}
@@ -128,17 +130,26 @@ class BedrockAnalyzer:
             return quotas
 
         logger.info(f"  Fetching quotas from Service Quotas API...")
+        wanted = []
         for quota_type, quota_data in quota_codes.items():
             # Handle new structure: {code: L-xxx, name: "..."} or null
             if not (quota_data and isinstance(quota_data, dict) and quota_data.get('code')):
                 continue
             key = next((k for k in quotas if k in quota_type.lower()), None)
-            if key is None:
-                continue
+            if key is not None:
+                wanted.append((quota_type, quota_data, key))
+
+        def lookup(code):
+            return lookup_quota(code, self.region, self._quota_listings, use_listing=self._use_quota_listing,
+                                lister=lambda r: list_quota_codes(r, quiet_denied=True))
+
+        if self._use_quota_listing and wanted:
+            lookup(wanted[0][1]['code'])  # fills the region's listing once, before the pool
+        # Per-code lookups (up to two calls each) run in parallel, as confirm_statuses does
+        with ThreadPoolExecutor(max_workers=max(1, min(4, len(wanted)))) as pool:
+            results = list(pool.map(lambda item: lookup(item[1]['code']), wanted))
+        for (quota_type, quota_data, key), (status, quota) in zip(wanted, results):
             code = quota_data['code']
-            status, quota = lookup_quota(
-                code, self.region, self._quota_listings, use_listing=self._use_quota_listing,
-                lister=lambda r: list_quota_codes(r, quiet_denied=True))
             if status == QUOTA_OK and quota.get('Value') is None:
                 logger.info(f"  Warning: {quota_type} quota {code} has no value; not shown")
             elif status == QUOTA_OK:
@@ -274,9 +285,12 @@ class BedrockAnalyzer:
 
         # Many quota codes to look up (several models): one paginated listing of the region's
         # quotas is cheaper than one GetServiceQuota call each
-        targets = {(model_id, prefix or 'base') for model_id, prefix, _ in all_profiles_map}
-        codes = {code for model_id, endpoint, _, code in quota_slots(self._fm_list())
-                 if (model_id, endpoint) in targets}
+        # Counted with the same reader the lookups use (it also reads the legacy model-level
+        # 'quotas' of a base endpoint)
+        targets = {(model_id, prefix) for model_id, prefix, _ in all_profiles_map}
+        codes = {q['code'] for model_id, prefix in targets
+                 for q in self._load_quota_codes(model_id, prefix, quiet=True).values()
+                 if isinstance(q, dict) and q.get('code')}
         self._use_quota_listing = len(codes) > QUOTA_LISTING_THRESHOLD
 
         region_info = get_region_info(self.region)

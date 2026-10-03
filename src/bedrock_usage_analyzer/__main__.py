@@ -100,6 +100,8 @@ def cmd_analyze(args):
         granularity_config=granularity_config,
         skip_confirm=args.yes
     )
+    # A region picked from the menu is not in args: keep it for the error hint in main()
+    args.region = args.region or user_inputs.region
 
     if not user_inputs.models:
         logger.error("No model selected; nothing to analyze.")
