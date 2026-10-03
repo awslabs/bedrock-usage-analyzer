@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict
 import sys
 
-from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
+from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, quota_slots, save_yaml
 from bedrock_usage_analyzer.utils.csv_handler import write_csv
 from bedrock_usage_analyzer.utils.paths import list_data_files, get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, is_missing, list_quota_codes, lookup_quota, QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK
@@ -19,6 +19,15 @@ logger = logging.getLogger(__name__)
 
 # 'partition' tells apart identical rows of commercial and GovCloud lists
 CSV_HEADERS = ['model_id', 'endpoint', 'quota_type', 'quota_code', 'quota_name', 'partition']
+
+
+def _account_regions(partition: str):
+    """Regions the account has enabled in ``partition``, or [] if they cannot be listed."""
+    from bedrock_usage_analyzer.sync.regions import fetch_enabled_regions
+    try:
+        return fetch_enabled_regions(partition)
+    except SystemExit:
+        return []
 
 
 class QuotaIndexGenerator:
@@ -94,8 +103,12 @@ class QuotaIndexGenerator:
         from bedrock_usage_analyzer.utils.partition import filter_regions_by_partition
         # Only this partition's regions: a regions.yml written with other credentials says
         # nothing about which regions of this partition are enabled
-        known = set(filter_regions_by_partition(enabled, self._partition)) or \
-            set(filter_regions_by_partition(load_region_names(), self._partition))
+        known = set(filter_regions_by_partition(enabled, self._partition))
+        if not known:
+            # No regions.yml of this partition yet: ask the account which regions it enabled
+            # (the bundled list also has opt-in regions it may not have)
+            known = set(_account_regions(self._partition) or
+                        filter_regions_by_partition(load_region_names(), self._partition))
         fm_files.sort(key=lambda item: (item[0] not in homes, item[0] not in enabled, item[0]))
 
         logger.info(f"Found {len(fm_files)} fm-list files")
@@ -259,7 +272,7 @@ class QuotaIndexGenerator:
                             for e in self.mismatch_entries}
         regions = sorted(set(self._fm_data) & self._checked_regions)
         pending = {(slot[3], region) for region in regions
-                   for slot in self._quota_slots_in(self._fm_data[region])}
+                   for slot in quota_slots(self._fm_data[region].get('models'))}
         # Codes absent from a region's listing (or in a region that could not be listed) are
         # confirmed one by one, so a code is never removed on the listing alone
         unresolved = sorted(k for k in pending - set(self._region_checks)
@@ -279,17 +292,6 @@ class QuotaIndexGenerator:
             if entry['quota_code'] in confirmed:
                 entry['quota_name'] = entry.get('previous_name') or 'N/A'
                 self.error_entries.remove(entry)
-
-    @staticmethod
-    def _quota_slots_in(data):
-        """(model, endpoint, type, code) of every mapped quota in one parsed fm-list."""
-        for model in data.get('models') or []:
-            for endpoint, endpoint_data in (model.get('endpoints') or {}).items():
-                if not isinstance(endpoint_data, dict):
-                    continue
-                for quota_type, quota in (endpoint_data.get('quotas') or {}).items():
-                    if isinstance(quota, dict) and quota.get('code'):
-                        yield (model['model_id'], endpoint, quota_type, quota['code'])
 
     def _lookup(self, code: str, region: str):
         """(status, quota) from the region's listing, else from GetServiceQuota (recorded for the cleanup)."""

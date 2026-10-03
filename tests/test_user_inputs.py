@@ -482,3 +482,11 @@ def test_zip_install_reads_bundled_fm_list_and_regions(monkeypatch, tmp_path):
     inputs = UserInputs()
     inputs._ensure_fm_list('us-east-1')                                # does not exit
     assert inputs._load_regions()
+
+
+def test_missing_fm_list_still_exits_after_an_earlier_lookup(monkeypatch):
+    inputs = UserInputs()
+    inputs.region = 'xx-test-1'
+    assert inputs._load_fm_list('xx-test-1') == []             # an earlier caller (no list)
+    with pytest.raises(SystemExit):
+        inputs._ensure_fm_list('xx-test-1')                   # the 'run bua refresh fm-list' exit

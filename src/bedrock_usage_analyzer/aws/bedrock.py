@@ -150,6 +150,12 @@ def get_profile_prefixes() -> frozenset:
     return _profile_prefixes_cache[1]
 
 
+def endpoint_id(model_id: str, prefix: Optional[str] = None) -> str:
+    """Endpoint ID of a model: '<prefix>.<model>' for a profile, the model ID for its base
+    (on-demand) endpoint, written as prefix None or 'base'. The inverse of split_profile_id."""
+    return model_id if prefix in (None, 'base') else f"{prefix}.{model_id}"
+
+
 def split_profile_id(endpoint_id: str) -> Tuple[str, Optional[str]]:
     """Split an endpoint ID into (model_id, prefix).
 

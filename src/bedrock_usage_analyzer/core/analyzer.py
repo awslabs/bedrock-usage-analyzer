@@ -12,11 +12,11 @@ from bedrock_usage_analyzer.core.profile_fetcher import UNKNOWN_SOURCE, Inferenc
 from bedrock_usage_analyzer.sync.quota_rules import scrub_conflicting
 from bedrock_usage_analyzer.core.metrics_fetcher import CloudWatchMetricsFetcher
 from bedrock_usage_analyzer.core.output_generator import OutputGenerator
-from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
+from bedrock_usage_analyzer.aws.bedrock import endpoint_id, get_regional_profile_prefixes
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.servicequotas import (
     QUOTA_MISSING, QUOTA_OK, check_quota, list_quota_codes, lookup_quota, regional_client)
-from bedrock_usage_analyzer.utils.yaml_handler import fm_endpoints, load_fm_list
+from bedrock_usage_analyzer.utils.yaml_handler import fm_endpoints, load_fm_list, quota_slots
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
 
 logger = logging.getLogger(__name__)
@@ -274,9 +274,8 @@ class BedrockAnalyzer:
         # Many quota codes to look up (several models): one paginated listing of the region's
         # quotas is cheaper than one GetServiceQuota call each
         targets = {(model_id, prefix or 'base') for model_id, prefix, _ in all_profiles_map}
-        codes = {q['code'] for m in self._fm_list()
-                 for endpoint, data in (m.get('endpoints') or {}).items() if (m['model_id'], endpoint) in targets
-                 for q in ((data or {}).get('quotas') or {}).values() if isinstance(q, dict) and q.get('code')}
+        codes = {code for model_id, endpoint, _, code in quota_slots(self._fm_list())
+                 if (model_id, endpoint) in targets}
         self._use_quota_listing = len(codes) > QUOTA_LISTING_THRESHOLD
 
         region_info = get_region_info(self.region)
@@ -381,7 +380,7 @@ class BedrockAnalyzer:
             if profile_prefix == UNKNOWN_SOURCE:
                 endpoint = f"{model_id} (source endpoint unknown)"
             else:
-                endpoint = f"{profile_prefix}.{model_id}" if profile_prefix else model_id
+                endpoint = endpoint_id(model_id, profile_prefix)
             scope = [profile_names.get(pid, pid) for pid in final_model_ids] if app_ids else []
 
             self.output_generator.generate({

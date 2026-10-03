@@ -58,3 +58,17 @@ def fm_endpoints(models, model_id):
         if model.get('model_id') == model_id:
             return set(model.get('endpoints') or {})
     return None
+
+
+def quota_slots(models):
+    """(model ID, endpoint, metric, code) of every mapped quota in parsed fm-list models.
+
+    Null endpoints ('us: null'), null quotas and entries without a code are skipped.
+    """
+    for model in models or []:
+        for endpoint, endpoint_data in (model.get('endpoints') or {}).items():
+            if not isinstance(endpoint_data, dict):
+                continue
+            for metric, quota in (endpoint_data.get('quotas') or {}).items():
+                if isinstance(quota, dict) and quota.get('code'):
+                    yield (model['model_id'], endpoint, metric, quota['code'])

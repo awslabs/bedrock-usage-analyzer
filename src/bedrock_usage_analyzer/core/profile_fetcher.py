@@ -8,6 +8,7 @@ from typing import Dict, FrozenSet, Iterable, List, Optional
 
 from bedrock_usage_analyzer.core.errors import is_access_denied
 from bedrock_usage_analyzer.aws.bedrock import (
+    endpoint_id,
     get_default_region_prefix_map,
     list_inference_profiles,
     model_id_from_arn,
@@ -156,7 +157,7 @@ class InferenceProfileFetcher:
             for profile in raw:
                 arns = [m.get('modelArn', '') for m in profile.get('models', [])]
                 endpoints = self.resolve_endpoints(arns)
-                sources = [f"{p}.{m}" if p else m for p, m in endpoints]
+                sources = [endpoint_id(m, p) for p, m in endpoints]
                 if endpoints:
                     (prefix, model_id), source = endpoints[0], sources[0]
                 else:
@@ -182,10 +183,6 @@ class InferenceProfileFetcher:
         return self._app_profiles
 
     # --------------------------------------------------------------- resolution
-
-    def resolve_sources(self, model_arns: Iterable[str]) -> List[str]:
-        """Endpoint IDs an application profile may have been copied from (see resolve_endpoints)."""
-        return [f"{prefix}.{model}" if prefix else model for prefix, model in self.resolve_endpoints(model_arns)]
 
     def resolve_endpoints(self, model_arns: Iterable[str]) -> List[tuple]:
         """Return the endpoints, as (prefix or None, model ID), a profile may have been copied from.
@@ -340,7 +337,7 @@ class InferenceProfileFetcher:
                    profile_metadata contains 'id' and 'tags' for each profile
         """
         logger.info("  Discovering inference profiles...")
-        target_endpoint = model_id if profile_prefix is None else f"{profile_prefix}.{model_id}"
+        target_endpoint = endpoint_id(model_id, profile_prefix)
 
         profiles: List[str] = []
         profile_names: Dict[str, str] = {}
@@ -390,7 +387,7 @@ class InferenceProfileFetcher:
         counts: Dict[str, int] = {}
         # Only a hint: use a listing that already succeeded, never trigger a new one
         app_profiles = self._app_profiles or []
-        target = model_id if profile_prefix is None else f"{profile_prefix}.{model_id}"
+        target = endpoint_id(model_id, profile_prefix)
         for app in app_profiles:
             # Profiles with an unknown source are not pointed to: there is no endpoint to pick
             if app['model_id'] == model_id and app['sources'] and target not in app['sources']:

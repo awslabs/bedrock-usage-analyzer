@@ -251,7 +251,8 @@ def resolve_caller_identity(region: Optional[str] = None, lookup=None) -> Dict[s
         return lookup(key)
     except Exception as e:
         home = PARTITION_HOME_REGIONS.get(get_partition_for_region(key))
-        if not (is_token_rejection(e) and home and home != key):
+        # No region at all: botocore already used the commercial home endpoint (us-east-1)
+        if not (is_token_rejection(e) and home and home != (key or PARTITION_HOME_REGIONS['aws'])):
             raise
         try:
             identity = lookup(home)

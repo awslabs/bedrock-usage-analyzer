@@ -52,6 +52,7 @@ def select_from_list(
 
 def _claude_endpoints_in(region: str, limit: int = 12) -> list:
     """Invokable Claude endpoint IDs listed in the region's fm-list (Haiku first, then newest)."""
+    from bedrock_usage_analyzer.aws.bedrock import endpoint_id
     from bedrock_usage_analyzer.sync.quota_rules import model_version
     from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list
     options = []
@@ -61,7 +62,7 @@ def _claude_endpoints_in(region: str, limit: int = 12) -> list:
             continue  # skip context-window variants such as ...-v1:0:200k
         endpoints = model.get('endpoints') or {}
         for prefix in endpoints:
-            options.append(model_id if prefix == 'base' else f"{prefix}.{model_id}")
+            options.append(endpoint_id(model_id, prefix))
 
     def newest_first(option):
         # Haiku first (mapping makes many small calls), then model generation (4.5 > 3.7 > 3.5),

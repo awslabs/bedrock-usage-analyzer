@@ -399,3 +399,17 @@ def test_scrub_conflicting_reports_and_nulls():
               'rpm': {'code': 'L-R', 'name': 'Cross-region model inference requests per minute for X'}}
     removed = scrub_conflicting('x.model-v1:0', 'us', quotas, {'us'})
     assert [m for m, _, _ in removed] == ['tpm'] and quotas['tpm'] is None and quotas['rpm']['code'] == 'L-R'
+
+
+def test_quota_index_without_regions_file_checks_only_account_regions(monkeypatch, tmp_path, no_bundle, commercial_creds):
+    (tmp_path / 'data').mkdir()
+    for region in ('ap-east-2', 'us-east-1'):
+        save_yaml(str(tmp_path / 'data' / f'fm-list-{region}.yml'), {'models': [
+            {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': {
+                'tpm': {'code': 'L-1', 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
+    monkeypatch.setattr(quota_index, '_account_regions', lambda partition: ['us-east-1'])
+    asked = []
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota',
+                        lambda code, region: asked.append(region) or ('ok', {'QuotaName': 'n'}))
+    quota_index.QuotaIndexGenerator().run()
+    assert 'ap-east-2' not in asked                           # opt-in region the account has not enabled

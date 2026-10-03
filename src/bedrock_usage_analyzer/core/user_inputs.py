@@ -103,7 +103,7 @@ class UserInputs:
         self.region = None
         self.models = []
         self.profile_fetcher: Optional[InferenceProfileFetcher] = None
-        self._fm_lists: Dict[str, List[Dict]] = {}
+        self._fm_lists: Dict[str, Optional[List[Dict]]] = {}  # None: the region has no fm-list
         self.granularity_config = {  # The aggregation granularity for different metrics window/period
             '1hour': 300,   # 5 minutes
             '1day': 300,    # 5 minutes
@@ -624,19 +624,14 @@ class UserInputs:
         return self._load_fm_list(self.region)
 
     def _load_fm_list_or_none(self, region):
-        """The region's fm-list models, None when there is no list (cached like _load_fm_list)."""
+        """The region's fm-list models, None when there is no list (parsed once per region)."""
         if region not in self._fm_lists:
-            models = load_fm_list(region)
-            if models is None:
-                return None
-            self._fm_lists[region] = models
+            self._fm_lists[region] = load_fm_list(region)
         return self._fm_lists[region]
 
     def _load_fm_list(self, region):
-        """Load foundation models for region (parsed once per region)"""
-        if region not in self._fm_lists:
-            self._fm_lists[region] = load_fm_list(region) or []
-        return self._fm_lists[region]
+        """The region's fm-list models ([] when there is no list)."""
+        return self._load_fm_list_or_none(region) or []
     
     def select_output_dir(self) -> str:
         """Prompt user to select output directory for results."""

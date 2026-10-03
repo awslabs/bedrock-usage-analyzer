@@ -113,7 +113,9 @@ def refresh_region(region_name: str, update_bundle: bool = False):
             # The file being rewritten (the checkout), not the installed package's copy
             bundled = {p['prefix']: p for p in
                        ((load_yaml(str(bundle_prefix_file)) if bundle_prefix_file.exists() else None) or {}).get('prefixes') or []}
-            for entry in manual_entries + new_entries:
+            # Everything discovered that the bundle lacks, including prefixes already saved in
+            # the user's own file by an earlier refresh without --update-bundle
+            for entry in manual_entries + [e for e in discovered if e['prefix'] not in bundled]:
                 bundled[entry['prefix']] = entry
             save_yaml(str(bundle_prefix_file), {'prefixes': by_prefix(bundled)})
             logger.info(f"  ✓ Prefix mapping saved: {bundle_prefix_file} (bundled)")

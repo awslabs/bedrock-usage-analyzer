@@ -263,3 +263,15 @@ def test_partition_check_asks_each_sts_endpoint_once(monkeypatch):
     monkeypatch.setattr(p, 'probe_other_partitions', lambda region, lookup=None: {'Partition': 'aws-us-gov'})
     assert r.credentials_partition_or_exit() == 'aws-us-gov'
     assert len(calls) == len(set(calls))
+
+
+def test_no_region_does_not_retry_the_same_sts_endpoint(monkeypatch):
+    calls = []
+    monkeypatch.setattr(p, 'region_hint', lambda: None)
+
+    def lookup(region):
+        calls.append(region)
+        raise RuntimeError('InvalidClientTokenId')
+    with pytest.raises(RuntimeError):
+        p.resolve_caller_identity(None, lookup)
+    assert calls == [None]                                    # us-east-1 was already the endpoint

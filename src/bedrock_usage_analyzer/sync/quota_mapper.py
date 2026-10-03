@@ -9,7 +9,7 @@ import functools
 import sys
 from typing import Dict, List, Optional
 
-from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list, save_yaml
+from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list, quota_slots, save_yaml
 from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, fetch_service_quotas, is_missing
 from bedrock_usage_analyzer.aws.bedrock_llm import extract_common_name, extract_quota_codes
@@ -106,9 +106,7 @@ class QuotaMapper:
         listed_codes = {q.get('QuotaCode') for q in quotas}
         self._listed_codes[region] = listed_codes  # reused for every model and endpoint
         # Saved codes absent from the listing are confirmed in one parallel pass
-        unlisted = {(q['code'], region) for fm in fm_list for e in (fm.get('endpoints') or {}).values()
-                    for q in ((e or {}).get('quotas') or {}).values()
-                    if isinstance(q, dict) and q.get('code') and q['code'] not in listed_codes}
+        unlisted = {(code, region) for _, _, _, code in quota_slots(fm_list) if code not in listed_codes}
         if listed_codes:
             confirm_statuses(unlisted, self._quota_checks)
         for i, fm in enumerate(fm_list, 1):
