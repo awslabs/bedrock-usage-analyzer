@@ -398,3 +398,19 @@ def test_fm_quotas_with_all_args_still_checks_bedrock_partition(monkeypatch):
                               model_id='m', update_bundle=False)
     with pytest.raises(SystemExit):
         cli.cmd_refresh_fm_quotas(args)
+
+
+def test_fm_list_refresh_adds_base_when_a_listed_model_gains_on_demand(monkeypatch, tmp_path):
+    from bedrock_usage_analyzer.sync import fm_list
+    (tmp_path / 'data').mkdir(exist_ok=True)
+    save_yaml(str(tmp_path / 'data' / 'fm-list-ap-south-1.yml'), {'models': [
+        {'model_id': 'x.prov-only-v1:0', 'provider': 'X', 'inference_types': ['PROVISIONED'],
+         'endpoints': {'apac': {'quotas': {'tpm': {'code': 'L-A', 'name': 'n'}}}}}]})
+    monkeypatch.setattr(fm_list, 'discover_prefix_mapping', lambda region, profiles=None: [])
+    monkeypatch.setattr(fm_list, 'fetch_all_inference_profiles', lambda region: [])
+    monkeypatch.setattr(fm_list, 'fetch_foundation_models', lambda region: [
+        {'model_id': 'x.prov-only-v1:0', 'provider': 'X', 'inference_types': ['ON_DEMAND', 'PROVISIONED']}])
+    fm_list.refresh_region('ap-south-1')
+    saved = load_yaml(str(tmp_path / 'data' / 'fm-list-ap-south-1.yml'))['models'][0]
+    assert 'base' in saved['endpoints']
+    assert saved['endpoints']['apac']['quotas']['tpm']['code'] == 'L-A'        # kept

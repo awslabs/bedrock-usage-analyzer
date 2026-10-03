@@ -108,20 +108,15 @@ class InferenceProfileFetcher:
                     # is offered only in Tokyo and Osaka), so keep every candidate
                     self._system_by_arns.setdefault(arns, []).append(profile['inferenceProfileId'])
                     regions = {region_from_arn(a) for a in arns}
-                    self._listed_prefixes.add(profile['inferenceProfileId'].split('.', 1)[0])
+                    prefix = profile['inferenceProfileId'].split('.', 1)[0]
+                    self._listed_prefixes.add(prefix)
                     if all(regions):  # region-bound (global profiles have a region-less ARN)
-                        prefix = profile['inferenceProfileId'].split('.', 1)[0]
                         prefix_regions.setdefault(prefix, set()).update(regions)
             self._learn_country_geographies(prefix_regions)
             # Candidates per model, so resolving one application profile only looks at its model
+            # (each routing set is unique and all its profiles serve the same model)
             for arn_set, ids in self._system_by_arns.items():
-                for profile_id in ids:
-                    model = profile_id.split('.', 1)[-1]
-                    entry = next((e for e in self._by_model.setdefault(model, []) if e[0] == arn_set), None)
-                    if entry is None:
-                        self._by_model[model].append((arn_set, [profile_id]))
-                    else:
-                        entry[1].append(profile_id)
+                self._by_model.setdefault(ids[0].split('.', 1)[-1], []).append((arn_set, ids))
         return self._system_profiles
 
     def _learn_country_geographies(self, prefix_regions: Dict[str, set]) -> None:
@@ -146,11 +141,19 @@ class InferenceProfileFetcher:
             if self._listings['APPLICATION']['result'] is None:
                 logger.info("  Listing application inference profiles...")
             raw = self._list_once('APPLICATION')
-            self._load_system_profiles()
+            try:
+                self._load_system_profiles()
+                system_listed = True
+            except Exception as e:
+                # The profiles are still listed (each can be analyzed by ID), without a
+                # source endpoint; a later call retries while the system listing may recover
+                logger.warning(f"  WARNING: Could not list system inference profiles ({e}); "
+                               f"application profiles are shown without their source endpoint")
+                system_listed = False
             profiles = []
             for profile in raw:
                 arns = [m.get('modelArn', '') for m in profile.get('models', [])]
-                sources = self.resolve_sources(arns)
+                sources = self.resolve_sources(arns) if system_listed else []
                 if sources:
                     source = sources[0]
                     first = source.split('.', 1)[0]
@@ -179,8 +182,10 @@ class InferenceProfileFetcher:
                     'source': source,
                     'sources': sources,
                 })
-            self._app_profiles = profiles
             logger.info(f"  Found {len(profiles)} application inference profile(s)")
+            if not system_listed:
+                return profiles
+            self._app_profiles = profiles
         return self._app_profiles
 
     # --------------------------------------------------------------- resolution

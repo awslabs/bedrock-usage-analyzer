@@ -81,3 +81,19 @@ def check_quota(quota_code: str, region: str, service_code: str = 'bedrock', cli
         print(f"Error fetching quota {quota_code}: {e}", file=sys.stderr)
         return QUOTA_ERROR, None
 
+
+
+def confirm_statuses(pairs, cache: Dict, lookup=None, workers: int = 8) -> Dict:
+    """Look up, in parallel, the (code, region) pairs not yet in ``cache``; returns ``cache``.
+
+    Each result is stored as cache[(code, region)] = QUOTA_OK / QUOTA_MISSING / QUOTA_ERROR.
+    Used to confirm codes absent from a region's listing before they are removed.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    lookup = lookup or check_quota
+    todo = sorted(set(pairs) - set(cache))
+    if todo:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for key, result in zip(todo, pool.map(lambda k: lookup(*k), todo)):
+                cache[key] = result[0]
+    return cache

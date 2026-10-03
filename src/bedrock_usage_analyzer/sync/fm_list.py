@@ -7,7 +7,7 @@ import logging
 from typing import List, Dict
 
 from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
-from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path, get_data_path, load_bundled_yaml
+from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path, get_data_path
 from bedrock_usage_analyzer.aws.bedrock import (
     fetch_foundation_models,
     fetch_all_inference_profiles,
@@ -115,7 +115,9 @@ def refresh_region(region_name: str, update_bundle: bool = False):
         bundle_path = get_bundle_path()
         if bundle_path:
             bundle_prefix_file = bundle_path / 'prefix-mapping.yml'
-            bundled = {p['prefix']: p for p in (load_bundled_yaml('prefix-mapping.yml') or {}).get('prefixes', []) or []}
+            # The file being rewritten (the checkout), not the installed package's copy
+            bundled = {p['prefix']: p for p in
+                       ((load_yaml(str(bundle_prefix_file)) if bundle_prefix_file.exists() else None) or {}).get('prefixes') or []}
             for entry in manual_entries + new_entries:
                 bundled[entry['prefix']] = entry
             save_yaml(str(bundle_prefix_file), {'prefixes': by_prefix(bundled)})
@@ -147,21 +149,12 @@ def refresh_region(region_name: str, update_bundle: bool = False):
         
         # Preserve existing endpoints/quotas if they exist
         if model_id in existing_models:
-            existing = existing_models[model_id]
-            model['endpoints'] = existing.get('endpoints', {})
-        else:
-            # Initialize endpoints structure for ON_DEMAND models
-            if 'ON_DEMAND' in model.get('inference_types', []):
-                model['endpoints'] = {
-                    'base': {
-                        'quotas': {
-                            'concurrent': None,
-                            'rpm': None,
-                            'tpd': None,
-                            'tpm': None
-                        }
-                    }
-                }
+            model['endpoints'] = dict(existing_models[model_id].get('endpoints') or {})
+        # An ON_DEMAND model gets a base endpoint, also when it gained on-demand after the
+        # saved list was written (existing endpoints and their quotas are kept)
+        if 'ON_DEMAND' in model.get('inference_types', []):
+            model.setdefault('endpoints', {}).setdefault(
+                'base', {'quotas': {'concurrent': None, 'rpm': None, 'tpd': None, 'tpm': None}})
         
         # Add inference profiles if available
         if model_id in profile_map:

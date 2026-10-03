@@ -14,7 +14,8 @@ from bedrock_usage_analyzer.core.metrics_fetcher import CloudWatchMetricsFetcher
 from bedrock_usage_analyzer.core.output_generator import OutputGenerator
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
 from bedrock_usage_analyzer.aws.client_factory import create_client
-from bedrock_usage_analyzer.aws.servicequotas import QUOTA_MISSING, QUOTA_OK, check_quota, regional_client
+from bedrock_usage_analyzer.aws.servicequotas import (
+    QUOTA_MISSING, QUOTA_OK, check_quota, list_quota_codes, regional_client)
 from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
 
@@ -41,6 +42,7 @@ class BedrockAnalyzer:
         self.sq_client = regional_client(region)  # shared with the other quota lookups
         # Region's fm-list: the one parsed during input collection, else read on first lookup
         self._fm_models = fm_models
+        self._quotas_by_code = None  # region's quota listing, read on the first quota lookup
         # Reuse the fetcher from input collection so profiles are listed only once
         if profile_fetcher is not None:
             self.profile_fetcher = profile_fetcher
@@ -51,6 +53,12 @@ class BedrockAnalyzer:
         self.metrics_fetcher = CloudWatchMetricsFetcher(self.cloudwatch_client, self.tz_api_format)
         self.output_generator = None  # Initialized in analyze() with output_dir
     
+    def _quota_listing(self):
+        """The region's Bedrock quotas by code, listed once per run ({} if the listing fails)."""
+        if self._quotas_by_code is None:
+            self._quotas_by_code = list_quota_codes(self.region) or {}
+        return self._quotas_by_code
+
     def _system_profile_listed(self, profile_id) -> bool:
         """True unless the region's system profiles were listed and do not include it."""
         try:
@@ -128,7 +136,9 @@ class BedrockAnalyzer:
             if key is None:
                 continue
             code = quota_data['code']
-            status, quota = check_quota(code, self.region, client=self.sq_client)
+            listed = self._quota_listing().get(code)
+            status, quota = (QUOTA_OK, listed) if listed else \
+                check_quota(code, self.region, client=self.sq_client)
             if status == QUOTA_OK and quota.get('Value') is None:
                 logger.info(f"  Warning: {quota_type} quota {code} has no value; not shown")
             elif status == QUOTA_OK:

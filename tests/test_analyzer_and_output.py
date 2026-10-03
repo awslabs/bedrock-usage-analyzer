@@ -300,3 +300,12 @@ def test_report_json_keeps_discovery_order(tmp_path):
     env = OutputGenerator(str(tmp_path))._env
     rendered = env.from_string('{{ d|tojson }}').render(d={'us.model': 1, 'abc000000001': 2})
     assert rendered.index('us.model') < rendered.index('abc000000001')
+
+
+def test_quotas_come_from_the_region_listing(analyzer, monkeypatch):
+    monkeypatch.setattr(analyzer_module, 'list_quota_codes',
+                        lambda region: {'L-1': {'QuotaCode': 'L-1', 'Value': 123.0}})
+    asked = []
+    monkeypatch.setattr(analyzer_module, 'check_quota', lambda code, region, client=None: asked.append(code) or ('missing', None))
+    quotas = analyzer._fetch_quotas(HAIKU, {'tpm': {'code': 'L-1', 'name': 'x'}, 'rpm': {'code': 'L-2', 'name': 'y'}})
+    assert quotas['tpm']['value'] == 123.0 and asked == ['L-2']                # one lookup, for the unlisted code

@@ -11,7 +11,7 @@ import sys
 from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
 from bedrock_usage_analyzer.utils.csv_handler import write_csv
 from bedrock_usage_analyzer.utils.paths import list_data_files, get_writable_path, get_bundle_path
-from bedrock_usage_analyzer.aws.servicequotas import check_quota, list_quota_codes, QUOTA_ERROR, QUOTA_OK, QUOTA_MISSING
+from bedrock_usage_analyzer.aws.servicequotas import check_quota, confirm_statuses, list_quota_codes, QUOTA_ERROR, QUOTA_OK, QUOTA_MISSING
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
 from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict, scrub_conflicting
 
@@ -262,9 +262,8 @@ class QuotaIndexGenerator:
         # confirmed one by one, so a code is never removed on the listing alone
         unresolved = sorted(k for k in pending - set(self._region_checks)
                             if k[0] not in (self._listings.get(k[1]) or {}))
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            for key, result in zip(unresolved, pool.map(lambda k: check_quota(*k), unresolved)):
-                self._region_checks[key] = result[0]
+        # (lookup through this module's name, so tests can stub it)
+        confirm_statuses(unresolved, self._region_checks, lookup=lambda code, region: check_quota(code, region))
         for key in pending - set(self._region_checks):
             self._region_checks[key] = QUOTA_OK  # in the region's listing
         # Every region file is also checked for mismatches by the quota name stored with each
