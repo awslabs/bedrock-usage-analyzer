@@ -6,11 +6,11 @@
 import logging
 from typing import List, Dict
 
-from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list, load_yaml, save_yaml
+from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list, load_yaml, save_yaml, valid_models
 from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.bedrock import (
     fetch_foundation_models,
-    fetch_all_inference_profiles,
+    list_system_profiles,
     build_profile_map,
     discover_prefix_mapping,
     load_prefix_mapping,
@@ -26,9 +26,12 @@ def load_existing_models(region: str) -> Dict[str, Dict]:
     """Saved models of the region by ID (user copy, else bundled); {} when there is none.
 
     Malformed entries are skipped (load_fm_list), so one bad entry cannot drop every saved
-    quota mapping of the region.
+    quota mapping of the region. A file path (the argument in earlier releases) is still
+    read as that file.
     """
     try:
+        if str(region).endswith(('.yml', '.yaml')):
+            return {m['model_id']: m for m in valid_models(load_yaml(str(region)))}
         return {m['model_id']: m for m in load_fm_list(region) or []}
     except Exception as e:
         logger.warning(f"Could not load existing models for {region}: {e}")
@@ -71,7 +74,7 @@ def refresh_region(region_name: str, update_bundle: bool = False):
     # List the system inference profiles once; both the prefix discovery and the
     # model -> profile map below are built from it
     logger.info("  Fetching inference profiles...")
-    all_profiles = fetch_all_inference_profiles(region_name)
+    all_profiles = list_system_profiles(region_name)
     profiles_listed = all_profiles is not None  # False: the listing failed (not "none listed")
     all_profiles = all_profiles or []
 
@@ -155,6 +158,9 @@ def refresh_region(region_name: str, update_bundle: bool = False):
         # Preserve existing endpoints/quotas if they exist
         if model_id in existing_models:
             model['endpoints'] = dict(existing_models[model_id].get('endpoints') or {})
+            if not profiles_listed and existing_models[model_id].get('inference_profiles'):
+                # The listing failed: the saved profiles stay with the endpoints they belong to
+                model['inference_profiles'] = existing_models[model_id]['inference_profiles']
         # The endpoints follow the model: 'base' only while it is invokable on demand, and a
         # profile endpoint only while the region lists that profile (when the listing worked,
         # so a failed listing never drops saved quota mappings)

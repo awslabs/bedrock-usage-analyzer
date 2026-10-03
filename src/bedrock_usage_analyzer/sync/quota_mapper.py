@@ -9,7 +9,7 @@ import functools
 import sys
 from typing import Dict, List, Optional
 
-from bedrock_usage_analyzer.utils.yaml_handler import fm_file_data, load_data_file, quota_slots, save_yaml, valid_models
+from bedrock_usage_analyzer.utils.yaml_handler import endpoint_quotas, fm_file_data, load_data_file, quota_slots, save_yaml, valid_models
 from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, is_missing, list_quota_codes
 from bedrock_usage_analyzer.aws.bedrock_llm import extract_common_name, extract_quota_codes
@@ -188,8 +188,7 @@ class QuotaMapper:
         def missing(code):
             return is_missing(code, region, checks)
 
-        for endpoint_type, endpoint in (fm.get('endpoints') or {}).items():
-            quotas = (endpoint or {}).get('quotas') or {}
+        for endpoint_type, quotas in endpoint_quotas(fm):
             for metric, value in quotas.items():
                 if isinstance(value, dict) and value.get('code') and value['code'] not in listed_codes \
                         and missing(value['code']):
@@ -199,8 +198,8 @@ class QuotaMapper:
 
     @staticmethod
     def _drop_conflicting_saved_codes(fm: Dict, regional) -> None:
-        for endpoint_type, endpoint_value in (fm.get('endpoints') or {}).items():
-            scrub_conflicting(fm['model_id'], endpoint_type, (endpoint_value or {}).get('quotas'), regional)
+        for endpoint_type, quotas in endpoint_quotas(fm):
+            scrub_conflicting(fm['model_id'], endpoint_type, quotas, regional)
 
     def _get_endpoints_to_process(self, fm: Dict) -> List[str]:
         """Determine which endpoints to process for a model"""

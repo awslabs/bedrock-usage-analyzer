@@ -89,15 +89,27 @@ def has_endpoint(models, model_id, prefix):
     return (prefix or 'base') in (fm_endpoints(models, model_id) or set())
 
 
+def endpoint_quotas(model):
+    """(endpoint, quotas mapping) of each endpoint of one parsed fm-list model.
+
+    The one guarded walk: null or hand-edited non-mapping endpoints ('us: null',
+    'base: TODO') and non-mapping 'quotas' are skipped. The mappings are the model's own,
+    so callers may null codes in place.
+    """
+    endpoints = model.get('endpoints') if isinstance(model, dict) else None
+    for endpoint, endpoint_data in (endpoints if isinstance(endpoints, dict) else {}).items():
+        quotas = endpoint_data.get('quotas') if isinstance(endpoint_data, dict) else None
+        if isinstance(quotas, dict):
+            yield endpoint, quotas
+
+
 def quota_slots(models):
     """(model ID, endpoint, metric, code) of every mapped quota in parsed fm-list models.
 
     Null endpoints ('us: null'), null quotas and entries without a code are skipped.
     """
     for model in models or []:
-        for endpoint, endpoint_data in (model.get('endpoints') or {}).items():
-            if not isinstance(endpoint_data, dict):
-                continue
-            for metric, quota in (endpoint_data.get('quotas') or {}).items():
+        for endpoint, quotas in endpoint_quotas(model):
+            for metric, quota in quotas.items():
                 if isinstance(quota, dict) and quota.get('code'):
                     yield (model['model_id'], endpoint, metric, quota['code'])

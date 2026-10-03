@@ -133,7 +133,7 @@ def test_fm_list_refresh_keeps_bundled_quota_mappings_and_prefixes(monkeypatch, 
     monkeypatch.setattr(fm_list, 'fetch_foundation_models', lambda region: [
         {'model_id': mapped['model_id'], 'provider': mapped['provider'],
          'inference_types': mapped.get('inference_types', [])}])
-    monkeypatch.setattr(fm_list, 'fetch_all_inference_profiles', lambda region: [])
+    monkeypatch.setattr(fm_list, 'list_system_profiles', lambda region: [])
     fm_list.refresh_region('us-east-1')
 
     saved = load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]
@@ -335,7 +335,7 @@ def test_fm_list_refresh_writes_only_new_prefixes_to_user_file(monkeypatch, tmp_
            'is_regional': True, 'source': 'discovered'}
     monkeypatch.setattr(fm_list, 'discover_prefix_mapping', lambda region, profiles=None: [new])
     monkeypatch.setattr(fm_list, 'fetch_foundation_models', lambda region: [])
-    monkeypatch.setattr(fm_list, 'fetch_all_inference_profiles', lambda region: [])
+    monkeypatch.setattr(fm_list, 'list_system_profiles', lambda region: [])
     fm_list.refresh_region('mx-central-1')
     saved = load_yaml(str(tmp_path / 'data' / 'prefix-mapping.yml'))['prefixes']
     assert [p['prefix'] for p in saved] == ['mx']
@@ -419,15 +419,17 @@ def test_fm_list_refresh_adds_base_when_a_listed_model_gains_on_demand(monkeypat
     (tmp_path / 'data').mkdir(exist_ok=True)
     save_yaml(str(tmp_path / 'data' / 'fm-list-ap-south-1.yml'), {'models': [
         {'model_id': 'x.prov-only-v1:0', 'provider': 'X', 'inference_types': ['PROVISIONED'],
+         'inference_profiles': ['apac'],
          'endpoints': {'apac': {'quotas': {'tpm': {'code': 'L-A', 'name': 'n'}}}}}]})
     monkeypatch.setattr(fm_list, 'discover_prefix_mapping', lambda region, profiles=None: [])
-    monkeypatch.setattr(fm_list, 'fetch_all_inference_profiles', lambda region: None)   # listing failed
+    monkeypatch.setattr(fm_list, 'list_system_profiles', lambda region: None)   # listing failed
     monkeypatch.setattr(fm_list, 'fetch_foundation_models', lambda region: [
         {'model_id': 'x.prov-only-v1:0', 'provider': 'X', 'inference_types': ['ON_DEMAND', 'PROVISIONED']}])
     fm_list.refresh_region('ap-south-1')
     saved = load_yaml(str(tmp_path / 'data' / 'fm-list-ap-south-1.yml'))['models'][0]
     assert 'base' in saved['endpoints']
     assert saved['endpoints']['apac']['quotas']['tpm']['code'] == 'L-A'        # kept
+    assert saved['inference_profiles'] == ['apac']                             # kept with it
 
 
 def test_fm_list_for_a_region_of_another_partition_explains(monkeypatch):
@@ -446,9 +448,25 @@ def test_fm_list_refresh_prunes_profiles_when_the_region_lists_none(monkeypatch,
         {'model_id': 'x.m-v1:0', 'provider': 'X', 'inference_types': ['ON_DEMAND'],
          'endpoints': {'apac': {'quotas': {}}, 'base': {'quotas': {}}}}]})
     monkeypatch.setattr(fm_list, 'discover_prefix_mapping', lambda region, profiles=None: [])
-    monkeypatch.setattr(fm_list, 'fetch_all_inference_profiles', lambda region: [])     # all retired
+    monkeypatch.setattr(fm_list, 'list_system_profiles', lambda region: [])     # all retired
     monkeypatch.setattr(fm_list, 'fetch_foundation_models', lambda region: [
         {'model_id': 'x.m-v1:0', 'provider': 'X', 'inference_types': ['ON_DEMAND']}])
     fm_list.refresh_region('ap-south-1')
     saved = load_yaml(str(tmp_path / 'data' / 'fm-list-ap-south-1.yml'))['models'][0]
     assert set(saved['endpoints']) == {'base'}
+
+
+def test_hand_edited_non_mapping_endpoint_is_skipped(monkeypatch):
+    fm = {'model_id': 'x.m-v1:0', 'endpoints': {'base': 'TODO', 'us': True,
+                                                'eu': {'quotas': {'tpm': {'code': 'L-1', 'name': 'Global x'}}}}}
+    qm.QuotaMapper._drop_conflicting_saved_codes(fm, {'eu'})                  # no crash
+    assert fm['endpoints']['eu']['quotas']['tpm'] is None
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', lambda code, region: ('ok', {}))
+    qm.QuotaMapper._drop_unlisted_saved_codes(fm, {'L-2'}, 'us-east-1')
+
+
+def test_load_existing_models_still_reads_a_file_path(tmp_path):
+    from bedrock_usage_analyzer.sync import fm_list
+    path = tmp_path / 'fm-list-us-east-1.yml'
+    save_yaml(str(path), {'models': [{'model_id': 'x.m-v1:0', 'endpoints': {}}]})
+    assert list(fm_list.load_existing_models(str(path))) == ['x.m-v1:0']

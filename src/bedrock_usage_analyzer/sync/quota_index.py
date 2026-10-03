@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict
 import sys
 
-from bedrock_usage_analyzer.utils.yaml_handler import fm_file_data, load_data_file, quota_slots, save_yaml, valid_models
+from bedrock_usage_analyzer.utils.yaml_handler import endpoint_quotas, fm_file_data, load_data_file, quota_slots, save_yaml, valid_models
 from bedrock_usage_analyzer.utils.csv_handler import write_csv
 from bedrock_usage_analyzer.utils.paths import list_data_names, get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, is_missing, list_quota_codes, lookup_quota, QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK
@@ -328,8 +328,7 @@ class QuotaIndexGenerator:
         if region not in self._mismatch_cache:
             slots = set()
             for model in valid_models(self._fm_data[region]):
-                for endpoint, endpoint_data in (model.get('endpoints') or {}).items():
-                    quotas = (endpoint_data or {}).get('quotas') or {}
+                for endpoint, quotas in endpoint_quotas(model):
                     for metric, quota in quotas.items():
                         if not isinstance(quota, dict) or not quota.get('code'):
                             continue
@@ -348,8 +347,7 @@ class QuotaIndexGenerator:
         modified = 0  # codes removed in this region
         reasons = set()
         for model in valid_models(data):
-            for endpoint, endpoint_data in (model.get('endpoints') or {}).items():
-                quotas = (endpoint_data or {}).get('quotas') or {}
+            for endpoint, quotas in endpoint_quotas(model):
                 # Contradicting this model/endpoint by the stored name (the same rule the
                 # analyzer and fm-quotas apply) or flagged by the index, then codes the region lacks
                 removed = []

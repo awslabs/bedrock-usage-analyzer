@@ -331,7 +331,17 @@ def fetch_foundation_models(region: str) -> Optional[List[Dict]]:
         return None
 
 
-def fetch_all_inference_profiles(region: str) -> Optional[List[Dict]]:
+def list_system_profiles(region: str) -> Optional[List[Dict]]:
+    """The region's system inference profiles, or None when the listing failed (not "none listed")."""
+    try:
+        return list_inference_profiles(create_client('bedrock', region), 'SYSTEM_DEFINED')
+    except Exception as e:
+        # Inference profiles might not be available in all regions
+        logger.warning(f"  Could not list inference profiles in {region}: {e}")
+        return None
+
+
+def fetch_all_inference_profiles(region: str) -> List[Dict]:
     """Fetch ALL inference profiles in region
     This fetches only system inference profile, not application inference profile
     The purpose is to list down the available system inference profiles for a given FM.
@@ -340,14 +350,10 @@ def fetch_all_inference_profiles(region: str) -> Optional[List[Dict]]:
         region: AWS region name
         
     Returns:
-        List of inference profile dictionaries
+        List of inference profile dictionaries; [] on failure (the contract from earlier
+        releases; list_system_profiles tells a failure apart)
     """
-    try:
-        return list_inference_profiles(create_client('bedrock', region), 'SYSTEM_DEFINED')
-    except Exception as e:
-        # Inference profiles might not be available in all regions
-        logger.warning(f"  Could not list inference profiles in {region}: {e}")
-        return None  # not [] : callers must tell a failed listing from a region listing none
+    return list_system_profiles(region) or []
 
 
 def build_profile_map(profiles: List[Dict]) -> Dict[str, List[str]]:
