@@ -491,3 +491,11 @@ def test_learned_country_ranks_before_a_regional_profile_with_the_same_set():
     fetcher.list_application_profiles()
     from bedrock_usage_analyzer.core.profile_fetcher import _specific_first
     assert _specific_first([f"eu.{NOVA}", f"se.{NOVA}"], fetcher._country_regions)[0] == f"se.{NOVA}"
+
+
+def test_narrowest_geography_wins_when_learned_sets_overlap():
+    fetcher = InferenceProfileFetcher(FakeBedrock())
+    fetcher._country_regions = {'jp': {'ap-northeast-1', 'ap-northeast-3'},
+                                'aa': {'ap-northeast-1', 'ap-northeast-3', 'ap-northeast-2'}}
+    fetcher._listed_prefixes = {'jp', 'aa'}                   # 'aa' sorts first but is wider
+    assert fetcher._country_of({'ap-northeast-1', 'ap-northeast-3'}) == 'jp'

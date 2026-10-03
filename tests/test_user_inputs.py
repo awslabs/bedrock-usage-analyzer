@@ -311,7 +311,7 @@ def test_mismatch_uses_configured_region_when_no_flag(monkeypatch, caplog):
     inputs = UserInputs()
     assert inputs._get_current_account(None) == '1'
     assert inputs.partition == 'aws-us-gov'
-    assert 'Ignoring default region us-west-2: the credentials are for AWS GovCloud (US)' in caplog.text
+    assert 'The credentials are for AWS GovCloud (US), but us-west-2 is in AWS Commercial' in caplog.text
 
 
 def test_mismatch_with_region_flag_exits(monkeypatch, caplog):
@@ -444,3 +444,31 @@ def test_bare_id_of_profile_only_model_points_to_its_profiles(inputs, monkeypatc
     monkeypatch.setattr(inputs, '_is_system_profile', lambda value: False)
     inputs._parse_model_id('anthropic.claude-x-v1:0')
     assert 'no on-demand endpoint' in caplog.text and 'global.anthropic.claude-x-v1:0' in caplog.text
+
+
+def test_mismatch_found_without_any_region(monkeypatch, caplog):
+    """GovCloud credentials, no --region and no AWS_REGION: found through the GovCloud probe."""
+    import logging
+    caplog.set_level(logging.WARNING)
+    monkeypatch.setattr(ui_module, 'region_hint', lambda: None)
+
+    def identity(region=None, **_):
+        if region == 'us-gov-west-1':
+            return {'Account': '1', 'Arn': 'arn:aws-us-gov:iam::1:user/a', 'Partition': 'aws-us-gov'}
+        raise RuntimeError('InvalidClientTokenId')
+    monkeypatch.setattr(ui_module, 'get_caller_identity', identity)
+    inputs = UserInputs()
+    assert inputs._get_current_account(None) == '1' and inputs.partition == 'aws-us-gov'
+    assert 'the default STS endpoint' in caplog.text
+
+
+def test_expired_token_is_not_probed_as_a_partition_mismatch(monkeypatch):
+    asked = []
+
+    def identity(region=None, probe=False, **_):
+        asked.append((region, probe))
+        raise RuntimeError('ExpiredToken: The security token included in the request is expired')
+    monkeypatch.setattr(ui_module, 'get_caller_identity', identity)
+    with pytest.raises(SystemExit):
+        UserInputs()._get_current_account('us-east-1')
+    assert not any(probe for _, probe in asked)

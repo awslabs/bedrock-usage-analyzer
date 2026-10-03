@@ -68,6 +68,7 @@ def test_regions_for_credentials_filters_by_partition(monkeypatch):
     assert r.regions_for_credentials(['us-east-1', 'us-gov-west-1']) == (['us-gov-west-1'], 'aws-us-gov')
     # Unknown partition: stop instead of processing regions the credentials cannot call
     monkeypatch.setattr(r, 'detect_credentials_partition', lambda _=None: None)
+    monkeypatch.setattr(r, 'probe_if_rejected', lambda region: None)
     with pytest.raises(SystemExit):
         r.regions_for_credentials(['us-east-1', 'us-gov-west-1'])
 
@@ -123,6 +124,7 @@ def test_refresh_regions_exits_when_nothing_found(monkeypatch):
 def test_fetch_exits_when_credentials_do_not_work(monkeypatch):
     """No silent fallback to every Bedrock region when the caller identity fails."""
     monkeypatch.setattr(r, 'detect_credentials_partition', lambda _=None: None)
+    monkeypatch.setattr(r, 'probe_if_rejected', lambda region: None)
     with pytest.raises(SystemExit):
         r.fetch_enabled_regions(None, None)
     with pytest.raises(SystemExit):
@@ -158,7 +160,7 @@ def test_partition_found_when_named_region_is_in_another_partition(monkeypatch, 
     import logging
     caplog.set_level(logging.WARNING)
     monkeypatch.setattr(r, 'detect_credentials_partition', lambda region=None: None)
-    monkeypatch.setattr(r, 'probe_other_partitions', lambda region: {'Partition': 'aws'})
+    monkeypatch.setattr(r, 'probe_if_rejected', lambda region: {'Partition': 'aws'})
     assert r.credentials_partition_or_exit('us-gov-west-1') == 'aws'
     assert 'credentials are for AWS Commercial, but us-gov-west-1 is in AWS GovCloud (US)' in caplog.text
 
@@ -167,5 +169,5 @@ def test_partition_probed_even_without_a_region_hint(monkeypatch):
     monkeypatch.setattr(r, 'region_hint', lambda: None)
     monkeypatch.setattr(r, 'detect_credentials_partition', lambda region=None: None)
     asked = []
-    monkeypatch.setattr(r, 'probe_other_partitions', lambda region: asked.append(region) or {'Partition': 'aws-us-gov'})
+    monkeypatch.setattr(r, 'probe_if_rejected', lambda region: asked.append(region) or {'Partition': 'aws-us-gov'})
     assert r.credentials_partition_or_exit() == 'aws-us-gov' and asked == [None]

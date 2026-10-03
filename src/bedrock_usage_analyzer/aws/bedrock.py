@@ -138,13 +138,15 @@ def get_default_region_prefix_map() -> Dict[str, str]:
 def get_profile_prefixes() -> frozenset:
     """All system inference profile prefixes, from prefix-mapping.yml (fallback set without it)."""
     global _profile_prefixes_cache
-    if _profile_prefixes_cache is None or _profile_prefixes_cache[0] is not _prefix_mapping_cache:
-        # Rebuilt only when the prefix mapping was (re)loaded
-        try:
-            mapped = {m['prefix'] for m in _load_prefix_mapping() if m.get('prefix') != 'base'}
-        except FileNotFoundError:
-            mapped = set()
-        _profile_prefixes_cache = (_prefix_mapping_cache, frozenset(mapped) if mapped else FALLBACK_PROFILE_PREFIXES)
+    try:
+        mapping = _load_prefix_mapping()
+    except FileNotFoundError:
+        return FALLBACK_PROFILE_PREFIXES
+    # Keyed by the mapping list itself: the loader returns the same cached list until it is
+    # reloaded, so a reload (or a stubbed loader) always rebuilds the set
+    if _profile_prefixes_cache is None or _profile_prefixes_cache[0] is not mapping:
+        mapped = frozenset(m['prefix'] for m in mapping if m.get('prefix') != 'base')
+        _profile_prefixes_cache = (mapping, mapped or FALLBACK_PROFILE_PREFIXES)
     return _profile_prefixes_cache[1]
 
 

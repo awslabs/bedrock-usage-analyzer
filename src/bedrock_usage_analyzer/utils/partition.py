@@ -299,3 +299,29 @@ def clear_cache() -> None:
     _caller_identity_cache.clear()
     _config_region_cache.clear()
     _identity_fallback.clear()
+
+
+def probe_if_rejected(region: Optional[str], error: Optional[Exception] = None,
+                      lookup=None, probe_lookup=None) -> Optional[Dict[str, str]]:
+    """Identity from another partition's STS, asked only when STS rejected the token.
+
+    ``error`` is the failure already seen; without it the identity lookup for ``region``
+    is tried once to get it. A network error or an expired token is not a partition
+    mismatch, so nothing more is asked then. None when no other partition accepts them.
+    """
+    if error is None:
+        try:
+            resolve_caller_identity(region, lookup=lookup)
+            return None  # works in the asked partition
+        except Exception as e:
+            error = e
+    if not is_token_rejection(error):
+        return None
+    return probe_other_partitions(region, lookup=probe_lookup)
+
+
+def other_partition_message(region: Optional[str], credentials_partition: str) -> str:
+    """'The credentials are for X, but <region> is in Y.' (region None: the default STS endpoint)."""
+    where = region or 'the default STS endpoint'
+    asked = get_partition_display_name(get_partition_for_region(region)) if region else 'AWS Commercial'
+    return f"The credentials are for {get_partition_display_name(credentials_partition)}, but {where} is in {asked}."

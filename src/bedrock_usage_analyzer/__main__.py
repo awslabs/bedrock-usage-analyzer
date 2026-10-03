@@ -181,13 +181,16 @@ def cmd_refresh_fm_quotas(args):
     bedrock_region = args.bedrock_region
     model_id = args.model_id
     
-    credential_regions = None  # read once when all arguments are given (else the picker reads it)
+    credential_regions = None  # the credentials' regions, read once (by the picker or below)
     if not bedrock_region or not model_id or not target_region:
+        resolved = {}
         bedrock_region, model_id, target_region = select_quota_mapping_params(
             target_region=target_region,
             bedrock_region=bedrock_region,
-            model_id=model_id
+            model_id=model_id,
+            resolved=resolved,
         )
+        credential_regions = resolved.get('regions')
     else:
         from bedrock_usage_analyzer.sync.regions import load_region_names, regions_for_credentials
         from bedrock_usage_analyzer.utils.ui import require_credentials_partition

@@ -86,14 +86,16 @@ def require_credentials_partition(bedrock_region: str, credentials_partition: st
         sys.exit(1)
 
 
-def select_quota_mapping_params(target_region: str = None, bedrock_region: str = None, model_id: str = None) -> Tuple[str, str, str]:
+def select_quota_mapping_params(target_region: str = None, bedrock_region: str = None, model_id: str = None,
+                                resolved: dict = None) -> Tuple[str, str, str]:
     """Interactive selection for quota mapping parameters
     
     Args:
         target_region: Pre-filled target region (skips prompt if provided)
         bedrock_region: Pre-filled bedrock region (skips prompt if provided)
         model_id: Pre-filled model ID (skips prompt if provided)
-    
+        resolved: Optional dict; gets 'regions', the credentials' regions read here
+
     Returns:
         Tuple of (bedrock_region, model_id, target_region)
     """
@@ -118,6 +120,8 @@ def select_quota_mapping_params(target_region: str = None, bedrock_region: str =
     if not all_regions:
         print("\nNo regions in regions.yml for these credentials. Run: bua refresh regions", file=sys.stderr)
         sys.exit(1)
+    if resolved is not None:
+        resolved['regions'] = all_regions  # reused by the quota mapper (no second lookup)
 
     # Step 1: Select Bedrock API region (skip if provided)
     if not bedrock_region:

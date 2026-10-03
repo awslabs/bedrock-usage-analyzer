@@ -23,9 +23,9 @@ from ..utils.partition import (
     get_partition_display_name,
     get_region_display_name,
     is_govcloud_region,
-    is_token_rejection,
+    other_partition_message,
     is_valid_region_name,
-    probe_other_partitions,
+    probe_if_rejected,
     region_hint,
     resolve_caller_identity,
 )
@@ -198,15 +198,13 @@ class UserInputs:
             # Regional STS first (VPC endpoints), then the partition's home region
             identity = resolve_caller_identity(region, lookup=get_caller_identity)
         except Exception as e:
-            identity = self._explain_partition_mismatch(region or region_hint()) \
-                if is_token_rejection(e) else None
+            identity = self._explain_partition_mismatch(region or region_hint(), e)
             if identity is None:
                 self._exit_no_identity(e, region)
             # Only a default region (AWS_REGION / config), or none, was in another partition:
             # the region picker below lists the credentials' partition
-            where = f"default region {region_hint()}" if region_hint() else "the default STS endpoint"
-            logger.warning(f"  Ignoring {where}: the credentials are for "
-                           f"{get_partition_display_name(identity['Partition'])}")
+            logger.warning(f"  {other_partition_message(region_hint(), identity['Partition'])} "
+                           f"Using the credentials' partition.")
         self.partition = identity['Partition']
         logger.info(f"  Account: {identity['Account']}")
         if self.partition != 'aws':
@@ -223,7 +221,7 @@ class UserInputs:
                          "or set AWS_REGION.")
         sys.exit(1)
 
-    def _explain_partition_mismatch(self, region):
+    def _explain_partition_mismatch(self, region, error):
         """If STS in ``region`` rejected the credentials, check whether they belong to another partition.
 
         STS of one partition rejects credentials of another with a generic
@@ -233,7 +231,7 @@ class UserInputs:
         """
         # Shared with the refresh commands; the lookup goes through this module's
         # get_caller_identity so it can be stubbed in tests
-        identity = probe_other_partitions(region, lookup=lambda r: get_caller_identity(r, probe=True))
+        identity = probe_if_rejected(region, error, probe_lookup=lambda r: get_caller_identity(r, probe=True))
         if identity and self._region_given:
             self.partition = identity['Partition']
             self._check_region_partition(region)

@@ -54,8 +54,8 @@ def list_quota_codes(region: str, service_code: str = 'bedrock',
         return quotas
     except Exception as e:
         from bedrock_usage_analyzer.core.errors import is_access_denied
-        # quiet_denied: the caller (the analyzer) falls back to GetServiceQuota per code, so a
-        # missing servicequotas:ListServiceQuotas permission is not worth a warning there
+        # quiet_denied: callers that fall back to GetServiceQuota per code (the analyzer and
+        # quota-index) do not need servicequotas:ListServiceQuotas, so no warning there
         (logger.debug if quiet_denied and is_access_denied(e) else logger.warning)(
             f"  Could not list {service_code} quotas in {region}: {e}")
         return None
@@ -122,4 +122,7 @@ def lookup_quota(code: str, region: str, listings: Dict, check=None, lister=None
 
 def is_missing(code: str, region: str, cache: Dict, lookup=None) -> bool:
     """True when Service Quotas says ``code`` does not exist in ``region`` (result cached)."""
-    return confirm_statuses([(code, region)], cache, lookup=lookup)[(code, region)] == QUOTA_MISSING
+    key = (code, region)
+    if key not in cache:
+        cache[key] = (lookup or check_quota)(code, region)[0]
+    return cache[key] == QUOTA_MISSING

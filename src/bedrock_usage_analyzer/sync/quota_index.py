@@ -210,7 +210,9 @@ class QuotaIndexGenerator:
         # cleanup reuses these listings and results
         regions = sorted((set(self._fm_data) | {region for _, region in keys}) & self._checked_regions)
         with ThreadPoolExecutor(max_workers=8) as pool:
-            self._listings = dict(zip(regions, pool.map(list_quota_codes, regions)))
+            # Without ListServiceQuotas each code is looked up on its own (no warning needed)
+            self._listings = dict(zip(regions, pool.map(
+                lambda region: list_quota_codes(region, quiet_denied=True), regions)))
             cache = dict(zip(keys, pool.map(lambda key: self._lookup(*key), keys)))
 
         unverified = 0

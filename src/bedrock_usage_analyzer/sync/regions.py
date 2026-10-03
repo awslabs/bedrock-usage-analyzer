@@ -16,7 +16,8 @@ from bedrock_usage_analyzer.utils.partition import (
     get_partition_display_name,
     get_partition_for_region,
     partition_regions,
-    probe_other_partitions,
+    other_partition_message,
+    probe_if_rejected,
     region_hint,
 )
 from bedrock_usage_analyzer.utils.paths import get_data_path
@@ -74,13 +75,10 @@ def credentials_partition_or_exit(region: Optional[str] = None) -> str:
     if partition is None:
         # The region (or, without one, global STS in the commercial partition) may belong to
         # another partition than the credentials; STS there rejects a valid identity
-        identity = probe_other_partitions(hint)
+        identity = probe_if_rejected(hint)
         if identity:
             partition = identity['Partition']
-            where = hint or 'the default (commercial) STS endpoint'
-            asked = get_partition_display_name(get_partition_for_region(hint)) if hint else 'AWS Commercial'
-            logger.warning(f"The credentials are for {get_partition_display_name(partition)}, "
-                           f"but {where} is in {asked}.")
+            logger.warning(other_partition_message(hint, partition))
     if partition is None:
         logger.error("Could not read the caller identity; check your AWS credentials "
                      "(aws sts get-caller-identity); for GovCloud set AWS_REGION, e.g. AWS_REGION=us-gov-west-1.")

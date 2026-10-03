@@ -330,7 +330,7 @@ def test_quota_index_uses_region_listings_and_confirms_absent_codes(monkeypatch,
                 'tpm': {'code': 'L-ABC', 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
     listed = {'us-east-1': {'L-ABC': {'QuotaCode': 'L-ABC', 'QuotaName': 'On-demand tokens per minute for Amazon Nova Lite'}},
               'ap-southeast-2': {}}
-    monkeypatch.setattr(quota_index, 'list_quota_codes', lambda region: listed[region])
+    monkeypatch.setattr(quota_index, 'list_quota_codes', lambda region, **_: listed[region])
     confirmed = []
     monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: confirmed.append((code, region)) or ('missing', None))
     quota_index.QuotaIndexGenerator().run()
@@ -347,7 +347,7 @@ def test_quota_index_skips_regions_the_account_has_not_enabled(monkeypatch, tmp_
             {'model_id': 'amazon.nova-lite-v1:0', 'provider': 'Amazon', 'endpoints': {'base': {'quotas': {
                 'tpm': {'code': 'L-1', 'name': 'On-demand tokens per minute for Amazon Nova Lite'}}}}}]})
     listed, asked = [], []
-    monkeypatch.setattr(quota_index, 'list_quota_codes', lambda region: listed.append(region) or None)
+    monkeypatch.setattr(quota_index, 'list_quota_codes', lambda region, **_: listed.append(region) or None)
     monkeypatch.setattr(quota_index, 'check_quota', lambda code, region: asked.append(region) or ('ok', {'QuotaName': 'n'}))
     quota_index.QuotaIndexGenerator().run()
     assert 'af-south-1' not in listed + asked                 # opt-in region not enabled: no calls

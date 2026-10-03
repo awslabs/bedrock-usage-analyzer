@@ -226,3 +226,25 @@ def test_identity_fallback_warns_about_region_not_enabled(caplog):
 
     p.resolve_caller_identity('ap-east-2', lookup)
     assert 'ap-east-2 may not be enabled for this account' in caplog.text
+
+
+def test_list_quota_codes_quiet_only_when_asked(monkeypatch, caplog):
+    import logging
+    from bedrock_usage_analyzer.aws import servicequotas as sq
+
+    class Denied:
+        def get_paginator(self, _):
+            raise RuntimeError('AccessDeniedException: not authorized to perform servicequotas:ListServiceQuotas')
+
+    monkeypatch.setattr(sq, 'regional_client', lambda region: Denied())
+    caplog.set_level(logging.WARNING)
+    assert sq.list_quota_codes('us-east-1', quiet_denied=True) is None and 'Could not list' not in caplog.text
+    assert sq.list_quota_codes('us-east-1') is None and 'Could not list' in caplog.text
+
+
+def test_is_missing_caches_one_lookup_per_pair():
+    from bedrock_usage_analyzer.aws import servicequotas as sq
+    calls, cache = [], {}
+    lookup = lambda code, region: calls.append(code) or (sq.QUOTA_MISSING, None)
+    assert sq.is_missing('L-1', 'us-east-1', cache, lookup) and sq.is_missing('L-1', 'us-east-1', cache, lookup)
+    assert calls == ['L-1']

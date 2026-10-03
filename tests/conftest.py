@@ -27,7 +27,7 @@ def isolated_env(tmp_path, monkeypatch):
     servicequotas_module._clients.clear()
     # quota-index lists each region's quotas first; tests stub check_quota per code instead
     from bedrock_usage_analyzer.sync import quota_index
-    monkeypatch.setattr(quota_index, 'list_quota_codes', lambda region: None)
+    monkeypatch.setattr(quota_index, 'list_quota_codes', lambda region, **_: None)
     from bedrock_usage_analyzer.core import analyzer
     monkeypatch.setattr(analyzer, 'list_quota_codes', lambda region, **_: None)
     yield
