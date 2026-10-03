@@ -78,6 +78,8 @@ def _load_prefix_mapping() -> List[Dict]:
     global _prefix_mapping_cache
 
     if _prefix_mapping_cache is not None:
+        if not _prefix_mapping_cache:
+            raise FileNotFoundError("prefix-mapping.yml not found")  # known missing: no re-read
         return _prefix_mapping_cache
 
     bundled, user = prefix_mapping_layers()
@@ -86,6 +88,9 @@ def _load_prefix_mapping() -> List[Dict]:
         merged[entry['prefix']] = entry
 
     if not merged:
+        # Remembered (an empty list) until load_prefix_mapping(refresh=True), so the fallback
+        # prefixes are used without reading both files on every call
+        _prefix_mapping_cache = []
         raise FileNotFoundError(
             "\nprefix-mapping.yml not found!\n"
             "Please run: bua refresh fm-list\n"

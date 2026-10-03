@@ -324,9 +324,12 @@ class QuotaMapper:
         try:
             checkout = self._bundle_file(region)
             # --update-bundle maps the checkout's list (the file it rewrites), not a user copy
-            # or the installed package's copy, which would overwrite newer bundled entries
-            data = load_yaml(str(checkout)) if checkout and checkout.exists() else \
-                load_data_file(f'fm-list-{region}.yml')
+            # or the installed package's copy, which would overwrite newer bundled entries; a
+            # region the checkout does not bundle is skipped (run refresh fm-list first)
+            if checkout:
+                data = load_yaml(str(checkout)) if checkout.exists() else None
+            else:
+                data = load_data_file(f'fm-list-{region}.yml')
         except Exception:
             return None
         if data is None:

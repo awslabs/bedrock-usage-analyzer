@@ -48,7 +48,10 @@ def read_region_file(path) -> List[str]:
     """Region names from one regions.yml file ([] if it does not exist)."""
     if not path or not os.path.exists(str(path)):
         return []
-    return normalize_region_names((load_yaml(str(path)) or {}).get('regions', []))
+    data = load_yaml(str(path))
+    # A hand-edited file whose top level is not a mapping ('- us-east-1' list) reads as empty,
+    # so callers give the 'run: bua refresh regions' hint instead of a traceback
+    return normalize_region_names(data.get('regions', []) if isinstance(data, dict) else [])
 
 
 def load_region_names() -> List[str]:

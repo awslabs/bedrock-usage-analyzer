@@ -141,8 +141,15 @@ def refresh_region(region_name: str, update_bundle: bool = False):
     output_file = get_writable_path(f'fm-list-{region_name}.yml')
 
     # Load existing models to preserve quota mappings
-    # User copy if present, else the bundled list, so refreshing never drops quota mappings
-    existing_models = load_existing_models(region_name)
+    # User copy if present, else the bundled list, so refreshing never drops quota mappings.
+    # --update-bundle in a checkout reads and writes the checkout's list only, as fm-quotas
+    # and quota-index do (a user copy would revert their newer bundled mappings)
+    checkout = get_bundle_path() if update_bundle else None
+    checkout_file = checkout / f'fm-list-{region_name}.yml' if checkout else None
+    if checkout_file:
+        existing_models = load_existing_models(str(checkout_file)) if checkout_file.exists() else {}
+    else:
+        existing_models = load_existing_models(region_name)
     
     # Build mapping from model to inference profiles
     profile_map = build_profile_map(all_profiles)
@@ -184,15 +191,12 @@ def refresh_region(region_name: str, update_bundle: bool = False):
     
     # Save updated models
     models_data = {'models': sorted(updated_models, key=lambda x: (x['provider'], x['model_id']))}
+    if checkout_file:
+        save_yaml(str(checkout_file), models_data)
+        logger.info(f"  ✓ Saved {len(updated_models)} models to {checkout_file} (bundled)")
+        return
     save_yaml(str(output_file), models_data)
     logger.info(f"  ✓ Saved {len(updated_models)} models to {output_file}")
-    
-    if update_bundle:
-        bundle_path = get_bundle_path()
-        if bundle_path:
-            bundle_file = bundle_path / f'fm-list-{region_name}.yml'
-            save_yaml(str(bundle_file), models_data)
-            logger.info(f"  ✓ Saved: {bundle_file} (bundled)")
 
 
 def refresh_all_regions(regions: List[str], update_bundle: bool = False):

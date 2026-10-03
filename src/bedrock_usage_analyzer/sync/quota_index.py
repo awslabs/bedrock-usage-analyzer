@@ -393,10 +393,11 @@ class QuotaIndexGenerator:
             self._files_written += 1
             written = True
             logger.info(f"  ✓ Updated {user_file}")
-        if bundle_path:
-            bundle_file = bundle_path / f'fm-list-{region}.yml'
-            # With --update-bundle `data` was read from this checkout file (_load_all_models),
-            # so the removals above are already in it
+        bundle_file = bundle_path / f'fm-list-{region}.yml' if bundle_path else None
+        # With --update-bundle `data` was read from this checkout file (_load_all_models), so
+        # the removals above are already in it. A region the checkout does not bundle came
+        # from another copy and is not written into the checkout.
+        if bundle_file and bundle_file.exists():
             save_yaml(str(bundle_file), data)
             self._files_written += 1
             written = True

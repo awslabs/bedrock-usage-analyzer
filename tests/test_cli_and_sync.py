@@ -469,6 +469,34 @@ def test_fm_list_refresh_prunes_profiles_when_the_region_lists_none(monkeypatch,
     assert set(saved['endpoints']) == {'base'}
 
 
+def test_fm_list_update_bundle_keeps_the_checkout_mappings(monkeypatch, tmp_path):
+    """--update-bundle starts from the checkout's list, not a stale user copy, and leaves the user copy alone."""
+    from bedrock_usage_analyzer.sync import fm_list
+    (tmp_path / 'data').mkdir(exist_ok=True)
+    checkout = tmp_path / 'checkout'
+    checkout.mkdir()
+    stale = {'models': [{'model_id': 'x.m-v1:0', 'provider': 'X', 'endpoints': {'base': {'quotas': {}}}}]}
+    save_yaml(str(tmp_path / 'data' / 'fm-list-ap-south-1.yml'), stale)
+    save_yaml(str(checkout / 'fm-list-ap-south-1.yml'), {'models': [{'model_id': 'x.m-v1:0', 'provider': 'X', 'endpoints': {
+        'base': {'quotas': {'tpm': {'code': 'L-NEW', 'name': 'On-demand model inference tokens per minute for X'}}}}}]})
+    monkeypatch.setattr(fm_list, 'get_bundle_path', lambda: checkout)
+    monkeypatch.setattr(fm_list, 'discover_prefix_mapping', lambda region, profiles=None: [])
+    monkeypatch.setattr(fm_list, 'list_system_profiles', lambda region: [])
+    monkeypatch.setattr(fm_list, 'fetch_foundation_models', lambda region: [
+        {'model_id': 'x.m-v1:0', 'provider': 'X', 'inference_types': ['ON_DEMAND']}])
+    fm_list.refresh_region('ap-south-1', update_bundle=True)
+    bundled = load_yaml(str(checkout / 'fm-list-ap-south-1.yml'))['models'][0]['endpoints']
+    assert bundled['base']['quotas']['tpm']['code'] == 'L-NEW'
+    assert load_yaml(str(tmp_path / 'data' / 'fm-list-ap-south-1.yml')) == stale
+
+
+def test_regions_file_with_a_list_at_the_top_reads_as_empty(tmp_path):
+    from bedrock_usage_analyzer.sync.regions import read_region_file
+    path = tmp_path / 'regions.yml'
+    path.write_text('- us-east-1\n- us-west-2\n')
+    assert read_region_file(path) == []
+
+
 def test_hand_edited_non_mapping_endpoint_is_skipped(monkeypatch):
     fm = {'model_id': 'x.m-v1:0', 'endpoints': {'base': 'TODO', 'us': True,
                                                 'eu': {'quotas': {'tpm': {'code': 'L-1', 'name': 'Global x'}}}}}
