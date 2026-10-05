@@ -204,6 +204,15 @@ def test_collect_rejects_region_in_other_partition(inputs, monkeypatch):
         inputs.collect(region='us-gov-west-1', model_id='x.y', skip_confirm=True)
 
 
+def test_collect_checks_partition_when_sts_answers_for_another_partition(inputs, monkeypatch):
+    """A custom STS endpoint answers for us-gov-west-1 with commercial credentials: still stopped."""
+    monkeypatch.setattr(ui_module, 'get_caller_identity',
+                        lambda region=None, **_: {'Account': '1', 'Arn': 'arn:aws:iam::1:user/a', 'Partition': 'aws'})
+    monkeypatch.setattr(inputs, '_ensure_fm_list', lambda region: pytest.fail('must stop before the fm-list'))
+    with pytest.raises(SystemExit):
+        inputs.collect(region='us-gov-west-1', model_id='x.y', skip_confirm=True)
+
+
 def test_account_failure_exits_with_hint(monkeypatch, caplog):
     def fail(region=None, **_):
         raise RuntimeError('InvalidClientTokenId: The security token included in the request is invalid')

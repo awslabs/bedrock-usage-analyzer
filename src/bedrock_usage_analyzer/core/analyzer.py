@@ -19,7 +19,7 @@ from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.servicequotas import (
     QUOTA_MISSING, QUOTA_OK, list_quota_codes, lookup_quota)
 from bedrock_usage_analyzer.utils.yaml_handler import (
-    has_endpoint, load_fm_list, model_endpoints, profile_endpoints)
+    endpoint_quotas, has_endpoint, load_fm_list, profile_endpoints)
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
 
 logger = logging.getLogger(__name__)
@@ -95,14 +95,9 @@ class BedrockAnalyzer:
         for model in self._fm_list():
             if model['model_id'] != model_id:
                 continue
-            endpoints = model_endpoints(model)
-            if endpoint_key in endpoints:
-                endpoint = endpoints[endpoint_key]
-                saved = endpoint.get('quotas') if isinstance(endpoint, dict) else None
-                quotas = dict(saved) if isinstance(saved, dict) else {}  # tolerates hand edits
-            else:
-                # Old-format model-level quotas were migrated to 'base' by load_fm_list
-                return {}
+            # The guarded walk every reader uses (hand-edited 'us: null', 'quotas: TODO');
+            # old-format model-level quotas were migrated to 'base' by load_fm_list
+            quotas = dict(dict(endpoint_quotas(model)).get(endpoint_key) or {})
             # Skip codes that contradict this model or endpoint (e.g. saved by an older
             # version, before the mapping checks existed) instead of showing another limit
             for metric, quota, reason in scrub_conflicting(

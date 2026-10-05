@@ -14,7 +14,7 @@ from bedrock_usage_analyzer.utils.csv_handler import write_csv
 from bedrock_usage_analyzer.utils.paths import list_data_names, get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, is_missing, list_quota_codes, lookup_quota, QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
-from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict
+from bedrock_usage_analyzer.sync.quota_rules import slot_conflict
 
 logger = logging.getLogger(__name__)
 
@@ -262,7 +262,8 @@ class QuotaIndexGenerator:
                 entry['quota_name'] = quota.get('QuotaName') or entry.get('quota_name') or 'N/A'
             # Checked for every entry, whatever the lookup outcome, with the best name known,
             # so the CSV and the fm-list cleanup always agree
-            reason = mapping_conflict(entry['model_id'], entry['endpoint'], entry.get('quota_name'), regional)
+            reason = slot_conflict(entry['model_id'], entry['endpoint'], entry['quota_type'],
+                                   entry.get('quota_name'), regional)
             if reason:
                 # The code belongs to another model or endpoint type
                 logger.info(f"  Mismatch: {entry['model_id']} {entry['endpoint']} {entry['quota_type']} "
@@ -350,8 +351,8 @@ class QuotaIndexGenerator:
                         if not isinstance(quota, dict) or not quota.get('code'):
                             continue
                         slot = (model['model_id'], endpoint, metric, quota['code'])
-                        if slot in self._mismatched or mapping_conflict(
-                                model['model_id'], endpoint, quota.get('name'), self._regional):
+                        if slot in self._mismatched or slot_conflict(
+                                model['model_id'], endpoint, metric, quota.get('name'), self._regional):
                             slots.add(slot)
             self._mismatch_cache[region] = slots
         return self._mismatch_cache[region]

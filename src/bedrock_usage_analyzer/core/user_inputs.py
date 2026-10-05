@@ -140,7 +140,9 @@ class UserInputs:
 
         # Region selection (skip if provided via CLI)
         if region:
-            # A region of another partition was already rejected by the STS call above
+            # STS in a region of another partition usually rejects the credentials (handled
+            # above), but a custom STS endpoint can answer: check the partition either way
+            self._check_region_partition(region)
             self.region = region
             logger.info(f"\nUsing region: {region}")
         else:

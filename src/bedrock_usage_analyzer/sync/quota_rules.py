@@ -103,15 +103,28 @@ def mapping_conflict(model_id: str, endpoint_type: str, quota_name: Optional[str
     return None
 
 
+def slot_conflict(model_id: str, endpoint_type: str, metric: str, quota_name: Optional[str],
+                  regional_prefixes) -> Optional[str]:
+    """Why a saved ``metric`` slot cannot hold ``quota_name``, or None: it contradicts the
+    model endpoint, or measures another metric (an RPM quota saved as the TPM one)."""
+    reason = mapping_conflict(model_id, endpoint_type, quota_name, regional_prefixes)
+    if reason or not quota_name or metric not in METRIC_KEYWORDS or measures_metric(metric, quota_name):
+        return reason
+    # Only a name that names another metric is a conflict: a name without any metric keyword
+    # (hand-edited, or shortened) says nothing about what it measures
+    other = [m for m in METRIC_KEYWORDS if m != metric and measures_metric(m, quota_name)]
+    return f"a {METRIC_KEYWORDS[other[0]]} quota saved as {metric}" if other else None
+
+
 def scrub_conflicting(model_id: str, endpoint_type: str, quotas: Optional[dict], regional_prefixes):
-    """Null, in place, the codes in ``quotas`` that contradict this model endpoint.
+    """Null, in place, the codes in ``quotas`` that contradict this model endpoint or metric.
 
     Returns [(metric, quota, reason)] for each code removed, so callers can log it.
     """
     removed = []
     for metric, quota in list((quotas or {}).items()):
         if isinstance(quota, dict):
-            reason = mapping_conflict(model_id, endpoint_type, quota.get('name'), regional_prefixes)
+            reason = slot_conflict(model_id, endpoint_type, metric, quota.get('name'), regional_prefixes)
             if reason:
                 removed.append((metric, quota, reason))
                 quotas[metric] = None

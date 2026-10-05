@@ -412,6 +412,18 @@ def test_scrub_conflicting_reports_and_nulls():
     assert [m for m, _, _ in removed] == ['tpm'] and quotas['tpm'] is None and quotas['rpm']['code'] == 'L-R'
 
 
+def test_saved_quota_of_another_metric_is_scrubbed():
+    """An RPM quota saved in the TPM slot (by an older version) is not shown as the TPM limit."""
+    from bedrock_usage_analyzer.sync.quota_rules import scrub_conflicting, slot_conflict
+    quotas = {'tpm': {'code': 'L-R', 'name': 'On-demand model inference requests per minute for Amazon Nova Pro'},
+              'rpm': {'code': 'L-R', 'name': 'On-demand model inference requests per minute for Amazon Nova Pro'},
+              'tpd': {'code': 'L-X', 'name': 'shortened name'}}
+    removed = scrub_conflicting('amazon.nova-pro-v1:0', 'base', quotas, {'us'})
+    assert [m for m, _, _ in removed] == ['tpm'] and quotas['rpm'] and quotas['tpd']
+    assert 'requests per minute' in slot_conflict('amazon.nova-pro-v1:0', 'base', 'tpm',
+                                                  'On-demand model inference requests per minute for X', {'us'})
+
+
 def test_quota_index_without_regions_file_checks_only_account_regions(monkeypatch, tmp_path, no_bundle, commercial_creds):
     (tmp_path / 'data').mkdir()
     for region in ('ap-east-2', 'us-east-1'):
