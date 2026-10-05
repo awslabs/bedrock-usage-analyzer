@@ -490,6 +490,26 @@ def test_fm_list_update_bundle_keeps_the_checkout_mappings(monkeypatch, tmp_path
     assert load_yaml(str(tmp_path / 'data' / 'fm-list-ap-south-1.yml')) == stale
 
 
+def test_fm_quotas_rejects_a_malformed_region_before_any_aws_call(monkeypatch):
+    import argparse
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition',
+                        lambda _=None: pytest.fail('must not call STS'))
+    with pytest.raises(SystemExit):
+        cli.cmd_refresh_fm_quotas(argparse.Namespace(target_region='us-west', bedrock_region='us-west-2',
+                                                     model_id='m', update_bundle=False))
+
+
+def test_identity_failure_gets_the_hint_for_the_actual_error(monkeypatch, caplog):
+    from botocore.exceptions import EndpointConnectionError
+    from bedrock_usage_analyzer.sync import regions as r
+    error = EndpointConnectionError(endpoint_url='https://sts.us-east-1.amazonaws.com')
+    monkeypatch.setattr(r, 'detect_partition', lambda _=None: (None, error))
+    monkeypatch.setattr(r, 'probe_if_rejected', lambda region, error=None: None)
+    with pytest.raises(SystemExit):
+        r.credentials_partition_or_exit('us-east-1')
+    assert 'Could not connect' in caplog.text or 'reach' in caplog.text
+
+
 def test_regions_file_with_a_list_at_the_top_reads_as_empty(tmp_path):
     from bedrock_usage_analyzer.sync.regions import read_region_file
     path = tmp_path / 'regions.yml'

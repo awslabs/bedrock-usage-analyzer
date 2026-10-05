@@ -64,7 +64,8 @@ class InferenceProfileFetcher:
     def for_region(cls, bedrock_client, fm_models: Optional[List[Dict]],
                    region: Optional[str] = None) -> 'InferenceProfileFetcher':
         """Fetcher that knows which models of the region's fm-list have an on-demand endpoint."""
-        on_demand = [m['model_id'] for m in fm_models or [] if 'base' in model_endpoints(m)]
+        on_demand = None if fm_models is None else \
+            [m['model_id'] for m in fm_models if 'base' in model_endpoints(m)]
         return cls(bedrock_client, on_demand, region)
 
     def __init__(self, bedrock_client, on_demand_models: Optional[Iterable[str]] = None,
@@ -72,6 +73,7 @@ class InferenceProfileFetcher:
         self.bedrock_client = bedrock_client
         # Models with an on-demand ('base') endpoint in the region's fm-list
         self.on_demand_models = set(on_demand_models or ())
+        self._on_demand_known = on_demand_models is not None  # False: no fm-list to tell
         self.prefix_map = get_default_region_prefix_map()
         # The region the profiles live in (a base-model copy routes there); callers pass it
         self._region = region or getattr(getattr(bedrock_client, 'meta', None), 'region_name', None)
@@ -235,14 +237,19 @@ class InferenceProfileFetcher:
         if exact and not lone_regional:
             return self._pairs(exact)
 
-        if lone_regional:
+        if lone_regional and model_id in self.on_demand_models:
             # A base-model copy, unless a system profile routes to exactly this one ARN: the
-            # two cannot be told apart, so the profile belongs to both endpoints. The first
-            # one decides the quotas: the on-demand endpoint when the model has one, else the
-            # system profile (the model may have no on-demand endpoint at all).
-            if model_id in self.on_demand_models:
-                return [(None, model_id)] + self._pairs(exact or [])
-            return self._pairs(exact or []) + [(None, model_id)]
+            # two cannot be told apart, so the profile belongs to both endpoints. The on-demand
+            # endpoint comes first and decides the quotas.
+            return [(None, model_id)] + self._pairs(exact or [])
+        if lone_regional and exact:
+            # No on-demand endpoint known here: the system profile decides the quotas
+            return self._pairs(exact) + [(None, model_id)]
+        if lone_regional and not self._on_demand_known:
+            return [(None, model_id)]  # no fm-list to tell: taken as a base-model copy
+        # A lone regional ARN of a model without an on-demand endpoint is not a base copy the
+        # region offers: it is matched against the listed profiles below (a set can shrink
+        # to one region), so its source is an endpoint the region lists
 
         # The routing set no longer equals any listed profile (sets change over time). Only
         # listed profiles of this model are candidates, so the source always exists in the
@@ -264,7 +271,7 @@ class InferenceProfileFetcher:
         country = None if routes_globally else self._country_of(regions)
         country_id = f"{country}.{model_id}" if country else None
         # Any listed profile of the model counts here, also one whose set shrank to one region
-        if country_id and any(country_id in ids for _, ids in self._by_model.get(model_id, [])):
+        if country_id and self._parts.get(country_id) == (country, model_id):
             return [(country, model_id)]
 
         # Sets usually grow: the narrowest listed profile that contains every routed region

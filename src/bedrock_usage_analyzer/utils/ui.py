@@ -126,6 +126,9 @@ def select_quota_mapping_params(target_region: str = None, bedrock_region: str =
         sys.exit(1)
     if resolved is not None:
         resolved['regions'] = all_regions  # reused by the quota mapper (no second lookup)
+    if target_region is not None:
+        # Before any prompt: a target region of another partition cannot be refreshed
+        require_credentials_partition(target_region, partition, label='Target region: ')
 
     # Step 1: Select Bedrock API region (skip if provided)
     if not bedrock_region:

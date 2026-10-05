@@ -324,6 +324,16 @@ def test_region_group_keeps_partitions_apart(region, group):
     assert region_group(region) == group
 
 
+def test_lone_arn_copy_of_a_profile_only_model_goes_to_a_listed_profile():
+    """Tokyo lists jp.X and apac.X, X has no on-demand endpoint: a copy shrunk to Tokyo is jp, not base."""
+    apac = JP_ARNS + [arn('ap-southeast-1', HAIKU)]
+    client = FakeBedrock(system=[system_profile(f"jp.{HAIKU}", JP_ARNS), system_profile(f"apac.{HAIKU}", apac)],
+                         application=[app_profile('jpshrunk001', 'j', [arn('ap-northeast-1', HAIKU)])])
+    fetcher = InferenceProfileFetcher(client, on_demand_models=[], region='ap-northeast-1')
+    app = fetcher.list_application_profiles()[0]
+    assert (app['profile_prefix'], app['sources']) == ('jp', [f"jp.{HAIKU}"])
+
+
 def test_single_region_system_profile_and_base_copy_are_both_candidates():
     one = [arn('ap-southeast-2', HAIKU)]
     fetcher = InferenceProfileFetcher(FakeBedrock(system=[system_profile(f"au.{HAIKU}", one)],

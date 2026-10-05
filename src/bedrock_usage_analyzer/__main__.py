@@ -190,7 +190,13 @@ def cmd_refresh_fm_quotas(args):
     target_region = args.target_region
     bedrock_region = args.bedrock_region
     model_id = args.model_id
-    
+    from bedrock_usage_analyzer.utils.partition import is_valid_region_name
+    for given in (target_region, bedrock_region):
+        # A typo would otherwise surface as an STS connection error with credentials advice
+        if given and not is_valid_region_name(given):
+            logger.error(f"Invalid region format: {given}")
+            sys.exit(1)
+
     credential_regions = None  # the credentials' regions, read once (by the picker or below)
     if not bedrock_region or not model_id or not target_region:
         resolved = {}

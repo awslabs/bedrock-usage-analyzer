@@ -83,8 +83,13 @@ def credentials_partition_or_exit(region: Optional[str] = None) -> str:
             partition = identity['Partition']
             logger.warning(other_partition_message(hint, partition))
     if partition is None:
-        logger.error("Could not read the caller identity; check your AWS credentials "
-                     "(aws sts get-caller-identity); for GovCloud set AWS_REGION, e.g. AWS_REGION=us-gov-west-1.")
+        # The same advice as `bua analyze` for the actual failure (unreachable endpoint,
+        # expired token, missing permission), else the generic credentials hint
+        from bedrock_usage_analyzer.core.errors import troubleshooting_hint
+        hint_text = troubleshooting_hint(error, hint) if error is not None else None
+        logger.error("Could not read the caller identity" + (f": {error}" if error is not None else "") + ". " +
+                     (hint_text or "Check your AWS credentials (aws sts get-caller-identity); for GovCloud set "
+                                   "AWS_REGION, e.g. AWS_REGION=us-gov-west-1."))
         sys.exit(1)
     return partition
 
