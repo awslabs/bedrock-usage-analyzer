@@ -34,6 +34,20 @@ def inputs(sydney_bedrock):
     return ui
 
 
+def test_picked_region_with_bad_format_exits_with_a_message(caplog):
+    with pytest.raises(SystemExit):
+        UserInputs()._ensure_fm_list('US-EAST-1')
+    assert 'Invalid region format' in caplog.text
+
+
+def test_unreadable_user_fm_list_names_the_file(tmp_path, caplog):
+    (tmp_path / 'data').mkdir(exist_ok=True)
+    (tmp_path / 'data' / 'fm-list-us-east-1.yml').write_text('models: [unclosed\n')
+    with pytest.raises(SystemExit):
+        UserInputs()._ensure_fm_list('us-east-1')
+    assert 'fm-list-us-east-1.yml' in caplog.text and 'bua refresh fm-list us-east-1' in caplog.text
+
+
 @pytest.mark.parametrize('region', ['us-west-2', 'us-gov-west-1', 'cn-northwest-1', 'ap-southeast-7',
                                     'eusc-de-east-1', 'us-isob-east-1'])
 def test_region_pattern_accepts(region):
@@ -250,7 +264,7 @@ def test_ensure_fm_list(tmp_path):
     ui._ensure_fm_list('us-gov-west-1')          # bundled
     with pytest.raises(SystemExit):
         ui._ensure_fm_list('xx-nowhere-1')        # missing
-    with pytest.raises(ValueError):
+    with pytest.raises(SystemExit):                # rejected before it is used in a file name
         ui._ensure_fm_list('../../etc/passwd')
 
 

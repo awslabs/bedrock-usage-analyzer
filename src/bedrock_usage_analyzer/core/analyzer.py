@@ -320,14 +320,12 @@ class BedrockAnalyzer:
             quota_codes = self._load_quota_codes(model_id, profile_prefix)
             retired = profile_prefix not in (None, UNKNOWN_SOURCE) and \
                 not self._system_profile_listed(endpoint_id(model_id, profile_prefix))
-            if retired and any(quota_codes.values()):
-                # e.g. a copy of a retired au.* profile that an older fm-list still maps
-                logger.info(f"  {endpoint_id(model_id, profile_prefix)} is no longer offered in "
-                            f"{self.region}; the limits shown come from the saved mapping")
-            elif retired:
-                # e.g. a copy of a retired au.* profile: no quota exists to map
-                logger.info(f"  {endpoint_id(model_id, profile_prefix)} is not offered in {self.region}; "
-                            f"the report will show usage without limits")
+            if retired:
+                # e.g. a copy of a retired au.* profile; an older fm-list may still map its quotas
+                ending = "the limits shown come from the saved mapping" if any(quota_codes.values()) \
+                    else "the report will show usage without limits"
+                logger.info(f"  {endpoint_id(model_id, profile_prefix)} is not offered in "
+                            f"{self.region}; {ending}")
             elif not any(quota_codes.values()) and profile_prefix != UNKNOWN_SOURCE:
                 profiles = profile_endpoints(self._fm_list(), model_id)
                 if self._endpoint_listed(model_id, profile_prefix):

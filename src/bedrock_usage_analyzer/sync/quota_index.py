@@ -11,7 +11,7 @@ import sys
 from bedrock_usage_analyzer.utils.yaml_handler import (
     endpoint_quotas, fm_file_data, load_data_file, load_yaml, model_endpoints, quota_slots, save_yaml, valid_models)
 from bedrock_usage_analyzer.utils.csv_handler import write_csv
-from bedrock_usage_analyzer.utils.paths import list_data_names, get_writable_path, get_bundle_path
+from bedrock_usage_analyzer.utils.paths import get_bundle_path, get_user_data_dir, get_writable_path, list_data_names
 from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, is_missing, list_quota_codes, lookup_quota, QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK
 from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
 from bedrock_usage_analyzer.sync.quota_rules import slot_conflict
@@ -100,7 +100,8 @@ class QuotaIndexGenerator:
         # (the user's regions.yml), and opt-in regions it may not have enabled last
         # (with --update-bundle the checkout's regions.yml, which `refresh regions --update-bundle` writes)
         checkout = get_bundle_path() if self.update_bundle else None
-        enabled = set(read_region_file(checkout / 'regions.yml' if checkout else get_writable_path('regions.yml')))
+        # (read-only: get_writable_path would create the user data directory)
+        enabled = set(read_region_file((checkout or get_user_data_dir()) / 'regions.yml'))
         homes = set(PARTITION_HOME_REGIONS.values())
         # Only regions the account can call are validated and cleaned: an opt-in region it
         # has not enabled answers every lookup with an error (its codes are kept as they are)

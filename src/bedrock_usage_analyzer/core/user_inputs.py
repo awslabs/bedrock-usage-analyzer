@@ -635,11 +635,20 @@ class UserInputs:
 
     def _ensure_fm_list(self, region):
         """Ensure FM list exists for region"""
-        # Validate region format before using it in a file name
-        if not is_valid_region_name(region):
-            raise ValueError(f"Invalid region format: {region}")
+        # Validate region format before using it in a file name (a picked region comes from
+        # a regions.yml that may be hand-edited, e.g. 'US-EAST-1')
+        self._validate_region(region)
 
-        if self._load_fm_list_or_none(region) is None:
+        import yaml
+        try:
+            models = self._load_fm_list_or_none(region)
+        except yaml.YAMLError as e:
+            # A hand-edited user copy with a syntax error: name the file and the way out
+            from ..utils.paths import get_data_path
+            logger.error(f"Could not read {get_data_path(f'fm-list-{region}.yml')}: {e}")
+            logger.error(f"Fix or delete the file, or run: bua refresh fm-list {region}")
+            sys.exit(1)
+        if models is None:
             logger.error(f"Foundation model list not found for region: {region}")
             logger.error(f"Please run: bua refresh fm-list {region}")
             sys.exit(1)

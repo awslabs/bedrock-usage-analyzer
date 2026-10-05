@@ -115,11 +115,13 @@ def refresh_region(region: str, update_bundle: bool = False):
 
     # An unchanged user file is not rewritten; with --update-bundle only the checkout's file is
     # (a user entry overrides the bundled one, so it would hide later bundled fixes)
+    saved = False
     if new_entries and not (update_bundle and get_bundle_path()):
         for entry in new_entries:
             user_entries[entry['prefix']] = entry
         save_yaml(str(prefix_file), {'prefixes': by_prefix(user_entries)})
         logger.info(f"  ✓ Prefix mapping saved: {prefix_file}")
+        saved = True
 
     if update_bundle:
         bundle_path = get_bundle_path()
@@ -137,9 +139,12 @@ def refresh_region(region: str, update_bundle: bool = False):
             if len(bundled) != count_before:  # rewritten only when an entry was added
                 save_yaml(str(bundle_prefix_file), {'prefixes': by_prefix(bundled)})
                 logger.info(f"  ✓ Prefix mapping saved: {bundle_prefix_file} (bundled)")
+                saved = True
 
-    # Later lookups in this run must see newly discovered prefixes
-    load_prefix_mapping(refresh=True)
+    # Later lookups in this run must see newly discovered prefixes (nothing to reload when no
+    # file changed: the cached mapping is still current)
+    if saved:
+        load_prefix_mapping(refresh=True)
     total = len(set(known) | {e['prefix'] for e in manual_entries + new_entries})
     logger.info(f"  ({len(discovered)} discovered, {len(new_entries)} new, {total} total prefixes)")
     
