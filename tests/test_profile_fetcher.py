@@ -324,6 +324,15 @@ def test_region_group_keeps_partitions_apart(region, group):
     assert region_group(region) == group
 
 
+def test_lone_arn_copy_of_a_model_newer_than_the_fm_list_is_a_base_copy():
+    """A model missing from the fm-list may well be on demand: its lone in-region copy stays base."""
+    us = [arn(r, NOVA) for r in ('us-east-1', 'us-east-2', 'us-west-2')]
+    client = FakeBedrock(system=[system_profile(f"us.{NOVA}", us)],
+                         application=[app_profile('newbase0001', 'n', [arn('us-east-1', NOVA)])])
+    fetcher = InferenceProfileFetcher.for_region(client, [{'model_id': HAIKU, 'endpoints': {'base': {}}}], 'us-east-1')
+    assert fetcher.list_application_profiles()[0]['sources'] == [NOVA]
+
+
 def test_lone_arn_copy_of_a_profile_only_model_goes_to_a_listed_profile():
     """Tokyo lists jp.X and apac.X, X has no on-demand endpoint: a copy shrunk to Tokyo is jp, not base."""
     apac = JP_ARNS + [arn('ap-southeast-1', HAIKU)]

@@ -66,7 +66,9 @@ class InferenceProfileFetcher:
         """Fetcher that knows which models of the region's fm-list have an on-demand endpoint."""
         on_demand = None if fm_models is None else \
             [m['model_id'] for m in fm_models if 'base' in model_endpoints(m)]
-        return cls(bedrock_client, on_demand, region)
+        fetcher = cls(bedrock_client, on_demand, region)
+        fetcher._listed_models = None if fm_models is None else {m['model_id'] for m in fm_models}
+        return fetcher
 
     def __init__(self, bedrock_client, on_demand_models: Optional[Iterable[str]] = None,
                  region: Optional[str] = None):
@@ -74,6 +76,7 @@ class InferenceProfileFetcher:
         # Models with an on-demand ('base') endpoint in the region's fm-list
         self.on_demand_models = set(on_demand_models or ())
         self._on_demand_known = on_demand_models is not None  # False: no fm-list to tell
+        self._listed_models: Optional[set] = None  # every model ID of the fm-list (for_region)
         self.prefix_map = get_default_region_prefix_map()
         # The region the profiles live in (a base-model copy routes there); callers pass it
         self._region = region or getattr(getattr(bedrock_client, 'meta', None), 'region_name', None)
@@ -245,8 +248,10 @@ class InferenceProfileFetcher:
         if lone_regional and exact:
             # No on-demand endpoint known here: the system profile decides the quotas
             return self._pairs(exact) + [(None, model_id)]
-        if lone_regional and not self._on_demand_known:
-            return [(None, model_id)]  # no fm-list to tell: taken as a base-model copy
+        if lone_regional and not self._knows_on_demand(model_id):
+            # No fm-list, or a model newer than it: nothing says it lacks an on-demand
+            # endpoint, so a lone copy in this region is taken as a base-model copy
+            return [(None, model_id)]
         # A lone regional ARN of a model without an on-demand endpoint is not a base copy the
         # region offers: it is matched against the listed profiles below (a set can shrink
         # to one region), so its source is an endpoint the region lists
@@ -300,6 +305,12 @@ class InferenceProfileFetcher:
         # a retired au.* profile; the analyzer says that endpoint is no longer offered)
         inferred = self._infer_from_regions(arns, model_id)
         return [(inferred, model_id)] if inferred else []
+
+    def _knows_on_demand(self, model_id: str) -> bool:
+        """True when the fm-list says whether ``model_id`` has an on-demand endpoint."""
+        if not self._on_demand_known:
+            return False
+        return self._listed_models is None or model_id in self._listed_models
 
     def _pairs(self, profile_ids: List[str]) -> List[tuple]:
         """Listed system profile IDs as (prefix, model), country geographies first."""

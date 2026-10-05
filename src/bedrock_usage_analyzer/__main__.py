@@ -211,6 +211,8 @@ def cmd_refresh_fm_quotas(args):
         from bedrock_usage_analyzer.sync.regions import load_region_names, regions_for_credentials
         from bedrock_usage_analyzer.utils.ui import require_credentials_partition
         credential_regions, partition = regions_for_credentials(load_region_names(), target_region)
+        # Both regions, as the interactive path does (the target first)
+        require_credentials_partition(target_region, partition, label='Target region: ')
         require_credentials_partition(bedrock_region, partition)
 
     mapper = QuotaMapper(bedrock_region, model_id, target_region, credential_regions=credential_regions)
