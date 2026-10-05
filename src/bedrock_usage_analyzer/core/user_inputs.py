@@ -391,7 +391,13 @@ class UserInputs:
                              f"so {identifier} cannot be resolved: {e}")
                 sys.exit(1)
         if profile is None:
-            logger.error(f"Application inference profile not found in {self.region}: {identifier}")
+            fetcher = self.profile_fetcher
+            if isinstance(fetcher, InferenceProfileFetcher) and fetcher.routes_to_no_foundation_model(identifier):
+                # It exists (e.g. a copy of a custom model): say why it cannot be analyzed
+                logger.error(f"Application inference profile {identifier} routes to no foundation model; "
+                             f"this tool has no metrics or quotas for it")
+            else:
+                logger.error(f"Application inference profile not found in {self.region}: {identifier}")
             sys.exit(1)
         logger.info(f"  Application inference profile {profile['name']} ({profile['id']}) "
                     f"is based on {profile['source'] or 'an unknown endpoint'}")

@@ -118,7 +118,7 @@ def test_other_sources_for_model(sydney_bedrock):
     fetcher.list_application_profiles()
     assert fetcher.other_sources_for_model(HAIKU, 'apac') == {'au': 1, 'global': 1, 'jp': 1, 'base': 1}
     assert fetcher.other_sources_for_model(NOVA, 'apac') == {}
-    profile_only = InferenceProfileFetcher(sydney_bedrock)                  # no on-demand endpoint
+    profile_only = InferenceProfileFetcher(sydney_bedrock, on_demand_models=[])  # no on-demand endpoint
     profile_only.list_application_profiles()
     assert 'base' not in profile_only.other_sources_for_model(HAIKU, 'apac')
 
@@ -645,6 +645,23 @@ def test_failed_listing_names_the_listing_and_is_not_announced_again(caplog):
         denied.list_application_profiles()
     assert 'Listing application inference profiles' not in caplog.text
     assert denied.failed_listing() == 'application'
+
+
+def test_base_copy_of_a_model_newer_than_the_fm_list_is_pointed_to():
+    us = [arn(r, NOVA) for r in ('us-east-1', 'us-east-2', 'us-west-2')]
+    client = FakeBedrock(system=[system_profile(f"us.{NOVA}", us)],
+                         application=[app_profile('newbase0002', 'n', [arn('us-east-1', NOVA)])])
+    fetcher = InferenceProfileFetcher.for_region(client, [{'model_id': HAIKU, 'endpoints': {'base': {}}}], 'us-east-1')
+    fetcher.list_application_profiles()
+    assert fetcher.other_sources_for_model(NOVA, 'us') == {'base': 1}
+
+
+def test_copy_of_a_custom_model_is_named_as_such():
+    apps = [app_profile('custom00001', 'mine', ['arn:aws:bedrock:us-east-1:1:custom-model/x'])]
+    fetcher = InferenceProfileFetcher(FakeBedrock(application=apps))
+    assert fetcher.resolve_application_profile('custom00001') is None
+    assert fetcher.routes_to_no_foundation_model('custom00001')
+    assert not fetcher.routes_to_no_foundation_model('other')
 
 
 def test_legacy_entries_are_migrated_and_malformed_endpoints_have_none():

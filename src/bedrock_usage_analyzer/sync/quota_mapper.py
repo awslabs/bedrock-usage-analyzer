@@ -89,7 +89,13 @@ class QuotaMapper:
     def _process_region(self, region: str):
         """Process quota mapping for a single region"""
         logger.info(f"Region: {region}")
-        
+
+        # The model list first: a region without one is skipped without paging its quotas
+        fm_list = self._load_fm_list(region)
+        if not fm_list:
+            logger.info(f"  ⊘ No FM list found, skipping\n")
+            return
+
         listing = list_quota_codes(region)  # code -> quota; logs the error itself
         if listing is None:
             # Listing failed (throttling, pagination error, service not in region):
@@ -98,12 +104,7 @@ class QuotaMapper:
             return
         quotas = list(listing.values())
         logger.info(f"  Found {len(quotas)} quotas")
-        
-        fm_list = self._load_fm_list(region)
-        if not fm_list:
-            logger.info(f"  ⊘ No FM list found, skipping\n")
-            return
-        
+
         logger.info(f"  Mapping quotas for {len(fm_list)} models...")
         before = copy.deepcopy(fm_list)
         

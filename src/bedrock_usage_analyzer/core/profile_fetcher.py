@@ -85,6 +85,7 @@ class InferenceProfileFetcher:
         self._system_ids: set = set()
         self._country_regions = {p: set(r) for p, r in COUNTRY_PROFILE_REGIONS.items()}
         self._app_profiles: Optional[List[Dict]] = None
+        self._not_foundation_model: set = set()  # IDs, ARNs and names of skipped non-FM copies
         # Per listing type: the result, the error the run gave up on, and failed attempts
         self._listings: Dict[str, Dict] = {kind: {'result': None, 'error': None, 'failures': 0}
                                            for kind in ('SYSTEM_DEFINED', 'APPLICATION')}
@@ -200,6 +201,9 @@ class InferenceProfileFetcher:
                         # metrics or quotas for it, so it is left out, but not silently
                         logger.info(f"  Note: skipping {profile['inferenceProfileId']}: it routes to no "
                                     f"foundation model")
+                        self._not_foundation_model.update(
+                            v for v in (profile['inferenceProfileId'], profile.get('inferenceProfileArn'),
+                                        profile.get('inferenceProfileName')) if v)
                         continue
                     prefix = UNKNOWN_SOURCE
                     logger.info(f"  Note: could not tell which endpoint {profile['inferenceProfileId']} "
@@ -365,6 +369,11 @@ class InferenceProfileFetcher:
                 return profile
         return None
 
+    def routes_to_no_foundation_model(self, identifier: str) -> bool:
+        """True for an application profile left out of the listing because it copies no
+        foundation model (e.g. a custom model): it exists, but cannot be analyzed."""
+        return identifier.strip() in self._not_foundation_model
+
     # ---------------------------------------------------------------- discovery
 
     def _get_tags(self, profile_arn: Optional[str], profile_id: str) -> Dict[str, str]:
@@ -449,8 +458,10 @@ class InferenceProfileFetcher:
         for app in app_profiles:
             # Profiles with an unknown source are not pointed to: there is no endpoint to pick
             # and only to endpoints that can be selected (a retired profile's guessed source cannot)
+            # 'base' only for on-demand models, or models the fm-list does not know (whose lone
+            # in-region copies resolve_endpoints credits to base)
             selectable = app['source'] in self._system_ids if app['profile_prefix'] else \
-                app['model_id'] in self.on_demand_models  # 'base' is offered only for on-demand models
+                app['model_id'] in self.on_demand_models or not self._knows_on_demand(app['model_id'])
             if app['model_id'] == model_id and app['sources'] and target not in app['sources'] and selectable:
                 key = app['profile_prefix'] or 'base'
                 counts[key] = counts.get(key, 0) + 1
