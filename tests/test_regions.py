@@ -147,7 +147,8 @@ def test_update_bundle_replaces_only_credentials_partition(monkeypatch, tmp_path
     monkeypatch.setattr(sys, 'argv', ['bua', 'refresh', 'regions', '--update-bundle'])
     cli.main()
     assert load_yaml(str(bundle / 'regions.yml'))['regions'] == ['eu-west-1', 'us-east-1', 'us-gov-east-1', 'us-gov-west-1']
-    assert load_yaml(str(tmp_path / 'data' / 'regions.yml'))['regions'] == ['eu-west-1', 'us-east-1', 'us-gov-west-1']
+    # Maintainer mode writes the checkout only: the user's own file is left as it was
+    assert load_yaml(str(tmp_path / 'data' / 'regions.yml'))['regions'] == ['us-east-1', 'us-gov-west-1']
 
 
 def test_old_user_regions_file_still_gets_bundled_govcloud(tmp_path):

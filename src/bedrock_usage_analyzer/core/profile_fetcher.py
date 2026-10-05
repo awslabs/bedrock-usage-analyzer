@@ -180,7 +180,8 @@ class InferenceProfileFetcher:
             raw = self._list_once('APPLICATION')
             # Without the system profiles no source can be resolved: fail the call (callers
             # say the report is incomplete) instead of returning profiles that match nothing.
-            # The application listing above is kept; the next call only retries this one.
+            # The application listing above is kept. A system listing that failed after its
+            # in-call retry stays failed for the run (_list_once), so later calls fail the same way.
             self._load_system_profiles()
             profiles = []
             for profile in raw:

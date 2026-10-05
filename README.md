@@ -524,7 +524,7 @@ bedrock-usage-analyzer refresh fm-list us-west-2    # Refresh FM list for specif
 bedrock-usage-analyzer refresh fm-quotas            # Refresh quota mappings (interactive)
 bedrock-usage-analyzer refresh quota-index          # Generate quota index CSV
 
-# For maintainers: also update bundled metadata
+# For maintainers: update the checkout's bundled metadata (user copies are left alone)
 bedrock-usage-analyzer refresh regions --update-bundle
 bedrock-usage-analyzer refresh fm-list --update-bundle
 ```

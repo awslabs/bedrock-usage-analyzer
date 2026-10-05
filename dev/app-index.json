@@ -105,8 +105,16 @@
       "summary": "AWS Bedrock service operations - fetch foundation models, inference profiles, prefix mapping, and profile management",
       "methods": [
         {
-          "name": "_read_prefixes",
-          "description": ""
+          "name": "_valid_prefix_entries",
+          "description": "Usable entries of parsed prefix-mapping.yml data (string 'prefix' and 'quota_keyword'); others are skipped with a warning"
+        },
+        {
+          "name": "read_prefix_file",
+          "description": "Valid prefix-mapping entries of one file; [] when it is missing or malformed"
+        },
+        {
+          "name": "list_system_profiles",
+          "description": "The region's system inference profiles, or None when the listing failed (not \"none listed\")"
         },
         {
           "name": "_load_prefix_mapping",

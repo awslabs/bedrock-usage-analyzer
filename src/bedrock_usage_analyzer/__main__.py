@@ -129,20 +129,26 @@ def cmd_refresh_regions(args):
     print(get_refresh_location_message())
     print()
 
+    update_bundle = getattr(args, 'update_bundle', False)
+    bundle_path = get_bundle_path() if update_bundle else None
+    if update_bundle and bundle_path is None:
+        _maybe_update_bundle(args, "regions.yml", None)  # exits: not in a checkout
+
     # Only the credentials' partition is replaced; other partitions are kept
     # (e.g. GovCloud regions when refreshing with commercial credentials)
     discovered = discover_regions()
+    if bundle_path is not None:
+        # Maintainer mode writes the checkout only, as fm-list, fm-quotas and quota-index do:
+        # a user copy written here would hide regions bundled in later releases
+        data = refresh_regions(existing=read_region_file(bundle_path / "regions.yml"), discovered=discovered)
+        _maybe_update_bundle(args, "regions.yml", data)
+        return
     output_path = get_writable_path("regions.yml")
     # Merge into the user's own file only: copying bundled regions of other partitions into it
     # would freeze them against later releases (load_region_names adds them at read time)
     data = refresh_regions(existing=read_region_file(output_path), discovered=discovered)
     save_yaml(str(output_path), data)
     logger.info(f"✓ Saved: {output_path}")
-
-    bundle_path = get_bundle_path() if getattr(args, 'update_bundle', False) else None
-    if bundle_path is not None:
-        data = refresh_regions(existing=read_region_file(bundle_path / "regions.yml"), discovered=discovered)
-    _maybe_update_bundle(args, "regions.yml", data)
 
 
 def cmd_refresh_fm_list(args):

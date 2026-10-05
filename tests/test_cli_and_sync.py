@@ -90,6 +90,20 @@ def test_refresh_regions_keeps_other_partitions(monkeypatch, tmp_path):
     assert load_region_names() == ['eu-west-1', 'us-east-1', 'us-gov-east-1', 'us-gov-west-1']
 
 
+def test_refresh_regions_update_bundle_writes_the_checkout_only(monkeypatch, tmp_path):
+    from bedrock_usage_analyzer.sync import regions as r
+    checkout = tmp_path / 'checkout'
+    checkout.mkdir()
+    save_yaml(str(checkout / 'regions.yml'), {'regions': ['us-gov-west-1']})
+    monkeypatch.setattr(cli, 'get_bundle_path', lambda: checkout)
+    monkeypatch.setattr(r, 'detect_partition', lambda _=None: ('aws', None))
+    monkeypatch.setattr(r, 'fetch_enabled_regions', lambda partition, hint: ['us-east-1'])
+    monkeypatch.setattr(sys, 'argv', ['bua', 'refresh', 'regions', '--update-bundle'])
+    cli.main()
+    assert load_yaml(str(checkout / 'regions.yml'))['regions'] == ['us-east-1', 'us-gov-west-1']
+    assert not (tmp_path / 'data' / 'regions.yml').exists()
+
+
 def test_quota_mapper_keeps_unmapped_endpoints(monkeypatch, tmp_path):
     (tmp_path / 'data').mkdir()
     save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1']})
