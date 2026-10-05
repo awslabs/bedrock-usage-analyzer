@@ -13,7 +13,7 @@ from ..aws.client_factory import create_client
 from ..core.errors import troubleshooting_hint
 from ..core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
 from ..sync.regions import load_region_names
-from ..utils.yaml_handler import has_endpoint, load_fm_list, model_endpoints, profile_endpoints
+from ..utils.yaml_handler import endpoint_keys, has_endpoint, load_fm_list, profile_endpoints
 from ..utils.ui import require_credentials_partition, select_from_list
 from ..utils.partition import (
     filter_regions_by_partition,
@@ -456,10 +456,11 @@ class UserInputs:
         model_id = selected_model['model_id']
 
         # Get endpoints for selected model
-        endpoints = model_endpoints(selected_model)  # {} for a hand-edited non-mapping value
+        # Endpoint keys, a legacy entry's 'base' included (as -m and the analyzer read it)
+        endpoints = endpoint_keys(selected_model)
 
         # Derive inference profiles from endpoints (exclude 'base')
-        inference_profiles = sorted([k for k in endpoints.keys() if k != 'base'])
+        inference_profiles = sorted(k for k in endpoints if k != 'base')
 
         if not endpoints:
             return self._manual_model_entry()

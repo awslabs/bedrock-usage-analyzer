@@ -10,7 +10,7 @@ import sys
 from typing import Dict, List, Optional
 
 from bedrock_usage_analyzer.utils.yaml_handler import (
-    endpoint_quotas, fm_file_data, load_data_file, load_yaml, model_endpoints, quota_slots, save_yaml,
+    endpoint_keys, endpoint_quotas, fm_file_data, load_data_file, load_yaml, quota_slots, save_yaml,
     valid_models)
 from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, is_missing, list_quota_codes
@@ -213,8 +213,8 @@ class QuotaMapper:
 
     def _get_endpoints_to_process(self, fm: Dict) -> List[str]:
         """Determine which endpoints to process for a model"""
-        # The keys of the endpoints mapping ({} for a hand-edited non-mapping value)
-        return list(model_endpoints(fm))
+        # The endpoint keys; a legacy entry's 'base' too, so mapping it migrates the entry
+        return sorted(endpoint_keys(fm))
     
     def _get_quota_mapping(self, region: str, model_id: str, common_name: str, 
                           endpoint_type: str, quotas: List[Dict]) -> Optional[Dict]:

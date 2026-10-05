@@ -501,6 +501,15 @@ def test_missing_fm_list_still_exits_after_an_earlier_lookup(monkeypatch):
         inputs._ensure_fm_list('xx-test-1')                   # the 'run bua refresh fm-list' exit
 
 
+def test_picker_offers_the_base_endpoint_of_a_legacy_entry(monkeypatch):
+    """No 'endpoints' but ON_DEMAND: the picker offers the base model instead of asking for an ID."""
+    from bedrock_usage_analyzer.utils.yaml_handler import endpoint_keys
+    keys = endpoint_keys({'model_id': 'x', 'inference_types': ['ON_DEMAND']})
+    assert keys == {'base'}
+    feed(monkeypatch, ['1'])
+    assert UserInputs()._select_profile_prefix(keys, []) is None   # 'None (base model)', the only choice
+
+
 def test_hand_edited_endpoints_value_is_no_endpoints():
     from bedrock_usage_analyzer.utils.yaml_handler import fm_endpoints, model_endpoints
     models = [{'model_id': 'x', 'endpoints': 'TODO'}, {'model_id': 'y', 'endpoints': ['us']}]
