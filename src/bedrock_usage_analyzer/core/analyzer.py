@@ -102,7 +102,8 @@ class BedrockAnalyzer:
                 quotas = dict(saved) if isinstance(saved, dict) else {}  # tolerates hand edits
             elif endpoint_key == 'base':
                 # Old fm-list structure: model-level quotas were on-demand quotas
-                quotas = dict(model.get('quotas') or {})
+                saved = model.get('quotas')
+                quotas = dict(saved) if isinstance(saved, dict) else {}  # tolerates hand edits
             else:
                 return {}
             # Skip codes that contradict this model or endpoint (e.g. saved by an older

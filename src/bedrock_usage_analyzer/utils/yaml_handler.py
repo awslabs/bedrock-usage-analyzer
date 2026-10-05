@@ -56,10 +56,20 @@ def valid_models(data):
     models = data.get('models') if isinstance(data, dict) else None
     valid = [m for m in models or [] if isinstance(m, dict) and m.get('model_id')]
     for model in valid:
-        if 'endpoints' in model and not isinstance(model['endpoints'], (dict, type(None))):
+        if model.get('endpoints') is None and _is_legacy_entry(model):
+            # Older format: model-level quotas were the on-demand endpoint's. Migrated in place,
+            # so every reader (and a file written back) sees one 'base' endpoint with them
+            legacy = model.pop('quotas', None)
+            model['endpoints'] = {'base': {'quotas': dict(legacy) if isinstance(legacy, dict) else {}}}
+        elif 'endpoints' in model and not isinstance(model['endpoints'], (dict, type(None))):
             # A hand-edited 'endpoints: TODO' or 'endpoints: [us]': no endpoints, for every reader
             model['endpoints'] = {}
     return valid
+
+
+def _is_legacy_entry(model) -> bool:
+    """An entry of the older format: no endpoints, but model-level quotas or ON_DEMAND inference."""
+    return bool(model.get('quotas') or 'ON_DEMAND' in (model.get('inference_types') or []))
 
 
 def save_yaml(filepath, data):
@@ -93,10 +103,10 @@ def fm_endpoints(models, model_id):
 
 def endpoint_keys(model) -> set:
     """Endpoint keys of one parsed fm-list model. A legacy entry (no 'endpoints', model-level
-    'quotas' or ON_DEMAND inference) has its on-demand endpoint, 'base', as the analyzer reads it."""
+    'quotas' or ON_DEMAND inference) has its on-demand endpoint, 'base' (valid_models migrates
+    it); an entry whose hand-edited endpoints were reset to {} has none."""
     keys = set(model_endpoints(model))
-    if not keys and isinstance(model, dict) and (
-            model.get('quotas') or 'ON_DEMAND' in (model.get('inference_types') or [])):
+    if not keys and isinstance(model, dict) and model.get('endpoints') is None and _is_legacy_entry(model):
         keys.add('base')
     return keys
 

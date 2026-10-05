@@ -115,6 +115,11 @@ class InferenceProfileFetcher:
                 logger.debug(f"Listing {kind} inference profiles failed (attempt {state['failures']}): {e}")
         return state['result']
 
+    def failed_listing(self) -> str:
+        """'application' or 'system': the listing that made list_application_profiles fail
+        (it also needs the system listing, to resolve sources)."""
+        return 'application' if self._listings['APPLICATION']['result'] is None else 'system'
+
     def _load_system_profiles(self) -> List[Dict]:
         if self._system_profiles is None:
             profiles = self._list_once('SYSTEM_DEFINED')
@@ -168,7 +173,9 @@ class InferenceProfileFetcher:
         base-model copy) and source (the endpoint ID it was copied from).
         """
         if self._app_profiles is None:
-            if self._listings['APPLICATION']['result'] is None:
+            listing = self._listings['APPLICATION']
+            if listing['result'] is None and not listing.get('error'):
+                # Not after a permanent failure: the stored error is raised without a call
                 logger.info("  Listing application inference profiles...")
             raw = self._list_once('APPLICATION')
             # Without the system profiles no source can be resolved: fail the call (callers
@@ -246,8 +253,9 @@ class InferenceProfileFetcher:
             # endpoint comes first and decides the quotas.
             return [(None, model_id)] + self._pairs(exact or [])
         if lone_regional and exact:
-            # No on-demand endpoint known here: the system profile decides the quotas
-            return self._pairs(exact) + [(None, model_id)]
+            # Not on demand here: the system profile decides the quotas. The base endpoint is
+            # added only when nothing says the model lacks one (no fm-list, or a newer model)
+            return self._pairs(exact) + ([] if self._knows_on_demand(model_id) else [(None, model_id)])
         if lone_regional and not self._knows_on_demand(model_id):
             # No fm-list, or a model newer than it: nothing says it lacks an on-demand
             # endpoint, so a lone copy in this region is taken as a base-model copy
@@ -403,8 +411,7 @@ class InferenceProfileFetcher:
             # e.g. no bedrock:ListInferenceProfiles permission: still analyze the endpoint itself,
             # but say plainly that the report is missing its application profiles
             # The application listing also needs the system one (to resolve sources): name the one that failed
-            failed = 'application' if self._listings['APPLICATION']['result'] is None else 'system'
-            logger.warning(f"  WARNING: Could not list {failed} inference profiles ({e}). This report "
+            logger.warning(f"  WARNING: Could not list {self.failed_listing()} inference profiles ({e}). This report "
                            f"covers {target_endpoint} only, without its application profiles.")
             app_profiles = []
         selected = []

@@ -55,33 +55,33 @@ def _empty_endpoint() -> Dict:
     return {'quotas': {'concurrent': None, 'rpm': None, 'tpd': None, 'tpm': None}}
 
 
-def refresh_region(region_name: str, update_bundle: bool = False):
+def refresh_region(region: str, update_bundle: bool = False):
     """Refresh foundation models for a region
 
     Also refreshes prefix mapping, merging with existing prefixes.
 
     Args:
-        region_name: AWS region name
+        region: AWS region name
         update_bundle: Also update bundled metadata (for maintainers)
     """
-    logger.info(f"\nProcessing region: {region_name}")
+    logger.info(f"\nProcessing region: {region}")
 
     # Models first: a region the account cannot call is skipped before anything else is
     # listed or written
-    models = fetch_foundation_models(region_name)
+    models = fetch_foundation_models(region)
     if models is None:
         return
 
     # List the system inference profiles once; both the prefix discovery and the
     # model -> profile map below are built from it
     logger.info("  Fetching inference profiles...")
-    all_profiles = list_system_profiles(region_name)
+    all_profiles = list_system_profiles(region)
     profiles_listed = all_profiles is not None  # False: the listing failed (not "none listed")
     all_profiles = all_profiles or []
 
     # Refresh prefix mapping - merge with existing
     logger.info("  Refreshing prefix mapping...")
-    discovered = discover_prefix_mapping(region_name, all_profiles)
+    discovered = discover_prefix_mapping(region, all_profiles)
 
     # Known = bundled + user entries (keeps prefixes of other partitions, e.g. us-gov).
     # The user file only ever gets the user's own and newly discovered entries: a full copy
@@ -138,18 +138,18 @@ def refresh_region(region_name: str, update_bundle: bool = False):
     total = len(set(known) | {e['prefix'] for e in manual_entries + new_entries})
     logger.info(f"  ({len(discovered)} discovered, {len(new_entries)} new, {total} total prefixes)")
     
-    output_file = get_writable_path(f'fm-list-{region_name}.yml')
+    output_file = get_writable_path(f'fm-list-{region}.yml')
 
     # Load existing models to preserve quota mappings
     # User copy if present, else the bundled list, so refreshing never drops quota mappings.
     # --update-bundle in a checkout reads and writes the checkout's list only, as fm-quotas
     # and quota-index do (a user copy would revert their newer bundled mappings)
     checkout = get_bundle_path() if update_bundle else None
-    checkout_file = checkout / f'fm-list-{region_name}.yml' if checkout else None
+    checkout_file = checkout / f'fm-list-{region}.yml' if checkout else None
     if checkout_file:
         existing_models = load_existing_models(str(checkout_file)) if checkout_file.exists() else {}
     else:
-        existing_models = load_existing_models(region_name)
+        existing_models = load_existing_models(region)
     
     # Build mapping from model to inference profiles
     profile_map = build_profile_map(all_profiles)

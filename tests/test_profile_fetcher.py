@@ -613,3 +613,45 @@ def test_country_copy_matches_a_listed_single_region_country_profile():
         application=[app_profile('auold000001', 'a', AU_ARNS)]))
     app = fetcher.list_application_profiles()[0]
     assert (app['profile_prefix'], app['sources']) == ('au', [f"au.{HAIKU}"])
+
+
+def test_lone_copy_of_single_region_profile_is_not_base_when_model_is_not_on_demand():
+    """The fm-list says X has no on-demand endpoint: a copy of the one-region au.X is au only."""
+    one = [arn('ap-southeast-2', HAIKU)]
+    fetcher = InferenceProfileFetcher(FakeBedrock(system=[system_profile(f"au.{HAIKU}", one)],
+                                                  application=[app_profile('single00002', 's', one)]),
+                                      on_demand_models=[], region='ap-southeast-2')
+    assert fetcher.list_application_profiles()[0]['sources'] == [f"au.{HAIKU}"]
+    assert fetcher.find_profiles(HAIKU, None)[0][1:] == []
+
+
+def test_failed_listing_names_the_listing_and_is_not_announced_again(caplog):
+    class SystemDenied(FakeBedrock):
+        def list_inference_profiles(self, maxResults=1000, typeEquals='SYSTEM_DEFINED', nextToken=None):
+            if typeEquals == 'SYSTEM_DEFINED':
+                from botocore.exceptions import ClientError
+                raise ClientError({'Error': {'Code': 'AccessDeniedException', 'Message': 'no'}}, 'List')
+            return super().list_inference_profiles(maxResults, typeEquals, nextToken)
+
+    fetcher = InferenceProfileFetcher(SystemDenied(application=[app_profile('a0000000009', 'a', AU_ARNS)]))
+    for _ in range(2):
+        with pytest.raises(Exception):
+            fetcher.list_application_profiles()
+    assert fetcher.failed_listing() == 'system'
+    denied = InferenceProfileFetcher(FakeBedrock())
+    denied._listings['APPLICATION']['error'] = RuntimeError('denied')
+    caplog.clear()
+    with caplog.at_level('INFO'), pytest.raises(RuntimeError):
+        denied.list_application_profiles()
+    assert 'Listing application inference profiles' not in caplog.text
+    assert denied.failed_listing() == 'application'
+
+
+def test_legacy_entries_are_migrated_and_malformed_endpoints_have_none():
+    from bedrock_usage_analyzer.utils.yaml_handler import endpoint_keys, endpoint_quotas, valid_models
+    legacy = {'model_id': NOVA, 'inference_types': ['ON_DEMAND'], 'quotas': {'tpd': {'code': 'L-2', 'name': 'n'}}}
+    malformed = {'model_id': HAIKU, 'inference_types': ['ON_DEMAND'], 'endpoints': 'TODO'}
+    models = valid_models({'models': [legacy, malformed]})
+    assert dict(endpoint_quotas(models[0])) == {'base': {'tpd': {'code': 'L-2', 'name': 'n'}}}
+    assert 'quotas' not in models[0]
+    assert endpoint_keys(models[1]) == set()

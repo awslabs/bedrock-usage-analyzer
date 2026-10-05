@@ -490,6 +490,22 @@ def test_fm_list_update_bundle_keeps_the_checkout_mappings(monkeypatch, tmp_path
     assert load_yaml(str(tmp_path / 'data' / 'fm-list-ap-south-1.yml')) == stale
 
 
+def test_fm_list_refresh_keeps_legacy_model_level_quotas(monkeypatch, tmp_path):
+    """An older entry's model-level quotas become its base endpoint's, not empty slots."""
+    from bedrock_usage_analyzer.sync import fm_list
+    (tmp_path / 'data').mkdir(exist_ok=True)
+    legacy = {'models': [{'model_id': 'x.m-v1:0', 'provider': 'X', 'inference_types': ['ON_DEMAND'],
+                          'quotas': {'tpm': {'code': 'L-OLD', 'name': 'On-demand tokens per minute for X'}}}]}
+    save_yaml(str(tmp_path / 'data' / 'fm-list-ap-south-1.yml'), legacy)
+    monkeypatch.setattr(fm_list, 'discover_prefix_mapping', lambda region, profiles=None: [])
+    monkeypatch.setattr(fm_list, 'list_system_profiles', lambda region: [])
+    monkeypatch.setattr(fm_list, 'fetch_foundation_models', lambda region: [
+        {'model_id': 'x.m-v1:0', 'provider': 'X', 'inference_types': ['ON_DEMAND']}])
+    fm_list.refresh_region(region='ap-south-1')
+    saved = load_yaml(str(tmp_path / 'data' / 'fm-list-ap-south-1.yml'))['models'][0]
+    assert saved['endpoints']['base']['quotas']['tpm']['code'] == 'L-OLD'
+
+
 def test_fm_quotas_rejects_a_malformed_region_before_any_aws_call(monkeypatch):
     import argparse
     monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition',

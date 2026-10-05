@@ -124,8 +124,11 @@ class QuotaIndexGenerator:
             # --update-bundle indexes and cleans the checkout's lists (the files it rewrites),
             # as fm-quotas does, not the maintainer's user copies
             checkout_file = checkout / fm_file if checkout else None
-            loaded = load_yaml(str(checkout_file)) if checkout_file and checkout_file.exists() \
-                else load_data_file(fm_file)
+            if checkout_file and not checkout_file.exists():
+                # Only a user copy: not the checkout's to index or clean (as fm-quotas skips it)
+                logger.info(f"  ⊘ {region}: the checkout does not bundle {fm_file}, skipped")
+                continue
+            loaded = load_yaml(str(checkout_file)) if checkout_file else load_data_file(fm_file)
             # Malformed entries are skipped, not fatal, and kept as they are when the file is
             # written back (the valid entries are the same dicts, so cleanups reach the file)
             data = fm_file_data(loaded)

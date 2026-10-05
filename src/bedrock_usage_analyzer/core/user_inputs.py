@@ -365,12 +365,15 @@ class UserInputs:
 
     def _find_application_profile(self, identifier):
         """Look up an application profile, or None if absent or the list cannot be read."""
+        fetcher = None
         try:
-            return self._get_profile_fetcher().resolve_application_profile(identifier)
+            fetcher = self._get_profile_fetcher()
+            return fetcher.resolve_application_profile(identifier)
         except Exception as e:
             # Not silent: an application profile name with '.' or ':' would otherwise be
             # analyzed as a model ID without saying why
-            logger.warning(f"  WARNING: could not list application inference profiles in {self.region}, "
+            failed = fetcher.failed_listing() if isinstance(fetcher, InferenceProfileFetcher) else 'application'
+            logger.warning(f"  WARNING: could not list {failed} inference profiles in {self.region}, "
                            f"so {identifier} is treated as a model or system profile ID: {e}")
             return None
 
