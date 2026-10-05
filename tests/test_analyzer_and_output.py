@@ -315,3 +315,10 @@ def test_quotas_come_from_the_region_listing(analyzer, monkeypatch):
     analyzer._use_quota_listing = True                        # set by analyze() for many codes
     quotas = analyzer._fetch_quotas(HAIKU, {'tpm': {'code': 'L-1', 'name': 'x'}, 'rpm': {'code': 'L-2', 'name': 'y'}})
     assert quotas['tpm']['value'] == 123.0 and asked == ['L-2']                # one lookup, for the unlisted code
+
+
+def test_report_names_tell_large_profile_sets_apart():
+    a = BedrockAnalyzer._file_label('us.x', ['a1', 'a2', 'a3', 'a4'])
+    b = BedrockAnalyzer._file_label('us.x', ['b1', 'b2', 'b3', 'b4'])
+    assert a != b and a.startswith('us.x-app-4profiles-')
+    assert BedrockAnalyzer._file_label('us.x', ['a4', 'a3', 'a2', 'a1']) == a       # order does not matter

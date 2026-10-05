@@ -87,8 +87,18 @@ def fm_endpoints(models, model_id):
     """
     for model in models or []:
         if model.get('model_id') == model_id:
-            return set(model_endpoints(model))
+            return endpoint_keys(model)
     return None
+
+
+def endpoint_keys(model) -> set:
+    """Endpoint keys of one parsed fm-list model. A legacy entry (no 'endpoints', model-level
+    'quotas' or ON_DEMAND inference) has its on-demand endpoint, 'base', as the analyzer reads it."""
+    keys = set(model_endpoints(model))
+    if not keys and isinstance(model, dict) and (
+            model.get('quotas') or 'ON_DEMAND' in (model.get('inference_types') or [])):
+        keys.add('base')
+    return keys
 
 
 def profile_endpoints(models, model_id):

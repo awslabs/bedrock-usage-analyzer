@@ -100,6 +100,7 @@ class UserInputs:
         self.account = None
         self.partition = None
         self.region = None
+        self._region_given = False  # set by _get_current_account: a region was passed in
         self.models = []
         self.profile_fetcher: Optional[InferenceProfileFetcher] = None
         self._fm_lists: Dict[str, Optional[List[Dict]]] = {}  # None: the region has no fm-list

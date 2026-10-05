@@ -324,6 +324,18 @@ def test_region_group_keeps_partitions_apart(region, group):
     assert region_group(region) == group
 
 
+def test_legacy_fm_list_entry_counts_as_on_demand():
+    """An old entry (no 'endpoints', ON_DEMAND, model-level quotas) has the base endpoint, as the analyzer reads it."""
+    from bedrock_usage_analyzer.utils.yaml_handler import endpoint_keys, has_endpoint
+    legacy = {'model_id': NOVA, 'inference_types': ['ON_DEMAND'], 'quotas': {'tpm': {'code': 'L-1', 'name': 'n'}}}
+    assert endpoint_keys(legacy) == {'base'} and has_endpoint([legacy], NOVA, None)
+    us = [arn(r, NOVA) for r in ('us-east-1', 'us-east-2', 'us-west-2')]
+    client = FakeBedrock(system=[system_profile(f"us.{NOVA}", us)],
+                         application=[app_profile('legacy00001', 'l', [arn('us-east-1', NOVA)])])
+    fetcher = InferenceProfileFetcher.for_region(client, [legacy], 'us-east-1')
+    assert fetcher.list_application_profiles()[0]['sources'] == [NOVA]
+
+
 def test_lone_arn_copy_of_a_model_newer_than_the_fm_list_is_a_base_copy():
     """A model missing from the fm-list may well be on demand: its lone in-region copy stays base."""
     us = [arn(r, NOVA) for r in ('us-east-1', 'us-east-2', 'us-west-2')]

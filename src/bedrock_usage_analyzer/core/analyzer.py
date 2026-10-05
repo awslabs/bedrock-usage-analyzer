@@ -3,6 +3,7 @@
 
 """Main orchestrator for Bedrock token usage analysis"""
 
+import hashlib
 import numpy as np
 import logging
 import traceback
@@ -49,6 +50,7 @@ class BedrockAnalyzer:
         # One ListServiceQuotas pass pays off only for many codes; a short run uses direct
         # GetServiceQuota calls (set in analyze())
         self._quota_listings = {}
+        self._quota_results = {}  # quota code -> (status, quota) of this run's region
         self._use_quota_listing = False
         # Reuse the fetcher from input collection so profiles are listed only once
         if profile_fetcher is not None:
@@ -140,7 +142,11 @@ class BedrockAnalyzer:
                 wanted.append((quota_type, quota_data, key))
 
         def lookup(code):
-            return lookup_quota(code, self.region, self._quota_listings, use_listing=self._use_quota_listing)
+            # One lookup per code and run: targets sharing an endpoint reuse the result
+            if code not in self._quota_results:
+                self._quota_results[code] = lookup_quota(
+                    code, self.region, self._quota_listings, use_listing=self._use_quota_listing)
+            return self._quota_results[code]
 
         if self._use_quota_listing and self.region not in self._quota_listings:
             # The region's listing once, before the pool (never listed again from the threads)
@@ -433,5 +439,9 @@ class BedrockAnalyzer:
     def _file_label(endpoint, app_ids):
         """Distinct output name per target, so two endpoints of one model do not overwrite each other."""
         if app_ids:
-            return f"{endpoint}-app-{'-'.join(app_ids)}" if len(app_ids) <= 3 else f"{endpoint}-app-{len(app_ids)}profiles"
+            if len(app_ids) <= 3:
+                return f"{endpoint}-app-{'-'.join(app_ids)}"
+            # Many profiles: a short digest of the sorted IDs keeps different sets apart
+            digest = hashlib.sha256('\n'.join(sorted(app_ids)).encode()).hexdigest()[:8]
+            return f"{endpoint}-app-{len(app_ids)}profiles-{digest}"
         return endpoint
