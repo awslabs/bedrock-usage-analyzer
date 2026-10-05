@@ -9,6 +9,16 @@ from typing import Optional, Dict, List
 from bedrock_usage_analyzer.aws.bedrock import get_endpoint_descriptions
 from bedrock_usage_analyzer.aws.client_factory import create_client
 
+_runtime_clients: Dict[str, object] = {}
+
+
+def _runtime_client(region: str):
+    """One bedrock-runtime client per region for the run: its adaptive retry rate limiter
+    then carries over from call to call instead of starting empty on each one."""
+    if region not in _runtime_clients:
+        _runtime_clients[region] = create_client('bedrock-runtime', region)
+    return _runtime_clients[region]
+
 
 def extract_common_name(region: str, model_id: str, fm_model_id: str) -> Optional[str]:
     """Extract common model name using LLM with tool call
@@ -24,7 +34,7 @@ def extract_common_name(region: str, model_id: str, fm_model_id: str) -> Optiona
     Returns:
         Common name or None
     """
-    client = create_client('bedrock-runtime', region)
+    client = _runtime_client(region)
     
     # Use tool to enforce JSON format
     tool_config = {
@@ -94,7 +104,7 @@ def extract_quota_codes(region: str, model_id: str, fm_model_id: str,
     Returns:
         Dict with tpm/rpm/tpd/concurrent, each containing {code, name} or None
     """
-    client = create_client('bedrock-runtime', region)
+    client = _runtime_client(region)
     
     tool_config = {
         'tools': [{

@@ -327,6 +327,10 @@ class UserInputs:
             profile = self._find_application_profile(value)
             if profile is not None:
                 return self._application_profile_config(value, profile)
+            if isinstance(self.profile_fetcher, InferenceProfileFetcher) and \
+                    self.profile_fetcher.routes_to_no_foundation_model(value):
+                # A named copy of a custom model: stop, as for its ID, instead of an empty report
+                self._application_profile_config(value)
 
         base_model_id, prefix = split_profile_id(value)
         profile_only = [] if known_model or prefix else self._profile_endpoints_of(base_model_id)

@@ -8,6 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict
 import sys
 
+import yaml
+
 from bedrock_usage_analyzer.utils.yaml_handler import (
     endpoint_quotas, fm_file_data, load_data_file, load_yaml, model_endpoints, quota_slots, save_yaml, valid_models)
 from bedrock_usage_analyzer.utils.csv_handler import write_csv
@@ -130,7 +132,13 @@ class QuotaIndexGenerator:
                 # Only a user copy: not the checkout's to index or clean (as fm-quotas skips it)
                 logger.info(f"  ⊘ {region}: the checkout does not bundle {fm_file}, skipped")
                 continue
-            loaded = load_yaml(str(checkout_file)) if checkout_file else load_data_file(fm_file)
+            try:
+                loaded = load_yaml(str(checkout_file)) if checkout_file else load_data_file(fm_file)
+            except yaml.YAMLError as e:
+                # One hand-edited list with a syntax error: skip that region, index the others
+                logger.warning(f"  ⊘ {region}: could not read {fm_file} ({e}); fix or delete it, "
+                               f"or run: bua refresh fm-list {region}")
+                continue
             # Malformed entries are skipped, not fatal, and kept as they are when the file is
             # written back (the valid entries are the same dicts, so cleanups reach the file)
             data = fm_file_data(loaded)
@@ -387,7 +395,7 @@ class QuotaIndexGenerator:
 
         if not modified:
             return
-        user_file = get_writable_path(f'fm-list-{region}.yml')
+        user_file = get_user_data_dir() / f'fm-list-{region}.yml'  # read-only: no mkdir
         # Only an existing user copy is rewritten. Creating one from a bundled list would hide
         # every later bundled update for that region; the analyzer applies the same checks
         # when it reads quotas, so bundled lists are corrected by maintainers (--update-bundle).

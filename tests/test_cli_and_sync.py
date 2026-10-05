@@ -577,6 +577,30 @@ def test_unreadable_user_fm_list_keeps_the_bundled_mappings(tmp_path):
     assert any(quota_slots(existing.values()))      # the bundled codes, not empty slots
 
 
+def test_unreadable_user_fm_list_is_skipped_by_quota_index_and_named_by_fm_quotas(
+        monkeypatch, tmp_path, no_bundle, commercial_creds, caplog):
+    from bedrock_usage_analyzer.aws.servicequotas import QUOTA_OK
+    from bedrock_usage_analyzer.sync import quota_index
+    _index_fixture(tmp_path, {'tpm': 'L-1', 'rpm': 'L-2'})
+    (tmp_path / 'data' / 'fm-list-us-west-2.yml').write_text('models: [unclosed\n')
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota',
+                        lambda code, region: (QUOTA_OK, {'QuotaName': 'On-demand tokens per minute for m1'}))
+    gen = quota_index.QuotaIndexGenerator()
+    gen.run()                                               # the other region is still indexed
+    assert {e['source_region'] for e in gen.entries} == {'us-east-1'}
+    assert 'could not read fm-list-us-west-2.yml' in caplog.text
+    assert qm.QuotaMapper('us-east-1', 'm')._load_fm_list('us-west-2') is None
+    assert 'Could not read fm-list-us-west-2.yml' in caplog.text
+
+
+def test_llm_calls_reuse_one_runtime_client_per_region(monkeypatch):
+    from bedrock_usage_analyzer.aws import bedrock_llm
+    made = []
+    monkeypatch.setattr(bedrock_llm, 'create_client', lambda service, region: made.append(region) or object())
+    assert bedrock_llm._runtime_client('us-east-1') is bedrock_llm._runtime_client('us-east-1')
+    assert made == ['us-east-1']
+
+
 def test_fm_quotas_rejects_a_malformed_region_before_any_aws_call(monkeypatch):
     import argparse
     monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition',

@@ -366,6 +366,16 @@ def test_application_profile_name_with_dots(inputs):
         'model_id': HAIKU, 'profile_prefix': 'au', 'application_profile_ids': ['dotted00001']}
 
 
+def test_dotted_name_of_a_custom_model_copy_stops_with_the_reason(inputs, caplog):
+    from conftest import app_profile
+    inputs.profile_fetcher.bedrock_client.application.append(
+        app_profile('custom00002', 'team.custom.v1', ['arn:aws:bedrock:ap-southeast-2:1:custom-model/x']))
+    inputs.profile_fetcher._app_profiles = None
+    with pytest.raises(SystemExit):
+        inputs._parse_model_id('team.custom.v1')
+    assert 'routes to no foundation model' in caplog.text
+
+
 def test_china_credentials_are_identified(monkeypatch, caplog):
     def identity(region=None, **_):
         if region == 'cn-north-1':

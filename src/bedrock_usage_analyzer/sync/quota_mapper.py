@@ -9,6 +9,8 @@ import functools
 import sys
 from typing import Dict, List, Optional
 
+import yaml
+
 from bedrock_usage_analyzer.utils.yaml_handler import (
     endpoint_keys, endpoint_quotas, fm_file_data, load_data_file, load_yaml, quota_slots, save_yaml,
     valid_models)
@@ -332,6 +334,11 @@ class QuotaMapper:
                 data = load_yaml(str(checkout)) if checkout.exists() else None
             else:
                 data = load_data_file(f'fm-list-{region}.yml')
+        except yaml.YAMLError as e:
+            # Exists but cannot be parsed: say so (not "no FM list") and how to fix it
+            logger.warning(f"  Could not read fm-list-{region}.yml ({e}); fix or delete it, "
+                           f"or run: bua refresh fm-list {region}")
+            return None
         except Exception:
             return None
         if data is None:

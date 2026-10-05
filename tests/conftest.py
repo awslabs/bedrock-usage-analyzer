@@ -25,6 +25,8 @@ def isolated_env(tmp_path, monkeypatch):
     partition.clear_cache()
     bedrock_module._prefix_mapping_cache = None
     servicequotas_module._clients.clear()
+    from bedrock_usage_analyzer.aws import bedrock_llm
+    bedrock_llm._runtime_clients.clear()
     from bedrock_usage_analyzer.utils import paths
     paths.use_checkout_metadata(None)
     monkeypatch.setattr(paths, '_checkout_metadata', None)  # restored after the test as well
