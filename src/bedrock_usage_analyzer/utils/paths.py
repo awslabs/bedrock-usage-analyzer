@@ -15,9 +15,21 @@ from platformdirs import user_data_dir
 APP_NAME = "bedrock-usage-analyzer"
 ENV_VAR = "BEDROCK_ANALYZER_DATA_DIR"
 
+# Set by --update-bundle: the checkout's metadata directory stands in for both the user
+# directory and the bundled one, so a maintainer run reads and writes the checkout only
+_checkout_metadata: Optional[Path] = None
+
+
+def use_checkout_metadata(path: Optional[Path]) -> None:
+    """Resolve every metadata read and write to ``path`` (None: back to normal)."""
+    global _checkout_metadata
+    _checkout_metadata = path
+
 
 def get_user_data_dir() -> Path:
     """Get writable user data directory (env var or platformdirs)."""
+    if _checkout_metadata is not None:
+        return _checkout_metadata
     if custom := os.environ.get(ENV_VAR):
         return Path(custom).expanduser()
     return Path(user_data_dir(APP_NAME))
@@ -25,6 +37,8 @@ def get_user_data_dir() -> Path:
 
 def get_bundled_data_dir() -> Path:
     """Get bundled metadata directory (read-only)."""
+    if _checkout_metadata is not None:
+        return _checkout_metadata
     return files("bedrock_usage_analyzer.metadata")
 
 
@@ -166,6 +180,8 @@ def get_metadata_location_message() -> str:
 
 def get_refresh_location_message() -> str:
     """Get user-friendly message about where refresh will save."""
+    if _checkout_metadata is not None:
+        return f"Metadata will be saved to the checkout: {_checkout_metadata} (--update-bundle; user copies are left alone)"
     user_dir = get_user_data_dir()
     env_set = os.environ.get(ENV_VAR)
     

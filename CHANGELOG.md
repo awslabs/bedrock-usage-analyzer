@@ -40,6 +40,9 @@ Combines the AWS GovCloud work from #5 and #6 into one partition layer and fixes
 - `regions.yml` stays a plain list of region names; entries in the `{name: ...}` form are
   still read.
 - `refresh regions` keeps regions of other partitions when it updates the list.
+- `--update-bundle` (maintainers) reads and writes only the checkout's
+  `src/bedrock_usage_analyzer/metadata` for every refresh command; user copies are no longer
+  updated alongside it. Outside a checkout the commands exit before any AWS call.
 - All AWS clients are created in one place (`aws/client_factory.py`): adaptive retries (up to 9 attempts) for CloudWatch, Service Quotas and Bedrock Runtime, standard retries (up to 4 attempts) for the others, and a single quick attempt for the cross-partition STS probes.
 
 ### Removed

@@ -69,6 +69,14 @@
           "description": "Update bundled data if --update-bundle flag is set."
         },
         {
+          "name": "_require_checkout",
+          "description": "With --update-bundle: the checkout's metadata path, set as the metadata root of the run; exits before any AWS call outside a checkout."
+        },
+        {
+          "name": "_exit_not_in_checkout",
+          "description": "Exit with the '--update-bundle requires a development environment' error."
+        },
+        {
           "name": "main",
           "description": "Main entry point with argparse subcommands"
         }
@@ -630,6 +638,10 @@
           "description": "All application inference profiles in the region, with their resolved source."
         },
         {
+          "name": "failed_listing",
+          "description": "'application' or 'system': the listing that made list_application_profiles fail."
+        },
+        {
           "name": "resolve_endpoints",
           "description": "Return the endpoints, as (prefix or None, model ID), a profile may have been copied from."
         },
@@ -760,6 +772,10 @@
         {
           "name": "_find_application_profile",
           "description": "Look up an application profile, or None if absent or the list cannot be read."
+        },
+        {
+          "name": "_failed_listing",
+          "description": "'application' or 'system': which profile listing failed, for warnings and errors."
         },
         {
           "name": "_application_profile_config",
@@ -1096,7 +1112,7 @@
         },
         {
           "name": "load_region_names",
-          "description": "Load region names: the user's regions.yml, plus bundled regions of partitions it lacks."
+          "description": "Load region names: the user's regions.yml, plus bundled regions of partitions it lacks; with update_bundle in a checkout, the checkout's regions.yml only."
         },
         {
           "name": "credentials_partition_or_exit",
@@ -1298,8 +1314,12 @@
       "summary": "Path resolution for metadata files using platformdirs.",
       "methods": [
         {
+          "name": "use_checkout_metadata",
+          "description": "Resolve every metadata read and write to the given checkout directory (--update-bundle); None restores normal resolution."
+        },
+        {
           "name": "get_user_data_dir",
-          "description": "Get writable user data directory (env var or platformdirs)."
+          "description": "Get writable user data directory (env var or platformdirs; the checkout under --update-bundle)."
         },
         {
           "name": "get_bundled_data_dir",

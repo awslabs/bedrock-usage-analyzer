@@ -290,6 +290,30 @@ def test_quota_index_refreshes_names(monkeypatch, tmp_path, no_bundle, commercia
     assert {e['quota_name'] for e in gen.entries} == set(names.values())
 
 
+def test_quota_index_update_bundle_indexes_checkout_only_lists(monkeypatch, tmp_path, commercial_creds):
+    """A region only the checkout has is indexed; the user's own index and lists are not touched."""
+    from bedrock_usage_analyzer.aws.servicequotas import QUOTA_OK
+    from bedrock_usage_analyzer.sync import quota_index
+    checkout = tmp_path / 'checkout'
+    checkout.mkdir()
+    (tmp_path / 'data').mkdir(exist_ok=True)
+    save_yaml(str(checkout / 'regions.yml'), {'regions': ['ap-east-3']})
+    save_yaml(str(checkout / 'fm-list-ap-east-3.yml'), {'models': [
+        {'model_id': 'm1', 'provider': 'X', 'endpoints': {'base': {'quotas': {
+            'tpm': {'code': 'L-1', 'name': 'On-demand tokens per minute for Model One'}}}}}]})
+    (tmp_path / 'data' / 'quota-index.csv').write_text('user,index\n')
+    monkeypatch.setattr(cli, 'get_bundle_path', lambda: checkout)
+    monkeypatch.setattr(quota_index, 'get_bundle_path', lambda: checkout)
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota',
+                        lambda code, region: (QUOTA_OK, {'QuotaName': 'On-demand tokens per minute for Model One'}))
+    monkeypatch.setattr(sys, 'argv', ['bua', 'refresh', 'quota-index', '--update-bundle'])
+    cli.main()
+    assert 'L-1' in (checkout / 'quota-index.csv').read_text()
+    assert (tmp_path / 'data' / 'quota-index.csv').read_text() == 'user,index\n'
+    from bedrock_usage_analyzer.utils import paths
+    assert paths.get_user_data_dir() == tmp_path / 'data'      # the redirect ends with the command
+
+
 def test_check_quota_statuses(monkeypatch):
     from botocore.exceptions import ClientError
     from bedrock_usage_analyzer.aws import servicequotas as sq

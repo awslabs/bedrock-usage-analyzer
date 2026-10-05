@@ -128,12 +128,15 @@ def refresh_region(region: str, update_bundle: bool = False):
             # The file being rewritten (the checkout), not the installed package's copy
             # Read with the same validation as every other reader (malformed entries skipped)
             bundled = {p['prefix']: p for p in read_prefix_file(bundle_prefix_file)}
+            count_before = len(bundled)
             # Everything discovered that the bundle lacks, including prefixes already saved in
-            # the user's own file by an earlier refresh without --update-bundle
-            for entry in manual_entries + [e for e in discovered if e['prefix'] not in bundled]:
-                bundled[entry['prefix']] = entry
-            save_yaml(str(bundle_prefix_file), {'prefixes': by_prefix(bundled)})
-            logger.info(f"  ✓ Prefix mapping saved: {bundle_prefix_file} (bundled)")
+            # the user's own file by an earlier refresh without --update-bundle. Existing
+            # entries (a hand-tuned 'base' or 'global' too) are kept as they are.
+            for entry in manual_entries + discovered:
+                bundled.setdefault(entry['prefix'], entry)
+            if len(bundled) != count_before:  # rewritten only when an entry was added
+                save_yaml(str(bundle_prefix_file), {'prefixes': by_prefix(bundled)})
+                logger.info(f"  ✓ Prefix mapping saved: {bundle_prefix_file} (bundled)")
 
     # Later lookups in this run must see newly discovered prefixes
     load_prefix_mapping(refresh=True)

@@ -13,6 +13,7 @@ from bedrock_usage_analyzer.utils.paths import (
     get_refresh_location_message,
     get_writable_path,
     get_bundle_path,
+    use_checkout_metadata,
 )
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -131,19 +132,28 @@ def _require_checkout(args):
         return None
     bundle_path = get_bundle_path()
     if bundle_path is None:
-        _maybe_update_bundle(args, None, None)  # exits with the 'development environment' error
+        _exit_not_in_checkout()
+    # Every metadata read and write of the run (region lists, fm-lists, the picker, the
+    # quota-index file listing) resolves to the checkout, not user copies or the installed package
+    use_checkout_metadata(bundle_path.resolve())
     return bundle_path
+
+
+def _exit_not_in_checkout():
+    logger.error("\nError: --update-bundle requires a development environment.")
+    logger.error("       Could not find: ./src/bedrock_usage_analyzer/metadata/")
+    logger.error("\nThis flag is for maintainers in a cloned repository.")
+    sys.exit(1)
 
 
 def cmd_refresh_regions(args):
     """Refresh regions list."""
     from bedrock_usage_analyzer.sync.regions import discover_regions, read_region_file, refresh_regions
     from bedrock_usage_analyzer.utils.yaml_handler import save_yaml
+    bundle_path = _require_checkout(args)
 
     print(get_refresh_location_message())
     print()
-
-    bundle_path = _require_checkout(args)
 
     # Only the credentials' partition is replaced; other partitions are kept
     # (e.g. GovCloud regions when refreshing with commercial credentials)
@@ -264,11 +274,8 @@ def _maybe_update_bundle(args, filename, data):
     
     bundle_path = get_bundle_path()
     if bundle_path is None:
-        logger.error("\nError: --update-bundle requires a development environment.")
-        logger.error("       Could not find: ./src/bedrock_usage_analyzer/metadata/")
-        logger.error("\nThis flag is for maintainers in a cloned repository.")
-        sys.exit(1)
-    
+        _exit_not_in_checkout()
+
     bundle_file = bundle_path / filename
     save_yaml(str(bundle_file), data)
     logger.info(f"✓ Saved: {bundle_file} (bundled)")
@@ -358,6 +365,8 @@ def main():
             logger.error(f"Hint: {hint}")
         traceback.print_exc()
         sys.exit(1)
+    finally:
+        use_checkout_metadata(None)  # --update-bundle's redirect ends with the command
 
 
 if __name__ == '__main__':
