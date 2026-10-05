@@ -24,8 +24,10 @@ from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_
 
 logger = logging.getLogger(__name__)
 
-# Above this many distinct quota codes per run, the region's quotas are listed once
-QUOTA_LISTING_THRESHOLD = 8
+# Above this many distinct quota codes per run, the region's quotas are listed once. The
+# listing pages sequentially through every Bedrock quota of the region (hundreds), so it only
+# beats parallel per-code lookups (4 at a time) for a few dozen codes
+QUOTA_LISTING_THRESHOLD = 40
 
 class BedrockAnalyzer:
     """Main orchestrator for Bedrock token usage analysis"""
@@ -439,3 +441,15 @@ class BedrockAnalyzer:
             digest = hashlib.sha256('\n'.join(sorted(app_ids)).encode()).hexdigest()[:8]
             return f"{endpoint}-app-{len(app_ids)}profiles-{digest}"
         return endpoint
+
+
+def main():
+    """Run the analysis as `bua analyze` does (kept for `python -m ...core.analyzer`)."""
+    import sys
+    from bedrock_usage_analyzer.__main__ import main as cli_main
+    sys.argv = [sys.argv[0], 'analyze', *sys.argv[1:]]
+    cli_main()
+
+
+if __name__ == "__main__":
+    main()

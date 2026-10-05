@@ -50,6 +50,7 @@ class QuotaMapper:
         self._quota_checks = {}  # (code, region) -> GetServiceQuota status
         self._fm_files = {}  # region -> parsed fm-list file, written back whole
         self._match_rules = None  # (endpoint quota keywords, regional prefixes)
+        self.update_bundle = False  # set by run()
         
     def run(self, update_bundle: bool = False):
         """Execute quota mapping for all regions
@@ -76,7 +77,8 @@ class QuotaMapper:
         # Same STS region hint as the picker (target first), so the cached identity is reused
         # (the CLI passes the list it already read for its partition check)
         all_regions = self.credential_regions if self.credential_regions is not None else \
-            regions_for_credentials(load_region_names(), self.target_region or self.bedrock_region)[0]
+            regions_for_credentials(load_region_names(update_bundle=self.update_bundle),
+                                    self.target_region or self.bedrock_region)[0]
 
         if self.target_region:
             if self.target_region not in all_regions:
@@ -362,5 +364,5 @@ class QuotaMapper:
 
     def _bundle_file(self, region: str):
         """The checkout's bundled fm-list path with --update-bundle, else None."""
-        bundle_path = get_bundle_path() if getattr(self, 'update_bundle', False) else None
+        bundle_path = get_bundle_path() if self.update_bundle else None
         return bundle_path / f'fm-list-{region}.yml' if bundle_path else None

@@ -8,6 +8,8 @@ import os
 import sys
 from typing import Iterable, List, Optional
 
+import yaml
+
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.utils.partition import (
     PARTITION_HOME_REGIONS,
@@ -48,7 +50,13 @@ def read_region_file(path) -> List[str]:
     """Region names from one regions.yml file ([] if it does not exist)."""
     if not path or not os.path.exists(str(path)):
         return []
-    data = load_yaml(str(path))
+    try:
+        data = load_yaml(str(path))
+    except yaml.YAMLError as e:
+        # A hand-edited file with a syntax error reads as empty (callers then give the
+        # 'run: bua refresh regions' hint), with the file named, instead of a traceback
+        logger.warning(f"Could not read {path} ({e}); fix or delete it, or run: bua refresh regions")
+        return []
     # A hand-edited file whose top level is not a mapping ('- us-east-1' list) reads as empty,
     # so callers give the 'run: bua refresh regions' hint instead of a traceback
     return normalize_region_names(data.get('regions', []) if isinstance(data, dict) else [])

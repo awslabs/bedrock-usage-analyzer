@@ -183,7 +183,9 @@ class InferenceProfileFetcher:
             # say the report is incomplete) instead of returning profiles that match nothing.
             # The application listing above is kept. A system listing that failed after its
             # in-call retry stays failed for the run (_list_once), so later calls fail the same way.
-            self._load_system_profiles()
+            # No application profiles: no source to resolve, so nothing is missing
+            if raw:
+                self._load_system_profiles()
             profiles = []
             for profile in raw:
                 if not profile.get('inferenceProfileId'):

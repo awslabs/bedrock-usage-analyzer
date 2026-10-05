@@ -677,6 +677,16 @@ def test_lone_in_region_copy_with_nothing_comparable_is_a_base_copy():
     assert (app['profile_prefix'], app['sources']) == (None, [HAIKU])
 
 
+def test_no_application_profiles_needs_no_system_listing():
+    class SystemFails(FakeBedrock):
+        def list_inference_profiles(self, maxResults=1000, typeEquals='SYSTEM_DEFINED', nextToken=None):
+            if typeEquals == 'SYSTEM_DEFINED':
+                raise RuntimeError('throttled')
+            return super().list_inference_profiles(maxResults, typeEquals, nextToken)
+
+    assert InferenceProfileFetcher(SystemFails()).list_application_profiles() == []
+
+
 def test_copy_of_a_custom_model_is_named_as_such():
     apps = [app_profile('custom00001', 'mine', ['arn:aws:bedrock:us-east-1:1:custom-model/x'])]
     fetcher = InferenceProfileFetcher(FakeBedrock(application=apps))

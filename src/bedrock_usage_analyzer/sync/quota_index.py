@@ -115,7 +115,8 @@ class QuotaIndexGenerator:
             # (the bundled list also has opt-in regions it may not have)
             known = set(_account_regions(self._partition))
             if not known:
-                known = set(filter_regions_by_partition(load_region_names(), self._partition))
+                known = set(filter_regions_by_partition(load_region_names(update_bundle=self.update_bundle),
+                                                        self._partition))
                 logger.warning("  Could not list the account's enabled regions (account:ListRegions or "
                                "ec2:DescribeRegions); checking the bundled regions, opt-in ones included. "
                                "Run 'bua refresh regions' to limit the check to enabled regions.")
@@ -434,7 +435,7 @@ class QuotaIndexGenerator:
             for e in self.entries if e.get('quota_name') not in ('ERROR', 'MISMATCH')
         ]
         
-        bundle_path = get_bundle_path() if getattr(self, 'update_bundle', False) else None
+        bundle_path = get_bundle_path() if self.update_bundle else None
         if bundle_path:
             # The rows come from the checkout's lists only: the user's index (of the user's
             # own lists) is left alone, as every --update-bundle refresh leaves user copies

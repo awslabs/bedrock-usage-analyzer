@@ -621,6 +621,23 @@ def test_identity_failure_gets_the_hint_for_the_actual_error(monkeypatch, caplog
     assert 'Could not connect' in caplog.text or 'reach' in caplog.text
 
 
+def test_regions_file_with_a_syntax_error_reads_as_empty_and_is_named(tmp_path, caplog):
+    from bedrock_usage_analyzer.sync.regions import read_region_file
+    path = tmp_path / 'regions.yml'
+    path.write_text('regions: [us-east-1\n')
+    assert read_region_file(path) == []
+    assert 'regions.yml' in caplog.text and 'bua refresh regions' in caplog.text
+
+
+def test_analyzer_module_still_runs_the_analysis(monkeypatch):
+    from bedrock_usage_analyzer.core import analyzer
+    seen = []
+    monkeypatch.setattr(cli, 'main', lambda: seen.append(list(sys.argv)))
+    monkeypatch.setattr(sys, 'argv', ['analyzer.py', '-r', 'us-east-1'])
+    analyzer.main()
+    assert seen == [['analyzer.py', 'analyze', '-r', 'us-east-1']]
+
+
 def test_regions_file_with_a_list_at_the_top_reads_as_empty(tmp_path):
     from bedrock_usage_analyzer.sync.regions import read_region_file
     path = tmp_path / 'regions.yml'

@@ -96,7 +96,6 @@ def refresh_region(region: str, update_bundle: bool = False):
     # Known = bundled + user entries (keeps prefixes of other partitions, e.g. us-gov).
     # The user file only ever gets the user's own and newly discovered entries: a full copy
     # of the bundle there would hide later bundled changes to existing prefixes.
-    prefix_file = get_writable_path('prefix-mapping.yml')
     bundled, user = prefix_mapping_layers()
     user_entries = {p['prefix']: p for p in user}
     known = {**{p['prefix']: p for p in bundled}, **user_entries}
@@ -129,6 +128,7 @@ def refresh_region(region: str, update_bundle: bool = False):
     if new_entries and not (update_bundle and get_bundle_path()):
         for entry in new_entries:
             user_entries[entry['prefix']] = entry
+        prefix_file = get_writable_path('prefix-mapping.yml')  # (creates the data dir: only when written)
         save_yaml(str(prefix_file), {'prefixes': by_prefix(user_entries)})
         logger.info(f"  ✓ Prefix mapping saved: {prefix_file}")
         saved = True
@@ -158,8 +158,6 @@ def refresh_region(region: str, update_bundle: bool = False):
     total = len(set(known) | {e['prefix'] for e in manual_entries + new_entries})
     logger.info(f"  ({len(discovered)} discovered, {len(new_entries)} new, {total} total prefixes)")
     
-    output_file = get_writable_path(f'fm-list-{region}.yml')
-
     # Load existing models to preserve quota mappings
     # User copy if present, else the bundled list, so refreshing never drops quota mappings.
     # --update-bundle in a checkout reads and writes the checkout's list only, as fm-quotas
@@ -215,6 +213,7 @@ def refresh_region(region: str, update_bundle: bool = False):
         save_yaml(str(checkout_file), models_data)
         logger.info(f"  ✓ Saved {len(updated_models)} models to {checkout_file} (bundled)")
         return
+    output_file = get_writable_path(f'fm-list-{region}.yml')
     save_yaml(str(output_file), models_data)
     logger.info(f"  ✓ Saved {len(updated_models)} models to {output_file}")
 
