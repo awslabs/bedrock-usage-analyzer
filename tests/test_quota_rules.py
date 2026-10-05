@@ -224,6 +224,17 @@ def test_analyzer_skips_saved_conflicting_codes(tmp_path, monkeypatch):
     assert analyzer._load_quota_codes('missing.model', 'us') == {}
 
 
+def test_model_level_quotas_are_not_base_quotas_of_an_entry_with_endpoints(tmp_path):
+    from bedrock_usage_analyzer.core.analyzer import BedrockAnalyzer
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [
+        {'model_id': SONNET4, 'provider': 'Anthropic', 'endpoints': {'us': {'quotas': {}}},
+         'quotas': {'tpm': {'code': 'L-OLD', 'name': 'On-demand tokens per minute for Sonnet 4'}}}]})
+    analyzer = BedrockAnalyzer.__new__(BedrockAnalyzer)
+    analyzer.region, analyzer._fm_models = 'us-east-1', None
+    assert analyzer._load_quota_codes(SONNET4, None) == {}
+
+
 def test_mapper_drops_conflicts_even_without_common_name(monkeypatch, tmp_path):
     (tmp_path / 'data').mkdir()
     save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1']})

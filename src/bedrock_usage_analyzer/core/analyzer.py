@@ -100,8 +100,9 @@ class BedrockAnalyzer:
                 endpoint = endpoints[endpoint_key]
                 saved = endpoint.get('quotas') if isinstance(endpoint, dict) else None
                 quotas = dict(saved) if isinstance(saved, dict) else {}  # tolerates hand edits
-            elif endpoint_key == 'base':
-                # Old fm-list structure: model-level quotas were on-demand quotas
+            elif endpoint_key == 'base' and model.get('endpoints') is None:
+                # Old fm-list structure: model-level quotas were on-demand quotas (valid_models
+                # migrates such entries; an entry with endpoints but no 'base' has no base quotas)
                 saved = model.get('quotas')
                 quotas = dict(saved) if isinstance(saved, dict) else {}  # tolerates hand edits
             else:

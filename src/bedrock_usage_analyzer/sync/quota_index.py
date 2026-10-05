@@ -56,7 +56,7 @@ class QuotaIndexGenerator:
         """Execute quota index generation
         
         Args:
-            update_bundle: Also update bundled metadata (for maintainers)
+            update_bundle: Update the checkout's bundled metadata instead of user copies (maintainers)
         """
         self.update_bundle = update_bundle
         logger.info("Generating quota index for validation...\n")
@@ -98,7 +98,9 @@ class QuotaIndexGenerator:
         # Each model endpoint is validated in the first region listing a mapping for it, so
         # order the partition's home region first, then regions the account has enabled
         # (the user's regions.yml), and opt-in regions it may not have enabled last
-        enabled = set(read_region_file(get_writable_path('regions.yml')))
+        # (with --update-bundle the checkout's regions.yml, which `refresh regions --update-bundle` writes)
+        checkout = get_bundle_path() if self.update_bundle else None
+        enabled = set(read_region_file(checkout / 'regions.yml' if checkout else get_writable_path('regions.yml')))
         homes = set(PARTITION_HOME_REGIONS.values())
         # Only regions the account can call are validated and cleaned: an opt-in region it
         # has not enabled answers every lookup with an error (its codes are kept as they are)
@@ -119,7 +121,6 @@ class QuotaIndexGenerator:
 
         logger.info(f"Found {len(fm_files)} fm-list files")
 
-        checkout = get_bundle_path() if self.update_bundle else None
         for region, fm_file in fm_files:
             # --update-bundle indexes and cleans the checkout's lists (the files it rewrites),
             # as fm-quotas does, not the maintainer's user copies
@@ -423,24 +424,17 @@ class QuotaIndexGenerator:
             for e in self.entries if e.get('quota_name') not in ('ERROR', 'MISMATCH')
         ]
         
-        output_file = get_writable_path('quota-index.csv')
-        write_csv(
-            str(output_file),
-            CSV_HEADERS,
-            valid_rows
-        )
-        logger.info(f"\n✓ Generated {output_file} with {len(valid_rows)} valid entries")
-        
-        if getattr(self, 'update_bundle', False):
-            bundle_path = get_bundle_path()
-            if bundle_path:
-                bundle_file = bundle_path / 'quota-index.csv'
-                write_csv(
-                    str(bundle_file),
-                    CSV_HEADERS,
-                    valid_rows
-                )
-                logger.info(f"✓ Generated {bundle_file} (bundled)")
+        bundle_path = get_bundle_path() if getattr(self, 'update_bundle', False) else None
+        if bundle_path:
+            # The rows come from the checkout's lists only: the user's index (of the user's
+            # own lists) is left alone, as every --update-bundle refresh leaves user copies
+            bundle_file = bundle_path / 'quota-index.csv'
+            write_csv(str(bundle_file), CSV_HEADERS, valid_rows)
+            logger.info(f"\n✓ Generated {bundle_file} (bundled) with {len(valid_rows)} valid entries")
+        else:
+            output_file = get_writable_path('quota-index.csv')
+            write_csv(str(output_file), CSV_HEADERS, valid_rows)
+            logger.info(f"\n✓ Generated {output_file} with {len(valid_rows)} valid entries")
         
         # Codes removed in any region (not only index entries), and only files really written
         if self._removed:

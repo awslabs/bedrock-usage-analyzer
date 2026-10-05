@@ -104,6 +104,30 @@ def test_refresh_regions_update_bundle_writes_the_checkout_only(monkeypatch, tmp
     assert not (tmp_path / 'data' / 'regions.yml').exists()
 
 
+@pytest.mark.parametrize('command', [['fm-list'], ['quota-index'],
+                                     ['fm-quotas', 'us-east-1', 'us-east-1', 'm']])
+def test_update_bundle_outside_a_checkout_exits_before_any_aws_call(monkeypatch, command, caplog):
+    monkeypatch.setattr(cli, 'get_bundle_path', lambda: None)
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition',
+                        lambda _=None: pytest.fail('must not call STS'))
+    monkeypatch.setattr(sys, 'argv', ['bua', 'refresh', *command, '--update-bundle'])
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main()
+    assert exit_info.value.code == 1 and 'development environment' in caplog.text
+
+
+def test_update_bundle_reads_the_checkout_regions(monkeypatch, tmp_path):
+    from bedrock_usage_analyzer.sync import regions as r
+    checkout = tmp_path / 'checkout'
+    checkout.mkdir()
+    (tmp_path / 'data').mkdir(exist_ok=True)
+    save_yaml(str(checkout / 'regions.yml'), {'regions': ['ap-southeast-8', 'us-east-1']})
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1']})
+    monkeypatch.setattr('bedrock_usage_analyzer.utils.paths.get_bundle_path', lambda: checkout)
+    assert r.load_region_names(update_bundle=True) == ['ap-southeast-8', 'us-east-1']
+    assert 'ap-southeast-8' not in r.load_region_names()
+
+
 def test_quota_mapper_keeps_unmapped_endpoints(monkeypatch, tmp_path):
     (tmp_path / 'data').mkdir()
     save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1']})

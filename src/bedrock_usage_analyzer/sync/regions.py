@@ -54,13 +54,18 @@ def read_region_file(path) -> List[str]:
     return normalize_region_names(data.get('regions', []) if isinstance(data, dict) else [])
 
 
-def load_region_names() -> List[str]:
+def load_region_names(update_bundle: bool = False) -> List[str]:
     """Load region names: the user's regions.yml, plus bundled regions of partitions it lacks.
 
     A user file written before GovCloud was bundled lists only commercial
     regions; it still wins for commercial, but GovCloud comes from the bundle.
+    With ``update_bundle`` in a checkout, the checkout's regions.yml only: maintainer mode
+    refreshes what `refresh regions --update-bundle` wrote there, not a user copy.
     """
-    from bedrock_usage_analyzer.utils.paths import load_bundled_yaml
+    from bedrock_usage_analyzer.utils.paths import get_bundle_path, load_bundled_yaml
+    checkout = get_bundle_path() if update_bundle else None
+    if checkout is not None:
+        return read_region_file(checkout / 'regions.yml')
     names = read_region_file(get_user_data_dir() / 'regions.yml')  # the bundle is read once, below
     bundled = normalize_region_names((load_bundled_yaml('regions.yml') or {}).get('regions', []))
     present = {get_partition_for_region(r) for r in names}

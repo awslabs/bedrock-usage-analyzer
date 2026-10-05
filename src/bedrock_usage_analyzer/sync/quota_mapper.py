@@ -53,7 +53,7 @@ class QuotaMapper:
         """Execute quota mapping for all regions
         
         Args:
-            update_bundle: Also update bundled metadata (for maintainers)
+            update_bundle: Update the checkout's bundled metadata instead of user copies (maintainers)
         """
         self.update_bundle = update_bundle
         logger.info(f"Using model: {self.model_id}")
@@ -221,7 +221,8 @@ class QuotaMapper:
         """Get quota mapping for a specific endpoint"""
         if endpoint_type not in self._rules()[0]:
             return None  # not a known endpoint type: no quota keyword, nothing cached applies
-        cache_key =(model_id, endpoint_type if endpoint_type in ['base', 'cross-region', 'global'] else 'cross-region')
+        # Endpoints with the same quota keyword (every regional prefix: cross-region) share codes
+        cache_key = (model_id, self._rules()[0][endpoint_type])
         region_codes = self._listed_codes.get(region)
         if region_codes is None:  # called without _process_region (the region's listing)
             region_codes = {q.get('QuotaCode') for q in quotas}

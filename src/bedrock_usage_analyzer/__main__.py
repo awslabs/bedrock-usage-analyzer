@@ -121,6 +121,20 @@ def cmd_analyze(args):
     logger.info(f"\nCompleted! Results saved to: {output_dir}")
 
 
+def _require_checkout(args):
+    """The checkout's metadata path with --update-bundle (None without the flag).
+
+    Exits before any AWS call when the flag is given outside a checkout, for every refresh
+    command: otherwise the run would update user copies only and report success.
+    """
+    if not getattr(args, 'update_bundle', False):
+        return None
+    bundle_path = get_bundle_path()
+    if bundle_path is None:
+        _maybe_update_bundle(args, None, None)  # exits with the 'development environment' error
+    return bundle_path
+
+
 def cmd_refresh_regions(args):
     """Refresh regions list."""
     from bedrock_usage_analyzer.sync.regions import discover_regions, read_region_file, refresh_regions
@@ -129,10 +143,7 @@ def cmd_refresh_regions(args):
     print(get_refresh_location_message())
     print()
 
-    update_bundle = getattr(args, 'update_bundle', False)
-    bundle_path = get_bundle_path() if update_bundle else None
-    if update_bundle and bundle_path is None:
-        _maybe_update_bundle(args, "regions.yml", None)  # exits: not in a checkout
+    bundle_path = _require_checkout(args)
 
     # Only the credentials' partition is replaced; other partitions are kept
     # (e.g. GovCloud regions when refreshing with commercial credentials)
@@ -154,7 +165,8 @@ def cmd_refresh_regions(args):
 def cmd_refresh_fm_list(args):
     """Refresh FM lists."""
     from bedrock_usage_analyzer.sync.fm_list import refresh_region, refresh_all_regions
-    
+    _require_checkout(args)
+
     print(get_refresh_location_message())
     print()
     
@@ -173,7 +185,7 @@ def cmd_refresh_fm_list(args):
         refresh_region(args.region, update_bundle=args.update_bundle)
     else:
         # Only the regions the current credentials can call
-        regions, _ = regions_for_credentials(load_region_names())
+        regions, _ = regions_for_credentials(load_region_names(update_bundle=args.update_bundle))
         if not regions:
             logger.error("No regions found in regions.yml")
             logger.error("Please run: bua refresh regions")
@@ -188,7 +200,8 @@ def cmd_refresh_fm_quotas(args):
     """Refresh quota mappings."""
     from bedrock_usage_analyzer.sync.quota_mapper import QuotaMapper
     from bedrock_usage_analyzer.utils.ui import select_quota_mapping_params
-    
+    _require_checkout(args)
+
     print(get_refresh_location_message())
     print()
     
@@ -216,7 +229,8 @@ def cmd_refresh_fm_quotas(args):
     else:
         from bedrock_usage_analyzer.sync.regions import load_region_names, regions_for_credentials
         from bedrock_usage_analyzer.utils.ui import require_credentials_partition
-        credential_regions, partition = regions_for_credentials(load_region_names(), target_region)
+        credential_regions, partition = regions_for_credentials(
+            load_region_names(update_bundle=args.update_bundle), target_region)
         # Both regions, as the interactive path does (the target first)
         require_credentials_partition(target_region, partition, label='Target region: ')
         require_credentials_partition(bedrock_region, partition)
@@ -230,7 +244,8 @@ def cmd_refresh_fm_quotas(args):
 def cmd_refresh_quota_index(args):
     """Generate quota index CSV."""
     from bedrock_usage_analyzer.sync.quota_index import QuotaIndexGenerator
-    
+    _require_checkout(args)
+
     print(get_refresh_location_message())
     print()
     
@@ -291,14 +306,14 @@ def main():
     # refresh regions
     p_regions = refresh_sub.add_parser('regions', help='Refresh regions list')
     p_regions.add_argument('--update-bundle', action='store_true',
-                          help='Also update bundled metadata (maintainers only)')
+                          help="Update the checkout's bundled metadata instead of user copies (maintainers only)")
     p_regions.set_defaults(func=cmd_refresh_regions)
     
     # refresh fm-list
     p_fm = refresh_sub.add_parser('fm-list', help='Refresh FM lists')
     p_fm.add_argument('region', nargs='?', help='Specific region (default: all)')
     p_fm.add_argument('--update-bundle', action='store_true',
-                     help='Also update bundled metadata (maintainers only)')
+                     help="Update the checkout's bundled metadata instead of user copies (maintainers only)")
     p_fm.set_defaults(func=cmd_refresh_fm_list)
     
     # refresh fm-quotas
@@ -307,13 +322,13 @@ def main():
     p_quotas.add_argument('bedrock_region', nargs='?', help='Bedrock API region')
     p_quotas.add_argument('model_id', nargs='?', help='Model ID for LLM calls')
     p_quotas.add_argument('--update-bundle', action='store_true',
-                         help='Also update bundled metadata (maintainers only)')
+                         help="Update the checkout's bundled metadata instead of user copies (maintainers only)")
     p_quotas.set_defaults(func=cmd_refresh_fm_quotas)
     
     # refresh quota-index
     p_index = refresh_sub.add_parser('quota-index', help='Generate quota index CSV')
     p_index.add_argument('--update-bundle', action='store_true',
-                        help='Also update bundled metadata (maintainers only)')
+                        help="Update the checkout's bundled metadata instead of user copies (maintainers only)")
     p_index.set_defaults(func=cmd_refresh_quota_index)
     
     args = parser.parse_args()

@@ -62,7 +62,7 @@ def refresh_region(region: str, update_bundle: bool = False):
 
     Args:
         region: AWS region name
-        update_bundle: Also update bundled metadata (for maintainers)
+        update_bundle: Update the checkout's bundled metadata instead of user copies (maintainers)
     """
     logger.info(f"\nProcessing region: {region}")
 
@@ -113,7 +113,9 @@ def refresh_region(region: str, update_bundle: bool = False):
     def by_prefix(entries):
         return sorted(entries.values(), key=lambda x: x['prefix'])
 
-    if new_entries:  # an unchanged user file is not rewritten
+    # An unchanged user file is not rewritten; with --update-bundle only the checkout's file is
+    # (a user entry overrides the bundled one, so it would hide later bundled fixes)
+    if new_entries and not (update_bundle and get_bundle_path()):
         for entry in new_entries:
             user_entries[entry['prefix']] = entry
         save_yaml(str(prefix_file), {'prefixes': by_prefix(user_entries)})
@@ -204,7 +206,7 @@ def refresh_all_regions(regions: List[str], update_bundle: bool = False):
 
     Args:
         regions: List of AWS region names
-        update_bundle: Also update bundled metadata (for maintainers)
+        update_bundle: Update the checkout's bundled metadata instead of user copies (maintainers)
     """
     for region in regions:
         refresh_region(region, update_bundle=update_bundle)

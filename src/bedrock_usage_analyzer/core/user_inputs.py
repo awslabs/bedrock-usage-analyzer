@@ -365,20 +365,29 @@ class UserInputs:
 
     def _find_application_profile(self, identifier):
         """Look up an application profile, or None if absent or the list cannot be read."""
-        fetcher = None
         try:
-            fetcher = self._get_profile_fetcher()
-            return fetcher.resolve_application_profile(identifier)
+            return self._get_profile_fetcher().resolve_application_profile(identifier)
         except Exception as e:
             # Not silent: an application profile name with '.' or ':' would otherwise be
             # analyzed as a model ID without saying why
-            failed = fetcher.failed_listing() if isinstance(fetcher, InferenceProfileFetcher) else 'application'
-            logger.warning(f"  WARNING: could not list {failed} inference profiles in {self.region}, "
+            logger.warning(f"  WARNING: could not list {self._failed_listing()} inference profiles in {self.region}, "
                            f"so {identifier} is treated as a model or system profile ID: {e}")
             return None
 
+    def _failed_listing(self) -> str:
+        """'application' or 'system': which listing failed (see InferenceProfileFetcher.failed_listing)."""
+        fetcher = self.profile_fetcher
+        return fetcher.failed_listing() if isinstance(fetcher, InferenceProfileFetcher) else 'application'
+
     def _application_profile_config(self, identifier, profile=None):
-        profile = profile or self._get_profile_fetcher().resolve_application_profile(identifier)
+        if profile is None:
+            try:
+                profile = self._get_profile_fetcher().resolve_application_profile(identifier)
+            except Exception as e:
+                # An application profile ID or ARN cannot be analyzed without the listings
+                logger.error(f"Could not list {self._failed_listing()} inference profiles in {self.region}, "
+                             f"so {identifier} cannot be resolved: {e}")
+                sys.exit(1)
         if profile is None:
             logger.error(f"Application inference profile not found in {self.region}: {identifier}")
             sys.exit(1)
@@ -391,7 +400,7 @@ class UserInputs:
         try:
             app_profiles = self._get_profile_fetcher().list_application_profiles()
         except Exception as e:
-            logger.info(f"  Could not list application inference profiles: {e}")
+            logger.info(f"  Could not list {self._failed_listing()} inference profiles: {e}")
             app_profiles = []
 
         if app_profiles:
