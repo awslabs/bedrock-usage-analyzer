@@ -14,7 +14,7 @@ from bedrock_usage_analyzer.core.profile_fetcher import UNKNOWN_SOURCE, Inferenc
 from bedrock_usage_analyzer.sync.quota_rules import scrub_conflicting
 from bedrock_usage_analyzer.core.metrics_fetcher import CloudWatchMetricsFetcher
 from bedrock_usage_analyzer.core.output_generator import OutputGenerator
-from bedrock_usage_analyzer.aws.bedrock import endpoint_id, get_regional_profile_prefixes
+from bedrock_usage_analyzer.aws.bedrock import endpoint_id, get_endpoint_quota_keywords, get_regional_profile_prefixes
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.servicequotas import (
     QUOTA_MISSING, QUOTA_OK, list_quota_codes, lookup_quota)
@@ -333,7 +333,11 @@ class BedrockAnalyzer:
                             f"{self.region}; {ending}")
             elif not any(quota_codes.values()) and profile_prefix != UNKNOWN_SOURCE:
                 profiles = profile_endpoints(self._fm_list(), model_id)
-                if self._endpoint_listed(model_id, profile_prefix):
+                if (profile_prefix or 'base') not in get_endpoint_quota_keywords():
+                    # e.g. a one-region country prefix that prefix-mapping.yml does not know:
+                    # fm-quotas has no quota keyword for it, so refreshing cannot map one
+                    fix = None
+                elif self._endpoint_listed(model_id, profile_prefix):
                     fix = f"bua refresh fm-quotas {self.region}"
                 elif profile_prefix is None and profiles:
                     # No on-demand endpoint: refreshing cannot add one, its profiles have the limits
@@ -342,8 +346,13 @@ class BedrockAnalyzer:
                 else:
                     # fm-quotas only maps endpoints already in the model list
                     fix = f"bua refresh fm-list {self.region}, then bua refresh fm-quotas {self.region}"
-                logger.info(f"  No quota codes mapped for this endpoint in {self.region}; the report will "
-                            f"show usage without limits. To map them: {fix}")
+                if fix is None:
+                    logger.info(f"  No quota codes mapped for this endpoint in {self.region}; the report will "
+                                f"show usage without limits. '{profile_prefix}' endpoints have no quota type "
+                                f"in prefix-mapping.yml, so bua refresh fm-quotas cannot map them yet.")
+                else:
+                    logger.info(f"  No quota codes mapped for this endpoint in {self.region}; the report will "
+                                f"show usage without limits. To map them: {fix}")
             quotas = self._fetch_quotas(model_id, quota_codes, profile_prefix)
             if any(quotas.values()):
                 logger.info(f"  Quotas: TPM={quotas['tpm']}, RPM={quotas['rpm']}, TPD={quotas['tpd']}, "

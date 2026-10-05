@@ -569,6 +569,22 @@ def test_fm_list_update_bundle_keeps_the_checkout_mappings(monkeypatch, tmp_path
     assert load_yaml(str(tmp_path / 'data' / 'fm-list-ap-south-1.yml')) == stale
 
 
+def test_fm_list_update_bundle_leaves_an_unreadable_checkout_list_unchanged(monkeypatch, tmp_path):
+    """Merge-conflict markers in the checkout's list: not overwritten with empty quota slots."""
+    from bedrock_usage_analyzer.sync import fm_list
+    checkout = tmp_path / 'checkout'
+    checkout.mkdir()
+    broken = '<<<<<<< HEAD\nmodels: [\n=======\n'
+    (checkout / 'fm-list-ap-south-1.yml').write_text(broken)
+    monkeypatch.setattr(fm_list, 'get_bundle_path', lambda: checkout)
+    monkeypatch.setattr(fm_list, 'discover_prefix_mapping', lambda region, profiles=None: [])
+    monkeypatch.setattr(fm_list, 'list_system_profiles', lambda region: [])
+    monkeypatch.setattr(fm_list, 'fetch_foundation_models', lambda region: [
+        {'model_id': 'x.m-v1:0', 'provider': 'X', 'inference_types': ['ON_DEMAND']}])
+    fm_list.refresh_region('ap-south-1', update_bundle=True)
+    assert (checkout / 'fm-list-ap-south-1.yml').read_text() == broken
+
+
 def test_fm_list_refresh_keeps_legacy_model_level_quotas(monkeypatch, tmp_path):
     """An older entry's model-level quotas become its base endpoint's, not empty slots."""
     from bedrock_usage_analyzer.sync import fm_list

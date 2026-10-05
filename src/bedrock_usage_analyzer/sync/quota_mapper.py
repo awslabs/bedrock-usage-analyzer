@@ -341,7 +341,9 @@ class QuotaMapper:
             logger.warning(f"  Could not read fm-list-{region}.yml ({e}); fix or delete it, "
                            f"or run: bua refresh fm-list {region}")
             return None
-        except Exception:
+        except Exception as e:
+            # Exists but cannot be read (permissions, encoding): name the cause, not "no FM list"
+            logger.warning(f"  Could not read fm-list-{region}.yml: {e}")
             return None
         if data is None:
             return None

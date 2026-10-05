@@ -165,7 +165,14 @@ def refresh_region(region: str, update_bundle: bool = False):
     checkout = get_bundle_path() if update_bundle else None
     checkout_file = checkout / f'fm-list-{region}.yml' if checkout else None
     if checkout_file:
-        existing_models = load_existing_models(str(checkout_file)) if checkout_file.exists() else {}
+        existing_models = {}
+        if checkout_file.exists():
+            try:
+                existing_models = {m['model_id']: m for m in valid_models(load_yaml(str(checkout_file)))}
+            except Exception as e:
+                # e.g. merge-conflict markers: rewriting it would reset every saved quota mapping
+                logger.error(f"  Could not read {checkout_file} ({e}); fix it and rerun. Left unchanged.")
+                return
     else:
         existing_models = load_existing_models(region)
     
