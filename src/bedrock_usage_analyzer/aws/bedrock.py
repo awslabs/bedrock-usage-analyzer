@@ -124,7 +124,14 @@ def get_endpoint_quota_keywords() -> Dict[str, str]:
     Returns:
         Dict mapping prefix to quota keyword (e.g., {'base': 'on-demand', 'us': 'cross-region'})
     """
-    mapping = _load_prefix_mapping()
+    try:
+        mapping = _load_prefix_mapping()
+    except FileNotFoundError:
+        mapping = []
+    if not mapping:
+        # No prefix-mapping.yml at all: the keywords of the prefixes this release knows
+        return {'base': QUOTA_KEYWORD_ON_DEMAND, 'global': QUOTA_KEYWORD_GLOBAL,
+                **{p: QUOTA_KEYWORD_CROSS_REGION for p in FALLBACK_PROFILE_PREFIXES - {'global'}}}
     return {m['prefix']: m['quota_keyword'] for m in mapping}
 
 

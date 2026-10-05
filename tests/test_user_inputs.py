@@ -48,6 +48,14 @@ def test_unreadable_user_fm_list_names_the_file(tmp_path, caplog):
     assert 'fm-list-us-east-1.yml' in caplog.text and 'bua refresh fm-list us-east-1' in caplog.text
 
 
+def test_non_utf8_user_fm_list_names_the_file(tmp_path, caplog):
+    (tmp_path / 'data').mkdir(exist_ok=True)
+    (tmp_path / 'data' / 'fm-list-us-east-1.yml').write_bytes('models:\n- model_id: caf\xe9\n'.encode('latin-1'))
+    with pytest.raises(SystemExit):
+        UserInputs()._ensure_fm_list('us-east-1')
+    assert 'fm-list-us-east-1.yml' in caplog.text and 'bua refresh fm-list us-east-1' in caplog.text
+
+
 @pytest.mark.parametrize('region', ['us-west-2', 'us-gov-west-1', 'cn-northwest-1', 'ap-southeast-7',
                                     'eusc-de-east-1', 'us-isob-east-1'])
 def test_region_pattern_accepts(region):

@@ -6,17 +6,34 @@
 import yaml
 
 
+class MetadataReadError(yaml.YAMLError):
+    """A metadata file that exists but cannot be read (permissions, not UTF-8).
+
+    A YAMLError, so every reader that handles an unparsable file ('fix or delete it') also
+    handles an unreadable one, with one except clause.
+    """
+
+
 def load_yaml(filepath):
     """Load YAML file with UTF-8 encoding
-    
+
     Args:
         filepath: Path to YAML file
-        
+
     Returns:
         dict: Parsed YAML data
+
+    Raises:
+        FileNotFoundError: the file does not exist
+        yaml.YAMLError: it cannot be parsed, or (MetadataReadError) cannot be read
     """
-    with open(filepath, 'r', encoding='utf-8') as f:
-        return yaml.safe_load(f)
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return yaml.safe_load(f)
+    except FileNotFoundError:
+        raise
+    except (OSError, UnicodeDecodeError) as e:
+        raise MetadataReadError(f"{filepath}: {e}") from e
 
 
 def load_data_file(filename):

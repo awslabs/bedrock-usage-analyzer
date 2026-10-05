@@ -86,6 +86,7 @@ class InferenceProfileFetcher:
         self._country_regions = {p: set(r) for p, r in COUNTRY_PROFILE_REGIONS.items()}
         self._app_profiles: Optional[List[Dict]] = None
         self._not_foundation_model: set = set()  # IDs, ARNs and names of skipped non-FM copies
+        self._prefix_regions: Dict[str, set] = {}  # listed regional prefix -> regions it routes to
         # Per listing type: the result, the error the run gave up on, and failed attempts
         self._listings: Dict[str, Dict] = {kind: {'result': None, 'error': None, 'failures': 0}
                                            for kind in ('SYSTEM_DEFINED', 'APPLICATION')}
@@ -143,6 +144,7 @@ class InferenceProfileFetcher:
                     if all(regions):  # region-bound (global profiles have a region-less ARN)
                         prefix_regions.setdefault(prefix, set()).update(regions)
             self._learn_country_geographies(prefix_regions)
+            self._prefix_regions = prefix_regions  # regions each listed prefix routes to (any model)
             # Candidates per model, so resolving one application profile only looks at its model
             # (each routing set is unique and all its profiles serve the same model)
             for arn_set, ids in self._system_by_arns.items():
@@ -364,8 +366,11 @@ class InferenceProfileFetcher:
             # like 'sa.<model>' would not exist, so the source stays unknown
             return self.prefix_map.get(groups.pop())
         # Several region families without a region-less ARN: a regional profile spanning
-        # them (us.* also routes to ca-central-1), not a global one. Which one cannot be told.
-        return None
+        # them (us.* also routes to ca-central-1, apac.* to me-central-1), not a global one.
+        # The narrowest listed prefix (of any model) whose regions contain them all, if any
+        spanning = [(len(members), prefix) for prefix, members in self._prefix_regions.items()
+                    if set(regions) <= members]
+        return min(spanning)[1] if spanning else None
 
     def is_system_profile(self, profile_id: str) -> bool:
         """True when ``profile_id`` is a system-defined inference profile in the region."""

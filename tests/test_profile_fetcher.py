@@ -687,6 +687,27 @@ def test_no_application_profiles_needs_no_system_listing():
     assert InferenceProfileFetcher(SystemFails()).list_application_profiles() == []
 
 
+def test_retired_apac_copy_reaching_me_central_is_still_apac():
+    """No comparable profile of this model; apac.* of another model routes to me-central-1."""
+    other = 'amazon.nova-lite-v1:0'
+    apac = [arn(r, other) for r in ('ap-northeast-1', 'ap-southeast-1', 'me-central-1')]
+    fetcher = InferenceProfileFetcher(FakeBedrock(
+        system=[system_profile(f"apac.{other}", apac)],
+        application=[app_profile('retired0001', 'r', [arn('ap-northeast-1', HAIKU), arn('me-central-1', HAIKU)])]),
+        on_demand_models=[], region='ap-northeast-1')
+    assert fetcher.list_application_profiles()[0]['source'] == f"apac.{HAIKU}"
+
+
+def test_endpoint_keywords_fall_back_without_a_prefix_mapping(monkeypatch):
+    from bedrock_usage_analyzer.aws import bedrock
+
+    def missing():
+        raise FileNotFoundError('prefix-mapping.yml not found')
+    monkeypatch.setattr(bedrock, '_load_prefix_mapping', missing)
+    keywords = bedrock.get_endpoint_quota_keywords()
+    assert keywords['base'] == 'on-demand' and keywords['global'] == 'global' and keywords['au'] == 'cross-region'
+
+
 def test_copy_of_a_custom_model_is_named_as_such():
     apps = [app_profile('custom00001', 'mine', ['arn:aws:bedrock:us-east-1:1:custom-model/x'])]
     fetcher = InferenceProfileFetcher(FakeBedrock(application=apps))
