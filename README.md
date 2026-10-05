@@ -135,7 +135,7 @@ Note: You need to replace some part with your own account ID and the region used
       ],
       "Resource": [
         "arn:aws:bedrock:::foundation-model/anthropic.claude-*",
-        "arn:aws:bedrock:YOUR_REGION_FOR_LLM_CALL::foundation-model/anthropic.claude-*",
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-*",
         "arn:aws:bedrock:YOUR_REGION_FOR_LLM_CALL:YOUR_CURRENT_ACCOUNT_ID:inference-profile/*",
         "arn:aws:bedrock:YOUR_REGION_FOR_LLM_CALL:YOUR_CURRENT_ACCOUNT_ID:application-inference-profile/*"
       ]
@@ -145,6 +145,7 @@ Note: You need to replace some part with your own account ID and the region used
 ```
 
 In AWS GovCloud (US), write the ARNs with the `aws-us-gov` partition (`arn:aws-us-gov:bedrock:...`).
+The foundation-model ARN uses a region wildcard because a cross-region inference profile (`us.`, `eu.`, `apac.`, `us-gov.` ...) routes each call to the model in one of several regions, and each of them must allow `bedrock:InvokeModel`.
 
 **Additional permissions explained:**
 - `account:ListRegions` - List enabled AWS regions (for `bedrock-usage-analyzer refresh regions`, and for `refresh quota-index` when there is no regions.yml for the credentials' partition)
