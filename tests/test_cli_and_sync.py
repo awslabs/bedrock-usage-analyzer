@@ -476,6 +476,23 @@ def test_quota_mapping_rejects_bedrock_region_of_other_partition(monkeypatch):
         ui.select_quota_mapping_params(target_region='us-gov-west-1', bedrock_region='us-east-1', model_id='m')
 
 
+def test_quota_mapping_rejects_unlisted_target_before_any_prompt(monkeypatch):
+    from bedrock_usage_analyzer.utils import ui
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.regions_for_credentials',
+                        lambda regions, region=None: (['us-east-1', 'us-west-2'], 'aws'))
+    monkeypatch.setattr('builtins.input', lambda *_: pytest.fail('must exit before the prompts'))
+    with pytest.raises(SystemExit):
+        ui.select_quota_mapping_params(target_region='ap-southeast-7')
+
+
+def test_picker_survives_an_unreadable_user_fm_list(tmp_path, caplog):
+    from bedrock_usage_analyzer.utils.ui import _claude_endpoints_in
+    (tmp_path / 'data').mkdir(exist_ok=True)
+    (tmp_path / 'data' / 'fm-list-us-east-1.yml').write_text('- model_id: [unclosed\n')
+    assert _claude_endpoints_in('us-east-1') == []
+    assert 'fm-list-us-east-1.yml' in caplog.text
+
+
 def test_fm_quotas_with_all_args_still_checks_bedrock_partition(monkeypatch):
     import argparse
     from bedrock_usage_analyzer import __main__ as cli

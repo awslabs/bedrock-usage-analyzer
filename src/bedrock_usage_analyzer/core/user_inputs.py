@@ -342,6 +342,10 @@ class UserInputs:
             options = ', '.join(endpoint_id(base_model_id, p) for p in profile_only)
             logger.warning(f"  WARNING: {value} has no on-demand endpoint in {self.region}; its "
                            f"usage is under its inference profiles: {options}")
+        elif not known_model and self.region and prefix and self._is_system_profile(value):
+            # Listed by Bedrock, only the model list is older: no reason to doubt the ID
+            logger.info(f"  Note: {value} is listed in {self.region} but not in its model list; "
+                        f"run 'bua refresh fm-list {self.region}' to map its quotas.")
         elif not known_model and self.region:
             # Still analyzed (the model list may predate a new model), but not silently
             logger.warning(f"  WARNING: {value} is not a model, inference profile or application "

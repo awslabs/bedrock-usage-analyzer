@@ -57,8 +57,16 @@ def _claude_endpoints_in(region: str, limit: int = 12) -> list:
     from bedrock_usage_analyzer.aws.bedrock import endpoint_id
     from bedrock_usage_analyzer.sync.quota_rules import model_version
     from bedrock_usage_analyzer.utils.yaml_handler import endpoint_keys, load_fm_list
+    import yaml
     options = []
-    for model in load_fm_list(region) or []:
+    try:
+        models = load_fm_list(region) or []
+    except yaml.YAMLError as e:
+        # The fixed fallback list is offered instead; fm-quotas then skips the region with a hint
+        logger.warning(f"Could not read fm-list-{region}.yml ({e}); fix or delete it, "
+                       f"or run: bua refresh fm-list {region}")
+        models = []
+    for model in models:
         model_id = model['model_id']
         if not model_id.startswith('anthropic.claude') or model_id.count(':') > 1:
             continue  # skip context-window variants such as ...-v1:0:200k
@@ -129,6 +137,11 @@ def select_quota_mapping_params(target_region: str = None, bedrock_region: str =
     if target_region is not None:
         # Before any prompt: a target region of another partition cannot be refreshed
         require_credentials_partition(target_region, partition, label='Target region: ')
+        if target_region not in all_regions:
+            # (the mapper rejects it too, but only after the Step 1 and 2 prompts)
+            logger.error(f"Region '{target_region}' is not among the regions these credentials can call "
+                         f"(see regions.yml; run 'bua refresh regions' if it is new)")
+            sys.exit(1)
 
     # Step 1: Select Bedrock API region (skip if provided)
     if not bedrock_region:

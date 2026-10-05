@@ -478,6 +478,18 @@ def test_unknown_dotted_model_warns(inputs, caplog):
     assert 'is not a model, inference profile or application inference profile known' in caplog.text
 
 
+def test_listed_system_profile_newer_than_the_fm_list_is_not_doubted(inputs, caplog):
+    import logging
+    from conftest import arn, system_profile
+    caplog.set_level(logging.INFO)
+    new = 'vendor.brand-new-v1:0'
+    inputs.profile_fetcher.bedrock_client.system.append(system_profile(f"au.{new}", [arn('ap-southeast-2', new)]))
+    inputs.profile_fetcher._system_profiles = None
+    assert inputs._parse_model_id(f"au.{new}") == {'model_id': new, 'profile_prefix': 'au'}
+    assert 'is not a model, inference profile' not in caplog.text
+    assert 'bua refresh fm-list ap-southeast-2' in caplog.text
+
+
 def test_bare_id_of_profile_only_model_points_to_its_profiles(inputs, monkeypatch, caplog):
     import logging
     caplog.set_level(logging.WARNING)
