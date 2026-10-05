@@ -656,6 +656,27 @@ def test_base_copy_of_a_model_newer_than_the_fm_list_is_pointed_to():
     assert fetcher.other_sources_for_model(NOVA, 'us') == {'base': 1}
 
 
+def test_closest_match_never_credits_a_country_profile_with_regions_outside_it():
+    """A copy routing Tokyo + Seoul is not jp.X, even though the small jp set scores higher."""
+    jp = [arn('ap-northeast-1', HAIKU), arn('ap-northeast-3', HAIKU)]
+    apac = jp + [arn(r, HAIKU) for r in ('ap-south-1', 'ap-southeast-1', 'ap-southeast-2')]
+    fetcher = InferenceProfileFetcher(FakeBedrock(
+        system=[system_profile(f"jp.{HAIKU}", jp), system_profile(f"apac.{HAIKU}", apac)],
+        application=[app_profile('tokseoul001', 't', [arn('ap-northeast-1', HAIKU), arn('ap-northeast-2', HAIKU)])]),
+        on_demand_models=[], region='ap-northeast-1')
+    assert fetcher.list_application_profiles()[0]['sources'] == [f"apac.{HAIKU}"]
+
+
+def test_lone_in_region_copy_with_nothing_comparable_is_a_base_copy():
+    """Only global.X listed and X no longer on demand: a one-ARN Sydney copy is base, not a guessed au.X."""
+    fetcher = InferenceProfileFetcher(FakeBedrock(
+        system=[system_profile(f"global.{HAIKU}", GLOBAL_ARNS)],
+        application=[app_profile('lonebase001', 'l', [arn('ap-southeast-2', HAIKU)])]),
+        on_demand_models=[], region='ap-southeast-2')
+    app = fetcher.list_application_profiles()[0]
+    assert (app['profile_prefix'], app['sources']) == (None, [HAIKU])
+
+
 def test_copy_of_a_custom_model_is_named_as_such():
     apps = [app_profile('custom00001', 'mine', ['arn:aws:bedrock:us-east-1:1:custom-model/x'])]
     fetcher = InferenceProfileFetcher(FakeBedrock(application=apps))

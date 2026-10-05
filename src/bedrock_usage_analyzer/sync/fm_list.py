@@ -36,7 +36,17 @@ def load_existing_models(region: str) -> Dict[str, Dict]:
         return {m['model_id']: m for m in load_fm_list(region) or []}
     except Exception as e:
         logger.warning(f"Could not load existing models for {region}: {e}")
-        return {}
+    if not str(region).endswith(('.yml', '.yaml')):
+        # An unreadable user copy: keep the bundled mappings rather than starting empty
+        from bedrock_usage_analyzer.utils.paths import load_bundled_yaml
+        try:
+            bundled = load_bundled_yaml(f'fm-list-{region}.yml')
+            if bundled is not None:
+                logger.warning(f"  Using the bundled fm-list-{region}.yml mappings instead")
+                return {m['model_id']: m for m in valid_models(bundled)}
+        except Exception as e:  # a broken bundle: nothing to keep
+            logger.debug(f"Bundled fm-list-{region}.yml unreadable: {e}")
+    return {}
 
 
 def save_models(filepath: str, models: List[Dict]):

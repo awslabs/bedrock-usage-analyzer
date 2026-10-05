@@ -65,10 +65,6 @@
           "description": "Generate quota index CSV"
         },
         {
-          "name": "_maybe_update_bundle",
-          "description": "Update bundled data if --update-bundle flag is set."
-        },
-        {
           "name": "_require_checkout",
           "description": "With --update-bundle: the checkout's metadata path, set as the metadata root of the run; exits before any AWS call outside a checkout."
         },

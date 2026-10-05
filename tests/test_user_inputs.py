@@ -223,8 +223,9 @@ def test_collect_checks_partition_when_sts_answers_for_another_partition(inputs,
     monkeypatch.setattr(ui_module, 'get_caller_identity',
                         lambda region=None, **_: {'Account': '1', 'Arn': 'arn:aws:iam::1:user/a', 'Partition': 'aws'})
     monkeypatch.setattr(inputs, '_ensure_fm_list', lambda region: pytest.fail('must stop before the fm-list'))
+    monkeypatch.setattr('builtins.input', lambda *_: pytest.fail('must stop before the Continue? prompt'))
     with pytest.raises(SystemExit):
-        inputs.collect(region='us-gov-west-1', model_id='x.y', skip_confirm=True)
+        inputs.collect(region='us-gov-west-1', model_id='x.y')
 
 
 def test_account_failure_exits_with_hint(monkeypatch, caplog):

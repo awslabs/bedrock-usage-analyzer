@@ -300,11 +300,15 @@ class InferenceProfileFetcher:
         if supersets:
             return self._pairs(supersets[min(supersets)])
 
-        # Closest system profile for the same model (a region was also removed)
+        # Closest system profile for the same model (a region was also removed). A country
+        # profile (jp, au, in) only routes inside its country, so a copy that routes outside it
+        # is not its copy, however well the small set scores
         best, best_score = [], 0.0
         for system_arns, ids in candidates:
+            ids = [p for p in ids if self._parts[p][0] not in self._country_regions
+                   or regions <= self._country_regions[self._parts[p][0]]]
             overlap = len(arn_set & system_arns)
-            if not overlap:
+            if not overlap or not ids:
                 continue
             score = overlap / len(arn_set | system_arns)
             if score > best_score:
@@ -314,6 +318,11 @@ class InferenceProfileFetcher:
         if best:
             return self._pairs(best)
 
+        if lone_regional:
+            # One ARN in this region and no listed profile routes there: a profile routes to
+            # several regions, so this is a copy of the base model (its on-demand endpoint
+            # since retired), not of a guessed au.*/us.* profile
+            return [(None, model_id)]
         # Nothing comparable is listed for this model: guess from the regions (e.g. a copy of
         # a retired au.* profile; the analyzer says that endpoint is no longer offered)
         inferred = self._infer_from_regions(arns, model_id)

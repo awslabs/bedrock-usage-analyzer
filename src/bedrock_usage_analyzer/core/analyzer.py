@@ -145,10 +145,12 @@ class BedrockAnalyzer:
             # The region's listing once, before the pool (never listed again from the threads)
             self._quota_listings[self.region] = list_quota_codes(self.region, quiet_denied=True)
         # Per-code lookups (up to two calls each) run in parallel, as confirm_statuses does
-        results = []
-        if wanted:
-            with ThreadPoolExecutor(max_workers=min(4, len(wanted))) as pool:
-                results = list(pool.map(lambda item: lookup(item[1]['code']), wanted))
+        # (no pool when at most one code is not yet cached: nothing to run in parallel)
+        uncached = {item[1]['code'] for item in wanted} - set(self._quota_results)
+        if len(uncached) > 1:
+            with ThreadPoolExecutor(max_workers=min(4, len(uncached))) as pool:
+                list(pool.map(lookup, sorted(uncached)))
+        results = [lookup(item[1]['code']) for item in wanted]
         for (quota_type, quota_data, key), (status, quota) in zip(wanted, results):
             code = quota_data['code']
             if status == QUOTA_OK and quota.get('Value') is None:
@@ -247,8 +249,9 @@ class BedrockAnalyzer:
         if others:
             where = ', '.join(f"{count} on '{key}'" for key, count in sorted(others.items()))
             logger.info(f"  Note: no application inference profile of {model_id} is based on "
-                        f"'{profile_prefix or 'base'}', but {where}. Select that endpoint, or "
-                        f"pass the application profile ID/ARN with -m to analyze it directly.")
+                        f"'{profile_prefix or 'base'}', but {where}. Choose that endpoint in the "
+                        f"menu or pass its endpoint ID with -m, or pass the application profile "
+                        f"ID/ARN with -m to analyze it directly.")
 
     def analyze(self, models, output_dir: str = 'results'):
         """Analyze token usage for given models

@@ -140,9 +140,7 @@ class UserInputs:
 
         # Region selection (skip if provided via CLI)
         if region:
-            # STS in a region of another partition usually rejects the credentials (handled
-            # above), but a custom STS endpoint can answer: check the partition either way
-            self._check_region_partition(region)
+            # Its partition was checked with the account (_get_current_account)
             self.region = region
             logger.info(f"\nUsing region: {region}")
         else:
@@ -207,6 +205,10 @@ class UserInputs:
             logger.warning(f"  {other_partition_message(region_hint(), identity['Partition'])} "
                            f"Using the credentials' partition.")
         self.partition = identity['Partition']
+        if region:
+            # Before the 'Continue?' prompt. STS in a region of another partition usually
+            # rejects the credentials (handled above), but a custom STS endpoint can answer
+            self._check_region_partition(region)
         logger.info(f"  Account: {identity['Account']}")
         if self.partition != 'aws':
             logger.info(f"  Partition: {get_partition_display_name(self.partition)}")

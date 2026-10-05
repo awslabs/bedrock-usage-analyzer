@@ -568,6 +568,15 @@ def test_fm_list_refresh_keeps_legacy_model_level_quotas(monkeypatch, tmp_path):
     assert saved['endpoints']['base']['quotas']['tpm']['code'] == 'L-OLD'
 
 
+def test_unreadable_user_fm_list_keeps_the_bundled_mappings(tmp_path):
+    from bedrock_usage_analyzer.sync import fm_list
+    from bedrock_usage_analyzer.utils.yaml_handler import quota_slots
+    (tmp_path / 'data').mkdir(exist_ok=True)
+    (tmp_path / 'data' / 'fm-list-us-east-1.yml').write_text('models: [unclosed\n')
+    existing = fm_list.load_existing_models('us-east-1')
+    assert any(quota_slots(existing.values()))      # the bundled codes, not empty slots
+
+
 def test_fm_quotas_rejects_a_malformed_region_before_any_aws_call(monkeypatch):
     import argparse
     monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition',

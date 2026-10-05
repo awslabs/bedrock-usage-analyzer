@@ -161,8 +161,9 @@ def cmd_refresh_regions(args):
     if bundle_path is not None:
         # Maintainer mode writes the checkout only, as fm-list, fm-quotas and quota-index do:
         # a user copy written here would hide regions bundled in later releases
-        data = refresh_regions(existing=read_region_file(bundle_path / "regions.yml"), discovered=discovered)
-        _maybe_update_bundle(args, "regions.yml", data)
+        bundle_file = bundle_path / "regions.yml"
+        save_yaml(str(bundle_file), refresh_regions(existing=read_region_file(bundle_file), discovered=discovered))
+        logger.info(f"✓ Saved: {bundle_file} (bundled)")
         return
     output_path = get_writable_path("regions.yml")
     # Merge into the user's own file only: copying bundled regions of other partitions into it
@@ -265,20 +266,6 @@ def cmd_refresh_quota_index(args):
     logger.info("\n✓ Quota index generated")
 
 
-def _maybe_update_bundle(args, filename, data):
-    """Update bundled data if --update-bundle flag is set."""
-    if not getattr(args, 'update_bundle', False):
-        return
-    
-    from bedrock_usage_analyzer.utils.yaml_handler import save_yaml
-    
-    bundle_path = get_bundle_path()
-    if bundle_path is None:
-        _exit_not_in_checkout()
-
-    bundle_file = bundle_path / filename
-    save_yaml(str(bundle_file), data)
-    logger.info(f"✓ Saved: {bundle_file} (bundled)")
 
 
 def main():
