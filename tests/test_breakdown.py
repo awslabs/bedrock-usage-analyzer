@@ -6,6 +6,7 @@ normalization, chunked Logs Insights queries, grouping, remainder rows and the r
 
 import json
 import os
+import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -69,7 +70,10 @@ class FakeLogs:
         self._polls[queryId] += 1
         if status != 'Complete':
             return {'status': status}
-        rows = [r for r in self.rows if query['start'] <= r['minute'].timestamp() <= query['end']]
+        # startTime/endTime whole seconds, both inclusive; the query's own end filter in ms
+        end_ms = int(re.search(r'@timestamp < (\d+)', query['query']).group(1))
+        rows = [r for r in self.rows
+                if query['start'] <= r['minute'].timestamp() <= query['end'] and r['minute'].timestamp() * 1000 < end_ms]
         rows = rows[:query['limit']]
         return {'status': 'Complete', 'statistics': {'bytesScanned': 1000.0},
                 'results': [[{'field': k, 'value': minute(v) if k == 'minute' else str(v)} for k, v in r.items()]
@@ -110,14 +114,17 @@ def row(at, principal, i=100, o=50, n=1, model=US_HAIKU, **extra):
     ('principal', 'principal', None), ('session', 'session', None), ('PRINCIPAL', 'principal', None),
     ('tag:team', 'tag', 'team'), ('metadata:cost-center', 'metadata', 'cost-center'),
     ('tag:Cost Center', 'tag', 'Cost Center'),
+    # requestMetadata keys may hold what Bedrock allows: spaces, $ # , and up to 256 characters
+    ('metadata:cost center', 'metadata', 'cost center'), ('metadata:app#$,x', 'metadata', 'app#$,x'),
+    ('metadata:' + 'k' * 256, 'metadata', 'k' * 256),
 ])
 def test_breakdown_parsing(value, kind, key):
     parsed = Breakdown.parse(value)
     assert (parsed.kind, parsed.key) == (kind, key)
 
 
-@pytest.mark.parametrize('value', ['owner', 'tag', 'tag:', 'tag:a"b', 'tag:   ', 'metadata:x y', 'metadata:x|z',
-                                   'principal:x', 'session:y'])
+@pytest.mark.parametrize('value', ['owner', 'tag', 'tag:', 'tag:a"b', 'tag:   ', 'metadata:x|z', 'metadata:a`b',
+                                   'metadata:' + 'k' * 257, 'principal:x', 'session:y'])
 def test_invalid_breakdowns_are_refused(value):
     with pytest.raises(BreakdownError):
         Breakdown.parse(value)
@@ -128,6 +135,10 @@ def test_principals_and_log_group_are_validated():
     assert parsed.principals == ('role/OrdersService', 'user/bob') and parsed.log_group == '/aws/bedrock/logs'
     with pytest.raises(BreakdownError):
         Breakdown.parse('principal', ['role/x"; drop'])
+    with pytest.raises(BreakdownError, match='use role/<name>'):
+        Breakdown.parse('principal', ['OrdersService'])  # a bare name would match nothing
+    # A user's IAM path is dropped, as in the logged principals
+    assert Breakdown.parse('principal', ['user/ops/alice']).principals == ('user/alice',)
     with pytest.raises(BreakdownError):
         Breakdown.parse('principal', log_group='bad group name!')
 
@@ -142,13 +153,13 @@ def test_labels():
 @pytest.mark.parametrize('arn,expected', [
     (ROLE_ARN, 'role/OrdersService'),
     (f"arn:aws-us-gov:sts::{ACCOUNT}:assumed-role/Gov/s", 'role/Gov'),
-    (USER_ARN, 'user/ops/alice'),
+    (USER_ARN, 'user/alice'),
     # A role's path is not in its assumed-role ARNs, so it is dropped
     (f"arn:aws:iam::{ACCOUNT}:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_Admin_ab", 'role/AWSReservedSSO_Admin_ab'),
     (f"arn:aws:iam::{ACCOUNT}:role/Direct", 'role/Direct'),
     (f"arn:aws:iam::{ACCOUNT}:root", f"arn:aws:iam::{ACCOUNT}:root"),
     (f"arn:aws:sts::{ACCOUNT}:federated-user/bob", f"arn:aws:sts::{ACCOUNT}:federated-user/bob"),
-    ('role/Already', 'role/Already'), ('role/service-role/X', 'role/X'), ('user/ops/bob', 'user/ops/bob'),
+    ('role/Already', 'role/Already'), ('role/service-role/X', 'role/X'), ('user/ops/bob', 'user/bob'),
     ('assumed-role/A/s', 'role/A'), ('arn:bad', 'arn:bad'), ('', ''),
 ])
 def test_principal_normalization(arn, expected):
@@ -168,7 +179,8 @@ def test_every_model_id_spelling_maps_to_its_cloudwatch_value():
     forms = model_id_forms([US_HAIKU, HAIKU, 'app0000001', deployment], REGION, ACCOUNT)
     assert forms[US_HAIKU] == US_HAIKU
     assert forms[f"arn:aws:bedrock:{REGION}:{ACCOUNT}:inference-profile/{US_HAIKU}"] == US_HAIKU
-    assert forms[f"arn:aws:bedrock:{REGION}::inference-profile/{US_HAIKU}"] == US_HAIKU
+    # Inference profile ARNs always carry the account
+    assert f"arn:aws:bedrock:{REGION}::inference-profile/{US_HAIKU}" not in forms
     assert forms[HAIKU] == HAIKU and forms[f"arn:aws:bedrock:{REGION}::foundation-model/{HAIKU}"] == HAIKU
     assert forms[f"arn:aws:bedrock:{REGION}:{ACCOUNT}:application-inference-profile/app0000001"] == 'app0000001'
     assert forms[deployment] == deployment
@@ -186,6 +198,8 @@ def test_query_per_kind():
     principal = build_query([US_HAIKU], Breakdown.parse('principal'))
     assert f'filter modelId in ["{US_HAIKU}"]' in principal and 'by bin(1m) as minute, modelId, principal' in principal
     assert 'inputBodyJson' not in principal and 'outputBodyJson' not in principal  # metadata fields only
+    # Failed calls are left out, as CloudWatch's Invocations counts only successful ones
+    assert '| filter not ispresent(errorCode)\n' in principal
     assert 'identity.arn as session' in build_query([US_HAIKU], Breakdown.parse('session'))
     assert '`requestMetadata.team` as meta' in build_query([US_HAIKU], Breakdown.parse('metadata:team'))
     # Keys with '-' (or : / = + @) are read as one field name
@@ -221,12 +235,20 @@ def test_rows_are_fetched_per_day_and_normalized():
     forms = model_id_forms([US_HAIKU, HAIKU], REGION, ACCOUNT)
     rows = fetcher.fetch(forms, Breakdown(), END - timedelta(days=3), END)
     assert len(logs.queries) == 3 and fetcher.queries_run == 3 and fetcher.bytes_scanned == 3000.0
-    assert sorted(r['principal'] for r in rows) == ['role/OrdersService', 'user/ops/alice']
-    alice = next(r for r in rows if r['principal'] == 'user/ops/alice')
+    assert sorted(r['principal'] for r in rows) == ['role/OrdersService', 'user/alice']
+    alice = next(r for r in rows if r['principal'] == 'user/alice')
     assert (alice['cw_id'], alice['input'], alice['output'], alice['requests']) == (HAIKU, 10.0, 0.0, 2.0)
     assert alice['minute'].tzinfo is not None
-    # Windows do not overlap: each query ends one second before the next starts
-    assert all(q['end'] - q['start'] == 86399 for q in logs.queries)
+    # Windows meet: each query's end is cut at the millisecond where the next one starts
+    assert all(q['end'] - q['start'] == 86400 for q in logs.queries)
+    assert all(f"| filter @timestamp < {q['end'] * 1000}\n" in q['query'] for q in logs.queries)
+
+
+def test_a_record_in_the_last_second_before_a_window_boundary_is_counted_once():
+    boundary = END - timedelta(days=1)
+    logs = FakeLogs([row(boundary - timedelta(milliseconds=400), 'assumed-role/A'), row(boundary, 'assumed-role/B')])
+    rows = fetcher_for(logs).fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(days=2), END)
+    assert sorted(r['principal'] for r in rows) == ['role/A', 'role/B']
 
 
 def test_a_full_window_is_split_until_it_fits(monkeypatch):
@@ -318,7 +340,9 @@ def test_no_forms_means_no_query():
 
 def test_coverage_follows_creation_and_retention():
     created = END - timedelta(days=3)
-    logs = FakeLogs(groups=[{'logGroupName': '/bedrock/logs', 'creationTime': int(created.timestamp() * 1000)},
+    # A creation time inside a minute starts the coverage on that minute, so that window
+    # boundaries fall on whole seconds
+    logs = FakeLogs(groups=[{'logGroupName': '/bedrock/logs', 'creationTime': int(created.timestamp() * 1000) + 37123},
                             {'logGroupName': '/bedrock/logs-other'}])
     assert fetcher_for(logs).coverage_start(END - timedelta(days=30), END) == created
     logs.groups[0] = {'logGroupName': '/bedrock/logs', 'retentionInDays': 7}
@@ -380,7 +404,7 @@ def test_principal_breakdown_with_remainder():
     section = builder.section([US_HAIKU], {US_HAIKU: US_HAIKU}, cw, GRANULARITY, PERIODS)
     hour = section['periods']['1hour']
     names = [r['name'] for r in hour['rows']]
-    assert names == ['role/OrdersService', 'user/ops/alice', UNATTRIBUTED]
+    assert names == ['role/OrdersService', 'user/alice', UNATTRIBUTED]
     orders = hour['rows'][0]
     assert orders['tokens'] == 1000 and orders['requests'] == 2 and orders['tags'] == {'team': 'orders'}
     assert orders['share_tokens'] == pytest.approx(1000 / 2000) and orders['via'] == [US_HAIKU]
@@ -390,7 +414,7 @@ def test_principal_breakdown_with_remainder():
     assert sum(r['share_tokens'] for r in hour['rows']) == pytest.approx(1.0)
     assert hour['total_tokens'] == 2000 and not hour['partial']
     assert set(section['time_series']['1hour']) == set(names)
-    assert section['coverage']['end'] == END.isoformat() and section['log_group'] == '/bedrock/logs'
+    assert section['coverage']['end'] == (END - timedelta(minutes=5)).isoformat() and section['log_group'] == '/bedrock/logs'
 
 
 def test_a_record_logged_a_minute_late_is_not_missing():
@@ -444,8 +468,25 @@ def test_a_principal_filter_shows_the_others_as_one_row():
 def test_tags_are_read_only_for_the_selected_principals():
     logs = FakeLogs([row(T1, 'assumed-role/OrdersService'), row(T1, 'assumed-role/Billing')])
     iam = FakeIam()
-    builder_for(Breakdown.parse('principal', ['role/OrdersService']), logs, iam).prepare([US_HAIKU], END, 1)
+    builder_for(Breakdown.parse('tag:team', ['role/OrdersService']), logs, iam).prepare([US_HAIKU], END, 1)
     assert iam.calls == [('role', 'OrdersService')]
+
+
+def test_a_principal_breakdown_reads_only_its_rows_tags_once(monkeypatch):
+    from bedrock_usage_analyzer.core import breakdown as breakdown_module
+    monkeypatch.setattr(breakdown_module, 'MAX_GROUPS', 2)
+    logs = FakeLogs([row(T1, 'assumed-role/Big', i=900), row(T1, 'assumed-role/Small1', i=1),
+                     row(T1, 'assumed-role/Small2', i=1)])
+    iam = FakeIam(role_tags={'Big': {'team': 'core'}}, deny={'Small1'})
+    builder = builder_for(Breakdown(), logs, iam)
+    builder.prepare([US_HAIKU], END, 1)
+    assert iam.calls == []  # nothing read before the rows are known
+    for _ in range(2):  # two reports of the run
+        section = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({})}, GRANULARITY, ['1hour'])
+    assert iam.calls == [('role', 'Big')]  # the folded callers' tags are never read
+    rows = section['periods']['1hour']['rows']
+    assert rows[0]['tags'] == {'team': 'core'} and rows[1]['tags'] == {}
+    assert section['notes'] == []
 
 
 def test_many_groups_are_folded_into_one_row(monkeypatch):
@@ -466,18 +507,42 @@ def test_many_groups_are_folded_into_one_row(monkeypatch):
     assert len(section['periods']['1hour']['rows']) == 5
 
 
-def test_cloudwatch_minutes_after_the_logs_were_read_are_not_unattributed():
-    # The logs were read up to END - 5 min; CloudWatch, read later, also has END - 2 min
-    logs = FakeLogs([row(T1, 'assumed-role/A', i=100, o=0, n=1)])
+def test_the_breakdown_ends_before_records_still_being_delivered():
+    # Run at END: the logs are read up to END - 5 min (records arrive seconds to minutes
+    # late); CloudWatch's later minutes are not compared with logs that may not have them yet
+    logs = FakeLogs([row(T1, 'assumed-role/A', i=100, o=0, n=1), row(END - timedelta(minutes=2), 'assumed-role/A')])
     builder = builder_for(Breakdown(), logs)
-    builder.prepare([US_HAIKU], END - timedelta(minutes=5), 1)
+    builder.prepare([US_HAIKU], END, 1)
     late = END - timedelta(minutes=2)
     section = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({T1: (100, 0, 1), late: (900, 0, 3)})},
                               GRANULARITY, ['1hour'])
     hour = section['periods']['1hour']
     assert [r['name'] for r in hour['rows']] == ['role/A'] and hour['total_tokens'] == 100
-    # The section says where the breakdown stops
-    assert section['coverage']['end'] == (END - timedelta(minutes=5)).isoformat()
+    # The breakdown's hour ends there, so it is fully covered
+    logs_end = (END - timedelta(minutes=5)).isoformat()
+    assert section['coverage']['end'] == logs_end and hour['covered_to'] == logs_end and not hour['partial']
+    assert logs.queries[-1]['end'] == int((END - timedelta(minutes=5)).timestamp())
+
+
+def test_without_an_account_it_is_read_from_sts(monkeypatch, caplog):
+    from bedrock_usage_analyzer.core import breakdown as breakdown_module
+    caplog.set_level('INFO')
+    monkeypatch.setattr(breakdown_module, 'get_account_id', lambda region: ACCOUNT)
+    profile_arn = f"arn:aws:bedrock:{REGION}:{ACCOUNT}:application-inference-profile/app0000001"
+    logs = FakeLogs([row(T1, 'assumed-role/A', model=profile_arn)])
+    builder = builder_for(Breakdown(), logs)
+    builder.account = None
+    builder.prepare(['app0000001'], END, 1)
+    assert builder.account == ACCOUNT
+    section = builder.section(['app0000001'], {}, {'app0000001': cloudwatch({})}, GRANULARITY, ['1hour'])
+    assert [r['name'] for r in section['periods']['1hour']['rows']] == ['role/A']
+
+    def no_sts(region):
+        raise RuntimeError('no STS')
+    monkeypatch.setattr(breakdown_module, 'get_account_id', no_sts)
+    builder = builder_for(Breakdown(), FakeLogs())
+    builder.account = None
+    assert builder.prepare(['app0000001'], END, 1) is None and 'account ID unavailable' in caplog.text
 
 
 def test_each_period_keeps_its_own_largest_callers(monkeypatch):
@@ -552,7 +617,7 @@ def test_a_given_log_group_skips_the_logging_configuration():
 def test_report_renders_the_breakdown_escaped(analyzer, tmp_path, monkeypatch):
     from bedrock_usage_analyzer.core import breakdown as breakdown_module
     hostile = 'assumed-role/<img src=x onerror=alert(1)>'
-    logs = FakeLogs([row(datetime.now(timezone.utc).replace(second=0, microsecond=0) - timedelta(minutes=3),
+    logs = FakeLogs([row(datetime.now(timezone.utc).replace(second=0, microsecond=0) - timedelta(minutes=8),
                          hostile, model=f"au.{HAIKU}")])
     monkeypatch.setattr(breakdown_module, 'create_client',
                         lambda service, region=None, **_: logs if service == 'logs' else FakeIam())

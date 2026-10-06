@@ -14,8 +14,8 @@ from ..aws.custom_models import DEPLOYMENT_KIND, base_model_id_in_arn, deploymen
 from ..aws.invocation_logs import (
     METADATA, PRINCIPAL, SESSION, TAG, Breakdown, BreakdownError, logging_destination)
 from ..core.breakdown import ENABLE_HINT
-from ..core.errors import is_access_denied, troubleshooting_hint
-from ..core.profile_fetcher import AWS_ERRORS, UNKNOWN_SOURCE, InferenceProfileFetcher, missing_deployment_api
+from ..core.errors import AWS_ERRORS, is_access_denied, troubleshooting_hint
+from ..core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher, missing_deployment_api
 from ..sync.regions import load_region_names
 from ..utils.yaml_handler import CUSTOM_ENDPOINT, endpoint_keys, fm_endpoints, has_endpoint, invokable_endpoint_keys, load_fm_list, profile_endpoints
 from ..utils.ui import require_credentials_partition, select_from_list

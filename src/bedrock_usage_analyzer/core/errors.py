@@ -6,6 +6,7 @@
 from typing import Optional
 
 from botocore.exceptions import (
+    BotoCoreError,
     ClientError,
     ConnectionClosedError,
     ConnectTimeoutError,
@@ -21,6 +22,9 @@ from bedrock_usage_analyzer.utils.partition import (
     get_partition_display_name,
     get_partition_for_region,
 )
+
+# What a failed AWS call raises (API errors, and botocore's own: credentials, network, ...)
+AWS_ERRORS = (ClientError, BotoCoreError)
 
 # Error codes and messages that mean the credentials are missing, invalid or expired
 _CREDENTIAL_CODES = set(TOKEN_REJECTION_CODES) | {'ExpiredToken', 'ExpiredTokenException', 'InvalidAccessKeyId'}

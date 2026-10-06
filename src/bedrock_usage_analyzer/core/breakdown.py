@@ -13,13 +13,14 @@ undelivered records) is shown as its own row, so the shares add up to the endpoi
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 from bedrock_usage_analyzer.aws.client_factory import create_client
+from bedrock_usage_analyzer.aws.sts import get_account_id
 from bedrock_usage_analyzer.aws.invocation_logs import (
-    AWS_ERRORS, METADATA, PRINCIPAL, SESSION, TAG, UNATTRIBUTED, Breakdown, InvocationLogFetcher, LogsQueryError,
+    METADATA, PRINCIPAL, SESSION, TAG, UNATTRIBUTED, Breakdown, InvocationLogFetcher, LogsQueryError,
     logging_destination, model_id_forms, principal_tags)
-from bedrock_usage_analyzer.core.errors import troubleshooting_hint
+from bedrock_usage_analyzer.core.errors import AWS_ERRORS, troubleshooting_hint
 from bedrock_usage_analyzer.core.metrics_fetcher import PERIOD_DAYS
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,10 @@ logger = logging.getLogger(__name__)
 # Groups shown as their own rows (and chart lines); smaller ones are summed into one row
 MAX_GROUPS = 30
 OTHER_PRINCIPALS = '(other principals)'
+# Invocation log records reach the log group seconds after the call (minutes at worst), so
+# the breakdown ends this long before the run started; its periods end there too, a window
+# CloudWatch's data of every report covers
+LOG_DELIVERY_DELAY = timedelta(minutes=5)
 ENABLE_HINT = ("To attribute usage to callers, enable model invocation logging to CloudWatch Logs in this "
                "region (Bedrock console > Settings, or PutModelInvocationLoggingConfiguration); turning "
                "off text, image, embedding and video delivery keeps only metadata.")
@@ -60,20 +65,30 @@ class BreakdownBuilder:
         self.coverage: Optional[Tuple[datetime, datetime]] = None
         self._tags: Optional[Dict[str, Dict[str, str]]] = None
         self._tag_error: Optional[Exception] = None
+        self._tags_read: Set[str] = set()
         self.notes: List[str] = []
 
     # ------------------------------------------------------------------ fetching
 
-    def prepare(self, cw_ids: Iterable[str], end: datetime, days: float) -> Optional[str]:
-        """Query the logs for every ModelId of the run, once. Returns why the breakdown is
-        unavailable, or None."""
+    def prepare(self, cw_ids: Iterable[str], now: datetime, days: float) -> Optional[str]:
+        """Query the logs for every ModelId of the run, once, up to LOG_DELIVERY_DELAY before
+        now (records reach the log group seconds to minutes after the call). Returns why the
+        breakdown is unavailable, or None."""
         if self._rows is not None or self._unavailable is not None:
             return self._unavailable
+        end = now - LOG_DELIVERY_DELAY
         try:
             if not self.log_group:
                 self.log_group, reason = logging_destination(self.bedrock_client)
                 if not self.log_group:
                     return self._give_up(f"{reason}. {ENABLE_HINT}")
+            if self.account is None:
+                # Application and system inference profile ARNs in the logs carry the account
+                try:
+                    self.account = get_account_id(self.region)
+                except Exception as e:  # STS unreachable: those spellings are not matched
+                    logger.info(f"  Note: account ID unavailable ({e}); usage logged under profile ARNs "
+                                f"is shown as '{UNATTRIBUTED}'")
             logs = self._logs_client or create_client('logs', self.region)
             fetcher = InvocationLogFetcher(logs, self.log_group)
             start = end - timedelta(days=days)
@@ -93,8 +108,9 @@ class BreakdownBuilder:
         except AWS_ERRORS + (LogsQueryError,) as e:
             hint = troubleshooting_hint(e, self.region)
             return self._give_up(f"could not read the model invocation logs: {e}" + (f" ({hint})" if hint else ""))
-        if self.breakdown.kind == TAG or self.breakdown.kind == PRINCIPAL:
-            # Only the principals that get their own rows (--principal limits them)
+        if self.breakdown.kind == TAG:
+            # Grouping needs every selected principal's tags (--principal limits them); a
+            # principal breakdown reads only its rows' tags, when the sections are built
             self._read_tags({r['principal'] for r in self._rows if self._selected(r)})
         return None
 
@@ -104,10 +120,16 @@ class BreakdownBuilder:
         return reason
 
     def _read_tags(self, principals):
+        principals = {p for p in principals if p.startswith(('role/', 'user/'))}
+        if not principals:
+            return
+        self._tags_read |= principals
         iam = self._iam_client or create_client('iam', self.region)
-        self._tags, self._tag_error = principal_tags(iam, principals, self._parallel)
-        if self._tag_error is not None:
-            message = f"some IAM principal tags could not be read ({self._tag_error})"
+        tags, error = principal_tags(iam, principals, self._parallel)
+        self._tags = {**(self._tags or {}), **tags}
+        if error is not None and self._tag_error is None:
+            self._tag_error = error
+            message = f"some IAM principal tags could not be read ({error})"
             if self.breakdown.kind == TAG:
                 message += "; principals without readable tags are grouped under '(tags not readable)'"
             self.notes.append(message)
@@ -139,25 +161,26 @@ class BreakdownBuilder:
                 time_periods: Iterable[str]) -> Optional[Dict]:
         """The breakdown section of one report. A section that cannot be built says why
         instead of failing the report."""
-        base = {'kind': self.breakdown.kind, 'key': self.breakdown.key, 'label': self.breakdown.label,
-                'source': 'model invocation logs', 'log_group': self.log_group,
-                'principal_filter': list(self.breakdown.principals), 'notes': list(self.notes)}
         if self._unavailable is not None or self._rows is None or self.coverage is None:
-            return {**base, 'unavailable': self._unavailable or 'not fetched', 'periods': {}, 'time_series': {}}
-        try:
-            return {**base, **self._build(final_model_ids, profile_names, fetched_cw, granularity_config, time_periods)}
-        except Exception as e:  # never lose the CloudWatch report to the breakdown
-            logger.debug("Breakdown section failed", exc_info=True)
-            logger.info(f"  Breakdown by {self.breakdown.label} unavailable for this report: {e}")
-            return {**base, 'unavailable': f"the breakdown could not be built: {e}", 'periods': {}, 'time_series': {}}
+            built = {'unavailable': self._unavailable or 'not fetched', 'periods': {}, 'time_series': {}}
+        else:
+            try:
+                built = self._build(final_model_ids, profile_names, fetched_cw, granularity_config, time_periods)
+            except Exception as e:  # never lose the CloudWatch report to the breakdown
+                logger.debug("Breakdown section failed", exc_info=True)
+                logger.info(f"  Breakdown by {self.breakdown.label} unavailable for this report: {e}")
+                built = {'unavailable': f"the breakdown could not be built: {e}", 'periods': {}, 'time_series': {}}
+        # Notes after building: reading the rows' tags may add one
+        return {'kind': self.breakdown.kind, 'key': self.breakdown.key, 'label': self.breakdown.label,
+                'source': 'model invocation logs', 'log_group': self.log_group,
+                'principal_filter': list(self.breakdown.principals), 'notes': list(self.notes), **built}
 
     def _build(self, final_model_ids, profile_names, fetched_cw: Dict, granularity_config: Dict,
                time_periods: Iterable[str]) -> Dict:
-        end = next((d['end_time'] for d in fetched_cw.values() if d.get('end_time')), self.coverage[1])
+        # Every period of the breakdown ends where the logs were read up to (CloudWatch,
+        # read later for each report, covers that window too), and so do its totals
         covered_from, logs_end = self.coverage
-        # CloudWatch is read after the logs, so its last minutes are not in the logs' window:
-        # the breakdown (and its totals) stops where the logs were read
-        logs_end = min(logs_end, end)
+        end = logs_end
 
         groups: Dict[str, Dict] = {}
         logged_all = defaultdict(_empty_minute)  # every logged caller, before the principal filter
@@ -216,22 +239,31 @@ class BreakdownBuilder:
                 period_series[name] = {k: ts_data[k] for k in ('TPM', 'RPM') if k in ts_data}
             rows.sort(key=lambda r: (r['name'] == UNATTRIBUTED, r['name'] == OTHER_PRINCIPALS,
                                      r['name'] == folded_name, -r['tokens']))
+            # Partly covered: the logs start after the period does (retention, a newer log group)
             periods[period] = {'rows': rows, 'total_tokens': total[0] + total[1], 'total_requests': total[2],
-                               'covered_from': window_start.isoformat(),
+                               'covered_from': window_start.isoformat(), 'covered_to': logs_end.isoformat(),
                                'partial': window_start > period_start}
             time_series[period] = period_series
+        if self.breakdown.kind == PRINCIPAL:
+            self._add_tags(periods)
         return {'coverage': {'start': covered_from.isoformat(), 'end': logs_end.isoformat()},
                 'periods': periods, 'time_series': time_series}
 
+    def _add_tags(self, periods: Dict) -> None:
+        """The IAM tags of the principals shown as rows, read once each (not those of every
+        logged caller: only the rows show them)."""
+        names = {r['name'] for p in periods.values() for r in p['rows']}
+        self._read_tags(names - self._tags_read)
+        for p in periods.values():
+            for r in p['rows']:
+                r['tags'] = (self._tags or {}).get(r['name'], {})
+
     def _row(self, name, principals, via, stats, tokens, requests, total, period) -> Dict:
-        tags = {}
-        if self.breakdown.kind == PRINCIPAL and self._tags:
-            tags = self._tags.get(name, {})
         return {
             'name': name,
             'principals': principals if self.breakdown.kind != PRINCIPAL else [],
             'via': via,
-            'tags': tags,
+            'tags': {},
             'tokens': tokens,
             'requests': requests,
             'share_tokens': tokens / (total[0] + total[1]) if total[0] + total[1] else None,

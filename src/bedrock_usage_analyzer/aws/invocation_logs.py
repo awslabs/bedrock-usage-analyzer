@@ -17,20 +17,17 @@ import logging
 import re
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
-from botocore.exceptions import BotoCoreError, ClientError
-
 from bedrock_usage_analyzer.aws.bedrock import endpoint_id, split_profile_id
-from bedrock_usage_analyzer.core.errors import is_access_denied
+from bedrock_usage_analyzer.core.errors import AWS_ERRORS, is_access_denied
 from bedrock_usage_analyzer.utils.partition import build_arn
 
 logger = logging.getLogger(__name__)
 
-AWS_ERRORS = (ClientError, BotoCoreError)
 
 PRINCIPAL = 'principal'
 SESSION = 'session'
@@ -45,17 +42,20 @@ MAX_CONCURRENT_QUERIES = 4
 QUERY_TIMEOUT_SECONDS = 900
 # A query window is never split below this, even if it returns MAX_ROWS rows
 MIN_WINDOW = timedelta(minutes=10)
-# StartQuery accepts query strings of up to 10,000 characters
+# StartQuery accepts query strings of up to 10,000 characters; each window adds its end
+# filter (QUERY_END_FILTER_LENGTH characters at most) to the query
 MAX_QUERY_LENGTH = 10000
+QUERY_END_FILTER_LENGTH = 40
+_QUERY_HEAD = 'fields @timestamp\n'
 
-# requestMetadata keys are interpolated into the query, so only plain key characters are
-# accepted; IAM tag keys (only looked up in ListRoleTags/ListUserTags results) may also
-# hold spaces
-_KEY_PATTERN = re.compile(r'^[A-Za-z0-9_.:/=+@-]{1,128}$')
+# requestMetadata keys (Bedrock allows letters, digits, whitespace and :_@$#=/+,-.) go into
+# the query inside backticks, which none of these characters can close; IAM tag keys are
+# only looked up in ListRoleTags/ListUserTags results
+_KEY_PATTERN = re.compile(r'^[A-Za-z0-9 :_@$#=/+,.-]{1,256}$')
 _TAG_KEY_PATTERN = re.compile(r'^[A-Za-z0-9 _.:/=+@-]{1,128}$')
 # modelId values in a query string literal: model, profile and deployment IDs and ARNs
 _MODEL_ID_PATTERN = re.compile(r'^[A-Za-z0-9_.:/-]{1,2048}$')
-# An IAM principal given with --principal: 'role/<name>', 'user/<path/name>' or an ARN
+# An IAM principal given with --principal: 'role/<name>', 'user/<name>' or an ARN
 _PRINCIPAL_PATTERN = re.compile(r'^[A-Za-z0-9_.:/=+,@-]{1,2048}$')
 
 UNATTRIBUTED = '(not in the invocation logs)'
@@ -85,13 +85,14 @@ class Breakdown:
             if not _TAG_KEY_PATTERN.match(key) or not key.strip():
                 raise BreakdownError(f"'{value}' needs a key of letters, digits, spaces and _.:/=+@- (e.g. tag:team)")
         elif kind == METADATA:
-            if not _KEY_PATTERN.match(key):
-                raise BreakdownError(f"'{value}' needs a key of letters, digits and _.:/=+@- (e.g. metadata:team)")
+            if not _KEY_PATTERN.match(key) or not key.strip():
+                raise BreakdownError(f"'{value}' needs a key of letters, digits, spaces and :_@$#=/+,-. "
+                                     f"(e.g. metadata:team)")
         elif key:
             raise BreakdownError(f"'{kind}' takes no key: '{value}'")
         names = tuple(normalize_principal(p.strip()) for p in principals if p and p.strip())
         for name in names:
-            if not _PRINCIPAL_PATTERN.match(name):
+            if not _PRINCIPAL_PATTERN.match(name) or not name.startswith(('role/', 'user/', 'arn:')):
                 raise BreakdownError(f"invalid principal '{name}': use role/<name>, user/<name> or an IAM ARN")
         if log_group is not None and not re.match(r'^[A-Za-z0-9_./#-]{1,512}$', log_group):
             raise BreakdownError(f"invalid log group name '{log_group}'")
@@ -105,12 +106,12 @@ class Breakdown:
 
 
 def normalize_principal(arn: str) -> str:
-    """The IAM principal a caller ARN belongs to, as 'role/<name>' or 'user/<path/name>'.
+    """The IAM principal a caller ARN belongs to, as 'role/<name>' or 'user/<name>'.
 
     'arn:aws:sts::111122223333:assumed-role/Billing/session-1' -> 'role/Billing' (every
     session of a role is that role), 'arn:aws:iam::111122223333:user/ops/alice' ->
-    'user/ops/alice'. A role's path is dropped ('role/service-role/X' -> 'role/X'), as
-    assumed-role ARNs do not carry it. Other callers (root, federated users) keep their ARN.
+    'user/alice'. IAM paths are dropped (role and user names are unique in an account, and
+    assumed-role ARNs carry no path). Other callers (root, federated users) keep their ARN.
     """
     value = (arn or '').strip()
     resource = value
@@ -118,10 +119,9 @@ def normalize_principal(arn: str) -> str:
         resource = value.split(':', 5)[5] if value.count(':') >= 5 else ''
     if resource.startswith('assumed-role/'):
         return 'role/' + resource.split('/')[1]
-    if resource.startswith('role/'):
-        return 'role/' + resource.rsplit('/', 1)[1]
-    if resource.startswith('user/'):
-        return resource
+    if resource.startswith(('role/', 'user/')):
+        kind, _, rest = resource.partition('/')
+        return f"{kind}/{rest.rsplit('/', 1)[-1]}"
     return value
 
 
@@ -170,7 +170,6 @@ def model_id_forms(cw_ids: Iterable[str], region: str, account: Optional[str]) -
         elif prefix:
             if account:
                 forms[build_arn('bedrock', region, account, f"inference-profile/{endpoint_id(model_id, prefix)}")] = cw_id
-            forms[build_arn('bedrock', region, '', f"inference-profile/{endpoint_id(model_id, prefix)}")] = cw_id
         else:
             forms[build_arn('bedrock', region, '', f"foundation-model/{model_id}")] = cw_id
     return {form: cw_id for form, cw_id in forms.items() if _MODEL_ID_PATTERN.match(form)}
@@ -190,9 +189,11 @@ def build_query(forms: Iterable[str], breakdown: Breakdown) -> str:
     elif breakdown.kind == METADATA:
         # Backticks: keys may hold characters (- : / = + @) that are not field-name characters
         keys.append(f'`requestMetadata.{breakdown.key}` as meta')
-    return '\n'.join([
-        'fields @timestamp',
+    return _QUERY_HEAD + '\n'.join([
         f'| filter modelId in [{in_list}]',
+        # Failed calls are logged too (with an errorCode); CloudWatch's Invocations counts
+        # only successful ones
+        '| filter not ispresent(errorCode)',
         r'| parse identity.arn /:(?<p_role>assumed-role\/[^\/]+)\// ',
         r'| parse identity.arn /:(?<p_user>user\/.+)$/',
         '| fields coalesce(p_role, p_user, identity.arn) as principal',
@@ -220,7 +221,7 @@ def query_batches(forms: Iterable[str], breakdown: Breakdown) -> List[str]:
     queries: List[str] = []
     batch: List[str] = []
     for value in sorted(set(forms)):
-        if batch and len(build_query(batch + [value], breakdown)) > MAX_QUERY_LENGTH:
+        if batch and len(build_query(batch + [value], breakdown)) > MAX_QUERY_LENGTH - QUERY_END_FILTER_LENGTH:
             queries.append(build_query(batch, breakdown))
             batch = []
         batch.append(value)
@@ -265,7 +266,8 @@ class InvocationLogFetcher:
         retention = group.get('retentionInDays')
         if retention:
             earliest = max(earliest, end - timedelta(days=retention))
-        return min(earliest, end)
+        # On a minute: window boundaries then fall on whole seconds (startTime is in seconds)
+        return min(earliest.replace(second=0, microsecond=0), end)
 
     def fetch(self, forms: Dict[str, str], breakdown: Breakdown, start: datetime, end: datetime) -> List[Dict]:
         """Rows of the window: {'minute', 'cw_id', 'principal', 'key', 'input', 'output',
@@ -283,8 +285,9 @@ class InvocationLogFetcher:
         self._cancel.clear()
         pool = ThreadPoolExecutor(max_workers=max(1, min(self._max_concurrent, len(jobs))))
         try:
-            for result in pool.map(lambda job: self._run_window(*job), jobs):
-                rows.extend(result)
+            # In completion order, so that the first failure cancels the rest at once
+            for future in as_completed([pool.submit(self._run_window, *job) for job in jobs]):
+                rows.extend(future.result())
         except BaseException:
             # A failed query, or Ctrl-C: the queries still running stop at their next poll
             # (and are stopped in the account) instead of running to completion
@@ -308,10 +311,14 @@ class InvocationLogFetcher:
         return self._run_window(query, start, middle) + self._run_window(query, middle, end)
 
     def _run_query(self, query: str, start: datetime, end: datetime) -> List[Dict]:
-        # endTime is inclusive in Logs Insights: stop one second before the next window
+        # startTime and endTime are whole seconds and both inclusive: the window's end is
+        # cut at the millisecond in the query, so a record in the last second before a
+        # window boundary is in exactly one window
+        end_ms = int(end.timestamp() * 1000)
+        query = query.replace(_QUERY_HEAD, f"{_QUERY_HEAD}| filter @timestamp < {end_ms}\n", 1)
         response = self.logs_client.start_query(
             logGroupName=self.log_group, queryString=query,
-            startTime=int(start.timestamp()), endTime=int(end.timestamp()) - 1, limit=MAX_ROWS)
+            startTime=int(start.timestamp()), endTime=int(end.timestamp()), limit=MAX_ROWS)
         query_id = response.get('queryId')
         if not query_id:
             raise LogsQueryError("StartQuery returned no query ID")
@@ -359,7 +366,7 @@ class InvocationLogFetcher:
 
 def principal_tags(iam_client, principals: Iterable[str],
                    parallel: Callable = None) -> Tuple[Dict[str, Dict[str, str]], Optional[Exception]]:
-    """IAM tags of 'role/<name>' and 'user/<path/name>' principals.
+    """IAM tags of 'role/<name>' and 'user/<name>' principals.
 
     Returns ({principal: tags}, the first error), principals whose tags could not be read
     being left out. Other principals (root, federated users) have no tags to read.

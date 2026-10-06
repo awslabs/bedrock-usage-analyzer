@@ -7,9 +7,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, FrozenSet, Iterable, List, Optional
 
-from botocore.exceptions import BotoCoreError, ClientError
-
-from bedrock_usage_analyzer.core.errors import is_access_denied
+from bedrock_usage_analyzer.core.errors import AWS_ERRORS, is_access_denied
 from bedrock_usage_analyzer.utils.yaml_handler import CUSTOM_ENDPOINT, endpoint_keys
 from bedrock_usage_analyzer.aws.bedrock import (
     endpoint_id,
@@ -31,9 +29,8 @@ UNKNOWN_SOURCE = 'unknown'
 # Attempts at listing application profiles per run before giving up on transient errors
 MAX_LISTING_ATTEMPTS = 2
 TAG_WORKERS = 8
-# Errors of an AWS call (a missing permission, throttling, a network failure); anything
-# else from the custom model deployment reads is a bug and is raised
-AWS_ERRORS = (ClientError, BotoCoreError)
+# AWS_ERRORS (from core.errors): errors of an AWS call (a missing permission, throttling,
+# a network failure); anything else from the custom model deployment reads is a bug and is raised
 
 
 def missing_deployment_api(error: Exception) -> bool:

@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from jinja2 import Environment, PackageLoader, select_autoescape
 
 from bedrock_usage_analyzer.aws.invocation_logs import UNATTRIBUTED
+from bedrock_usage_analyzer.core.metrics_fetcher import PERIOD_DAYS
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quotas_console_url
 
 logger = logging.getLogger(__name__)
@@ -251,6 +252,7 @@ class OutputGenerator:
                 contributions=data.get('contributions', {}),
                 breakdown=data.get('breakdown'),
                 unattributed_label=UNATTRIBUTED,
+                period_ms={period: days * 86400 * 1000 for period, days in PERIOD_DAYS.items()},
                 granularity_config=data.get('granularity_config', {}),
                 period_names=period_names,
                 end_time_iso=end_time.isoformat() if end_time else None,
