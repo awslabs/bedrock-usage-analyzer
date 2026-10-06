@@ -374,6 +374,21 @@ def test_application_profile_name_with_dots(inputs):
         'model_id': HAIKU, 'profile_prefix': 'au', 'application_profile_ids': ['dotted00001']}
 
 
+def test_application_profile_id_lookup_bug_is_raised(inputs, monkeypatch):
+    monkeypatch.setattr(inputs.profile_fetcher, 'resolve_application_profile', lambda identifier: 1 / 0)
+    with pytest.raises(ZeroDivisionError):
+        inputs._application_profile_config('abc123def456')
+
+
+def test_menu_marks_a_base_copy_of_a_model_no_longer_on_demand(inputs, monkeypatch, capsys):
+    monkeypatch.setattr(inputs, '_load_fm_list', lambda region: [{'model_id': HAIKU, 'endpoints': {'global': {}}}])
+    monkeypatch.setattr('builtins.input', lambda *_: '1')
+    app = {'id': 'base0000001', 'name': 'b', 'model_id': HAIKU, 'profile_prefix': None, 'source': HAIKU,
+           'sources': [HAIKU], 'arn': 'arn', 'status': 'ACTIVE', 'tags': {}}
+    inputs._select_application_profiles([app])
+    assert 'not offered in ap-southeast-2 any more' in capsys.readouterr().out
+
+
 def test_dotted_name_of_a_custom_model_copy_stops_with_the_reason(inputs, caplog):
     from conftest import app_profile
     inputs.profile_fetcher.bedrock_client.application.append(

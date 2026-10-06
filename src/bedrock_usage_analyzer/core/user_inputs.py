@@ -13,7 +13,7 @@ from ..aws.client_factory import create_client
 from ..core.errors import troubleshooting_hint
 from ..core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
 from ..sync.regions import load_region_names
-from ..utils.yaml_handler import endpoint_keys, has_endpoint, load_fm_list, profile_endpoints
+from ..utils.yaml_handler import endpoint_keys, fm_endpoints, has_endpoint, load_fm_list, profile_endpoints
 from ..utils.ui import require_credentials_partition, select_from_list
 from ..utils.partition import (
     filter_regions_by_partition,
@@ -406,6 +406,8 @@ class UserInputs:
             try:
                 profile = self._get_profile_fetcher().resolve_application_profile(identifier)
             except Exception as e:
+                if not self._listing_error():
+                    raise  # a bug, not missing permissions
                 # An application profile ID or ARN cannot be analyzed without the listings
                 logger.error(f"Could not list {self._failed_listing()} inference profiles in {self.region}, "
                              f"so {identifier} cannot be resolved: {e}")
@@ -452,8 +454,13 @@ class UserInputs:
         print("\nApplication inference profiles:")
         for i, app in enumerate(app_profiles, 1):
             # A guessed source the region no longer lists is marked here, before it is picked
-            retired = app['profile_prefix'] not in (None, UNKNOWN_SOURCE) and app['source'] and \
-                not self._is_system_profile(app['source'])
+            if app['profile_prefix'] is None:
+                # A base-model copy of a model the fm-list knows without an on-demand endpoint
+                listed = fm_endpoints(self._load_fm_list(self.region), app['model_id'])
+                retired = listed is not None and 'base' not in listed
+            else:
+                retired = app['profile_prefix'] != UNKNOWN_SOURCE and app['source'] and \
+                    not self._is_system_profile(app['source'])
             note = f" (not offered in {self.region} any more)" if retired else ""
             print(f"  {i}. {app['name']} ({app['id']}) - based on {app['source'] or 'an unknown endpoint'}{note}")
         while True:

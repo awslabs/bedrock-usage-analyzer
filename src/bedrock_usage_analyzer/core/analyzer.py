@@ -19,7 +19,7 @@ from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.servicequotas import (
     QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK, list_quota_codes, lookup_quota)
 from bedrock_usage_analyzer.utils.yaml_handler import (
-    endpoint_quotas, has_endpoint, load_fm_list, profile_endpoints)
+    endpoint_quotas, fm_endpoints, has_endpoint, load_fm_list, profile_endpoints)
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
 
 logger = logging.getLogger(__name__)
@@ -331,6 +331,11 @@ class BedrockAnalyzer:
             quota_codes = self._load_quota_codes(model_id, profile_prefix)
             retired = profile_prefix not in (None, UNKNOWN_SOURCE) and \
                 not self._system_profile_listed(endpoint_id(model_id, profile_prefix))
+            if profile_prefix is None and app_ids:
+                # A base-model copy of a model the fm-list knows without an on-demand endpoint:
+                # that endpoint was retired (no refresh can map its limits)
+                listed = fm_endpoints(self._fm_list(), model_id)
+                retired = listed is not None and 'base' not in listed
             if retired:
                 # e.g. a copy of a retired au.* profile; an older fm-list may still map its quotas
                 ending = "the limits shown come from the saved mapping" if any(quota_codes.values()) \
