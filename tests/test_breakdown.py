@@ -55,6 +55,22 @@ class FakeLogs:
     def describe_log_groups(self, logGroupNamePrefix):
         return {'logGroups': [g for g in self.groups if g['logGroupName'].startswith(logGroupNamePrefix)]}
 
+    def get_paginator(self, operation):
+        # As botocore's: the operation's pages, following nextToken
+        assert operation == 'describe_log_groups'
+        fake = self
+
+        class Paginator:
+            def paginate(self, **kwargs):
+                token = None
+                while True:
+                    page = fake.describe_log_groups(**kwargs, **({'nextToken': token} if token else {}))
+                    yield page
+                    token = page.get('nextToken')
+                    if not token:
+                        return
+        return Paginator()
+
     def start_query(self, logGroupName, queryString, startTime, endTime, limit):
         if self.fail:
             raise self.fail
@@ -372,7 +388,66 @@ def test_a_failed_query_raises_and_is_stopped(status):
     logs = FakeLogs(statuses=[status])
     with pytest.raises(LogsQueryError):
         fetcher_for(logs).fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(hours=1), END)
-    assert logs.stopped == ['q0']
+    # Every query started is stopped (a timed-out one is first retried in smaller windows)
+    assert logs.stopped == [q['id'] for q in logs.queries] and logs.stopped[0] == 'q0'
+    # A timed-out window is retried once, in SPLIT_PARTS parts; a part that times out again
+    # ends the breakdown (no further splits: a stuck log group costs one more timeout)
+    lengths = [q['end'] - q['start'] for q in logs.queries]
+    if status == 'Timeout':
+        assert lengths[0] == 3600 and 2 <= len(lengths) <= 1 + il.SPLIT_PARTS
+        assert all(length == 900 for length in lengths[1:])
+    else:
+        assert len(lengths) == 1
+
+
+def test_a_timed_out_window_is_split_into_windows_that_finish():
+    class SlowOnLongWindows(FakeLogs):
+        def get_query_results(self, queryId):
+            query = next(q for q in self.queries if q['id'] == queryId)
+            if query['end'] - query['start'] > 6 * 3600:  # a whole day: too much to scan at once
+                return {'status': 'Timeout'}
+            return super().get_query_results(queryId)
+    logs = SlowOnLongWindows([row(END - timedelta(hours=h), 'assumed-role/A') for h in (1, 9, 20)])
+    rows = fetcher_for(logs).fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(days=1), END)
+    assert len(rows) == 3 and len(logs.queries) == 1 + il.SPLIT_PARTS
+
+
+def test_split_parts_run_beside_each_other():
+    # A split window's parts go back into the pool, not one after another in one worker
+    import threading
+    import time as time_module
+    running, peak, lock = [0], [0], threading.Lock()
+
+    class Tracking(FakeLogs):
+        def get_query_results(self, queryId):
+            query = next(q for q in self.queries if q['id'] == queryId)
+            if query['end'] - query['start'] > 6 * 3600:
+                return {'status': 'Timeout'}
+            with lock:
+                running[0] += 1
+                peak[0] = max(peak[0], running[0])
+            time_module.sleep(0.05)
+            with lock:
+                running[0] -= 1
+            return super().get_query_results(queryId)
+    logs = Tracking(statuses=['Complete'])
+    fetcher_for(logs, max_concurrent=4).fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(days=1), END)
+    assert peak[0] > 1
+
+
+def test_a_stopped_query_counts_what_it_scanned():
+    class Scanning(FakeLogs):
+        def get_query_results(self, queryId):
+            return {'status': 'Running', 'statistics': {'bytesScanned': 5e9}}
+    fetcher = InvocationLogFetcher(Scanning(), '/bedrock/logs', sleep=lambda s: None)
+    fetcher._cancel.set()
+    with pytest.raises(LogsQueryError):
+        fetcher._run_query(il._QUERY_HEAD, END - timedelta(hours=1), END)
+    assert fetcher.bytes_scanned == 0  # cancelled before its first poll: nothing seen yet
+    fetcher = InvocationLogFetcher(Scanning(), '/bedrock/logs', sleep=lambda s: fetcher._cancel.set())
+    with pytest.raises(LogsQueryError, match='cancelled'):
+        fetcher._run_query(il._QUERY_HEAD, END - timedelta(hours=1), END)
+    assert fetcher.bytes_scanned == 5e9
 
 
 def test_a_query_that_never_finishes_times_out(monkeypatch):
@@ -380,7 +455,7 @@ def test_a_query_that_never_finishes_times_out(monkeypatch):
     logs = FakeLogs(statuses=['Running'])
     with pytest.raises(LogsQueryError, match='did not finish'):
         fetcher_for(logs).fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(hours=1), END)
-    assert logs.stopped == ['q0']
+    assert logs.stopped == [q['id'] for q in logs.queries]  # each smaller window tried is stopped too
 
 
 def test_start_query_retries_only_refusals_that_started_nothing():
@@ -489,7 +564,7 @@ def test_one_failed_query_stops_the_others():
     # A window not started yet once the fetch is cancelled never starts a query
     started = len(logs.queries)
     with pytest.raises(LogsQueryError, match='cancelled'):
-        fetcher._run_window('q', END - timedelta(hours=1), END)
+        fetcher._run_window('q', END - timedelta(hours=1), END, False)
     assert len(logs.queries) == started
 
 
@@ -982,7 +1057,7 @@ def test_a_query_times_out_on_wall_time_too(monkeypatch):
     with pytest.raises(LogsQueryError, match='did not finish'):
         InvocationLogFetcher(logs, '/bedrock/logs', sleep=lambda s: None).fetch(
             {US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(hours=1), END)
-    assert logs.stopped == ['q0']
+    assert logs.stopped == [q['id'] for q in logs.queries]
 
 
 def test_a_tag_read_failure_keeps_the_rows():

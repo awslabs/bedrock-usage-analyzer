@@ -17,7 +17,7 @@ import logging
 import re
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
@@ -241,6 +241,10 @@ class LogsQueryError(RuntimeError):
     """A Logs Insights query that failed, was cancelled or timed out."""
 
 
+class QueryTimeoutError(LogsQueryError):
+    """A query that ran too long (here or in Logs Insights): a shorter window may finish."""
+
+
 def _parse_minute(value: str) -> datetime:
     """Logs Insights bin(1m) value ('2026-10-06 10:26:00.000', UTC) as an aware datetime."""
     try:
@@ -322,16 +326,12 @@ class InvocationLogFetcher:
     def _log_group(self) -> Optional[Dict]:
         """The log group's description. The name is a prefix filter, so other groups whose
         names start with it may fill the first pages: read on until the exact name."""
-        token = None
-        while True:
-            kwargs = {'logGroupNamePrefix': self.log_group, **({'nextToken': token} if token else {})}
-            response = self.logs_client.describe_log_groups(**kwargs)
-            for group in response.get('logGroups') or []:
+        pages = self.logs_client.get_paginator('describe_log_groups').paginate(logGroupNamePrefix=self.log_group)
+        for page in pages:
+            for group in page.get('logGroups') or []:
                 if group.get('logGroupName') == self.log_group:
                     return group
-            token = response.get('nextToken')
-            if not token:
-                return None
+        return None
 
     def fetch(self, forms: Dict[str, str], breakdown: Breakdown, start: datetime, end: datetime) -> List[Dict]:
         """Rows of the window: {'minute', 'cw_id', 'principal', 'key', 'input', 'output',
@@ -348,14 +348,20 @@ class InvocationLogFetcher:
         # The report ModelIds each query covers (its spellings are quoted in its modelId list)
         self._batch_ids = {query: frozenset(cw for form, cw in forms.items() if f'"{form}"' in query)
                            for query in batches}
-        jobs = [(query, w_start, w_end) for query in batches for w_start, w_end in windows]
+        jobs = [(query, w_start, w_end, False) for query in batches for w_start, w_end in windows]
         rows: List[Dict] = []
         self._cancel.clear()
-        pool = ThreadPoolExecutor(max_workers=max(1, min(self._max_concurrent, len(jobs))))
+        pool = ThreadPoolExecutor(max_workers=self._max_concurrent)
         try:
-            # In completion order, so that the first failure cancels the rest at once
-            for future in as_completed([pool.submit(self._run_window, *job) for job in jobs]):
-                rows.extend(future.result())
+            # In completion order, so that the first failure cancels the rest at once; the
+            # parts of a split window go back into the pool and run beside the other windows
+            pending = {pool.submit(self._run_window, *job) for job in jobs}
+            while pending:
+                done, pending = wait(pending, return_when=FIRST_COMPLETED)
+                for future in done:
+                    window_rows, parts = future.result()
+                    rows.extend(window_rows)
+                    pending |= {pool.submit(self._run_window, *part) for part in parts}
         except BaseException:
             # A failed query, or Ctrl-C: the queries still running stop at their next poll
             # (and are stopped in the account) instead of running to completion
@@ -365,23 +371,38 @@ class InvocationLogFetcher:
             pool.shutdown(wait=True, cancel_futures=True)
         return [self._row(raw, forms, breakdown) for raw in rows]
 
-    def _run_window(self, query: str, start: datetime, end: datetime) -> List[Dict]:
+    def _run_window(self, query: str, start: datetime, end: datetime,
+                    after_timeout: bool) -> Tuple[List[Dict], List[Tuple]]:
+        """(rows, []) for a window that fits, or ([], its parts) for one to split: at the
+        row limit, or after a timeout (once: a part that times out again ends the
+        breakdown, so a stuck log group costs one more timeout, not one per split level)."""
         if self._cancel.is_set():
             raise LogsQueryError("cancelled")
-        results = self._run_query(query, start, end)
+        try:
+            results = self._run_query(query, start, end)
+        except QueryTimeoutError:
+            if after_timeout or end - start <= MIN_WINDOW:
+                raise
+            # Too much to scan in one query (a busy log group with bodies): smaller windows
+            logger.debug(f"Invocation-log query for {start:%Y-%m-%d %H:%M} timed out; splitting it")
+            return [], self._parts(query, start, end, True)
         if len(results) < MAX_ROWS or end - start <= MIN_WINDOW:
             if len(results) >= MAX_ROWS:
                 # Summed up once by the caller and in the reports it affects, not per window
                 logger.debug(f"Invocation-log query for {start:%Y-%m-%d %H:%M} returned the {MAX_ROWS}-row limit")
                 with self._count_lock:
                     self.truncated.append((start, end, self._batch_ids.get(query, frozenset())))
-            return results
+            return results, []
+        return [], self._parts(query, start, end, after_timeout)
+
+    @staticmethod
+    def _parts(query: str, start: datetime, end: datetime, after_timeout: bool) -> List[Tuple]:
         # Four parts, not two: each split scans the window's bytes again, and a busy window
         # (many sessions per minute) then reaches a size that fits in fewer rounds
         step = (end - start) / SPLIT_PARTS
         edges = [start] + [(start + step * i).replace(second=0, microsecond=0) for i in range(1, SPLIT_PARTS)] + [end]
         edges = sorted(set(edges))
-        return [row for a, b in zip(edges, edges[1:]) for row in self._run_window(query, a, b)]
+        return [(query, a, b, after_timeout) for a, b in zip(edges, edges[1:])]
 
     def _run_query(self, query: str, start: datetime, end: datetime) -> List[Dict]:
         # startTime and endTime are whole seconds and both inclusive: the window's end is
@@ -411,22 +432,26 @@ class InvocationLogFetcher:
         with self._count_lock:  # queries run in several threads
             self.queries_run += 1
         waited, polls, started = 0.0, 0, time.monotonic()
+        scanned = 0.0  # so far, from the latest poll: a stopped query's scan is billed too
         try:
             while True:
                 if self._cancel.is_set():
                     raise LogsQueryError("cancelled")
                 result = self.logs_client.get_query_results(queryId=query_id)
                 status = result.get('status')
+                scanned = _number((result.get('statistics') or {}).get('bytesScanned')) or scanned
                 if status == 'Complete':
                     with self._count_lock:
-                        self.bytes_scanned += _number((result.get('statistics') or {}).get('bytesScanned'))
+                        self.bytes_scanned += scanned
                     return [{field['field']: field.get('value') for field in row}
                             for row in result.get('results') or []]
-                if status in ('Failed', 'Cancelled', 'Timeout', 'Unknown'):
+                if status == 'Timeout':
+                    raise QueryTimeoutError("the Logs Insights query timed out")
+                if status in ('Failed', 'Cancelled', 'Unknown'):
                     raise LogsQueryError(f"the Logs Insights query {status.lower()}")
                 # Wall time too: slow (retried) polls count, not only the waits between them
                 if max(waited, time.monotonic() - started) >= QUERY_TIMEOUT_SECONDS:
-                    raise LogsQueryError(f"the Logs Insights query did not finish in {QUERY_TIMEOUT_SECONDS} s")
+                    raise QueryTimeoutError(f"the Logs Insights query did not finish in {QUERY_TIMEOUT_SECONDS} s")
                 # Each poll returns the partial results so far: poll less often as a query
                 # runs longer, so a long query's rows are not fetched again every second
                 delay = min(self._poll * 1.5 ** polls, MAX_POLL_SECONDS)
@@ -434,6 +459,8 @@ class InvocationLogFetcher:
                 self._sleep(delay)
                 waited += delay
         except BaseException:
+            with self._count_lock:  # what it scanned until now is in the bill and the cost line
+                self.bytes_scanned += scanned
             # Interrupted or failed: do not leave it running (and counting) in the account
             try:
                 self.logs_client.stop_query(queryId=query_id)
