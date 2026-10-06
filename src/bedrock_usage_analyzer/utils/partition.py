@@ -38,24 +38,9 @@ def get_partition() -> str:
         return _cached_partition
 
     except Exception as e:
-        # Not cached: a later call (e.g. once credentials are available) can still detect it
         logger.warning(f"Failed to detect partition, defaulting to 'aws': {e}")
-        return 'aws'
-
-
-def partition_for_region(region: Optional[str]) -> Optional[str]:
-    """Partition of a region by its name, or None when no region is given.
-
-    ARNs and console links of a region belong to the region's partition, which needs no
-    STS call (and is right even before the credentials' partition is known).
-    """
-    if not region:
-        return None
-    for prefix, partition in (('us-gov-', 'aws-us-gov'), ('cn-', 'aws-cn'),
-                              ('us-isob-', 'aws-iso-b'), ('us-iso-', 'aws-iso')):
-        if region.startswith(prefix):
-            return partition
-    return 'aws'
+        _cached_partition = 'aws'
+        return _cached_partition
 
 
 def get_account_id() -> Optional[str]:
@@ -80,19 +65,19 @@ def build_arn(service: str, region: str, account: str, resource: str) -> str:
         resource: Resource identifier (e.g., 'foundation-model/model-id')
 
     Returns:
-        str: Properly formatted ARN for the region's partition
+        str: Properly formatted ARN for the current partition
     """
-    partition = partition_for_region(region) or get_partition()
+    partition = get_partition()
     return f"arn:{partition}:{service}:{region}:{account}:{resource}"
 
 
-def get_console_domain(region: Optional[str] = None) -> str:
-    """Get AWS Console domain for the region's partition (else the credentials' partition)
+def get_console_domain() -> str:
+    """Get AWS Console domain for the current partition
 
     Returns:
         str: Console domain (e.g., 'console.aws.amazon.com' or 'console.amazonaws-us-gov.com')
     """
-    partition = partition_for_region(region) or get_partition()
+    partition = get_partition()
 
     domain_map = {
         'aws': 'console.aws.amazon.com',
@@ -116,7 +101,7 @@ def get_service_quota_url(region: str, service_code: str, quota_code: str) -> st
     Returns:
         str: Full console URL for the quota
     """
-    console_domain = get_console_domain(region)
+    console_domain = get_console_domain()
     return f"https://{region}.{console_domain}/servicequotas/home/services/{service_code}/quotas/{quota_code}"
 
 

@@ -54,7 +54,10 @@
 <body>
     <h1>Bedrock Model Usage Statistics</h1>
     <h2>Model: {{ model_id }}</h2>
-    <p><strong>Region:</strong> {{ region }}</p>
+    <p><strong>Region:</strong> 
+        {% if region_info and region_info.is_govcloud %}🏛️ {% endif %}{{ (region_info.display_name if region_info else region) or region }}
+        {% if region_info and region_info.is_govcloud %}<span style="color: #666; font-size: 0.9em;"> (GovCloud)</span>{% endif %}
+    </p>
     <p><strong>Generated:</strong> {{ timestamp }}</p>
     
     {% if quotas.tpm or quotas.rpm or quotas.tpd or quotas.concurrent %}

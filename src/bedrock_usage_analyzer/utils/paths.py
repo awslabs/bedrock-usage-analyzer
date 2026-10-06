@@ -5,6 +5,7 @@
 
 import os
 from pathlib import Path
+from typing import Union, Optional
 
 try:
     from importlib.resources import files, as_file
@@ -64,7 +65,7 @@ def get_writable_path(filename: str) -> Path:
     return user_dir / filename
 
 
-def get_bundle_path() -> Path | None:
+def get_bundle_path() -> Optional[Path]:
     """Get bundled data path if in dev environment.
     
     Returns None if not in a cloned repo (for --update-bundle flag).

@@ -4,7 +4,7 @@
 """AWS STS (Security Token Service) operations"""
 
 import boto3
-from bedrock_usage_analyzer.utils.partition import get_account_id as _get_account_id
+from bedrock_usage_analyzer.utils.partition import get_account_id as _get_account_id, get_partition
 
 
 def get_account_id():
