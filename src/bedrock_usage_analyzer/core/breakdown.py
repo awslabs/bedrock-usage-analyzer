@@ -53,6 +53,7 @@ class BreakdownBuilder:
         self.breakdown = breakdown
         self.region = region
         self.known_models = set(known_models)  # the region's foundation model IDs
+        self._wanted = {p.lower() for p in breakdown.principals}
         self.bedrock_client = bedrock_client
         self.metrics_fetcher = metrics_fetcher
         self._stats = stats_fn
@@ -61,8 +62,8 @@ class BreakdownBuilder:
         self._parallel = parallel
         self._logs_client = logs_client
         self._iam_client = iam_client
-        self._rows: Optional[List[Dict]] = None
-        self._rows_by_id: Dict[str, List[Dict]] = {}  # the same rows, by CloudWatch ModelId
+        # The logged per-minute rows by CloudWatch ModelId; None until they are read
+        self._rows_by_id: Optional[Dict[str, List[Dict]]] = None
         self._unavailable: Optional[str] = None
         self.log_group: Optional[str] = breakdown.log_group
         self.coverage: Optional[Tuple[datetime, datetime]] = None
@@ -77,7 +78,7 @@ class BreakdownBuilder:
         """Query the logs for every ModelId of the run, once, up to LOG_DELIVERY_DELAY before
         now (records reach the log group seconds to minutes after the call). Returns why the
         breakdown is unavailable, or None."""
-        if self._rows is not None or self._unavailable is not None:
+        if self._rows_by_id is not None or self._unavailable is not None:
             return self._unavailable
         end = now - LOG_DELIVERY_DELAY
         try:
@@ -101,23 +102,34 @@ class BreakdownBuilder:
             covered_from = fetcher.coverage_start(start, end)
             if covered_from is None:
                 return self._give_up(f"log group {self.log_group} does not exist in {self.region}. {ENABLE_HINT}")
-            self.coverage = (covered_from, end)
             forms = model_id_forms(cw_ids, self.region, self.account, self.known_models)
             logger.info(f"  Reading model invocation logs from {self.log_group} "
                         f"({covered_from:%Y-%m-%d %H:%M} to {end:%Y-%m-%d %H:%M} UTC)...")
-            self._rows = fetcher.fetch(forms, self.breakdown, covered_from, end)
-            for row in self._rows:
-                self._rows_by_id.setdefault(row['cw_id'], []).append(row)
-            logger.info(f"  Invocation logs: {len(self._rows)} per-minute rows from {fetcher.queries_run} "
+            rows = fetcher.fetch(forms, self.breakdown, covered_from, end)
+            logger.info(f"  Invocation logs: {len(rows)} per-minute rows from {fetcher.queries_run} "
                         f"Logs Insights quer{'y' if fetcher.queries_run == 1 else 'ies'}, "
                         f"{fetcher.bytes_scanned / 1e9:.2f} GB scanned")
         except AWS_ERRORS + (LogsQueryError,) as e:
             hint = troubleshooting_hint(e, self.region)
             return self._give_up(f"could not read the model invocation logs: {e}" + (f" ({hint})" if hint else ""))
+        self.coverage = (covered_from, end)
+        self._rows_by_id = {}
+        for row in rows:
+            self._rows_by_id.setdefault(row['cw_id'], []).append(row)
+        if self._wanted:
+            # A --principal that no logged caller matches (a typo, or no calls) would show
+            # only '(other principals)': say so
+            seen = {r['principal'].lower() for r in rows}
+            missing = [p for p in self.breakdown.principals if p.lower() not in seen]
+            if missing:
+                message = (f"no logged call from {', '.join(missing)} in "
+                           f"{covered_from:%Y-%m-%d %H:%M} to {end:%Y-%m-%d %H:%M} UTC")
+                self.notes.append(message)
+                logger.info(f"  Note: {message}")
         if self.breakdown.kind == TAG:
             # Grouping needs every selected principal's tags (--principal limits them); a
             # principal breakdown reads only its rows' tags, when the sections are built
-            self._read_tags({r['principal'] for r in self._rows if self._selected(r)})
+            self._read_tags({r['principal'] for r in rows if self._selected(r)})
         return None
 
     def _give_up(self, reason: str) -> str:
@@ -154,12 +166,14 @@ class BreakdownBuilder:
         tags = (self._tags or {}).get(row['principal'])
         if tags is None and row['principal'].startswith(('role/', 'user/')) and self._tag_error is not None:
             return '(tags not readable)'
-        value = (tags or {}).get(self.breakdown.key)
+        # IAM tag keys are case-insensitive (a principal cannot have both Team and team)
+        wanted = self.breakdown.key.lower()
+        value = next((v for k, v in (tags or {}).items() if k.lower() == wanted), None)
         return _caller_value(value) if value not in (None, '') else f"(no {self.breakdown.key} tag)"
 
     def _selected(self, row) -> bool:
-        wanted = self.breakdown.principals
-        return not wanted or row['principal'] in wanted
+        # IAM role and user names are case-insensitive; the logs carry their real case
+        return not self._wanted or row['principal'].lower() in self._wanted
 
     # ------------------------------------------------------------------ per report
 
@@ -167,7 +181,7 @@ class BreakdownBuilder:
                 time_periods: Iterable[str]) -> Optional[Dict]:
         """The breakdown section of one report. A section that cannot be built says why
         instead of failing the report."""
-        if self._unavailable is not None or self._rows is None or self.coverage is None:
+        if self._unavailable is not None or self._rows_by_id is None:
             built = {'unavailable': self._unavailable or 'not fetched', 'periods': {}, 'time_series': {}}
         else:
             try:
@@ -185,11 +199,10 @@ class BreakdownBuilder:
                time_periods: Iterable[str]) -> Dict:
         # Every period of the breakdown ends where the logs were read up to (CloudWatch,
         # read later for each report, covers that window too), and so do its totals
-        logs_from, logs_end = self.coverage
-        end = logs_end
+        logs_from, end = self.coverage
         # This report's CloudWatch 1-minute data starts 15 days before it was fetched (after
         # the logs were read): the breakdown starts where both sources have data
-        cw_end = max((d['end_time'] for d in fetched_cw.values() if d.get('end_time')), default=logs_end)
+        cw_end = max((d['end_time'] for d in fetched_cw.values() if d.get('end_time')), default=end)
         cw_from = _next_minute(cw_end - timedelta(days=CLOUDWATCH_MINUTE_DAYS))
         covered_from = max(logs_from, cw_from)
 
@@ -210,7 +223,7 @@ class BreakdownBuilder:
             group['principals'].add(row['principal'])
             group['via'].add(profile_names.get(row['cw_id'], row['cw_id']))
 
-        cw_minutes = self._cloudwatch_minutes(fetched_cw, final_model_ids, covered_from, logs_end)
+        cw_minutes = self._cloudwatch_minutes(fetched_cw, final_model_ids, covered_from, end)
         remainder = {}
         for minute, (inp, out, req) in cw_minutes.items():
             logged = logged_all.get(minute, (0.0, 0.0, 0.0))
@@ -224,11 +237,11 @@ class BreakdownBuilder:
         for period in time_periods:
             period_start = end - timedelta(days=PERIOD_DAYS[period])
             window_start = max(period_start, covered_from)
-            total = _window_sum(cw_minutes, window_start, logs_end)
-            logged = _window_sum(logged_all, window_start, logs_end)
+            total = _window_sum(cw_minutes, window_start, end)
+            logged = _window_sum(logged_all, window_start, end)
             # The period's own largest callers keep their rows (a caller that started today
             # leads the last hour even if it is small over 30 days)
-            series, folded_name = _fold_small_groups(group_series, window_start, logs_end)
+            series, folded_name = _fold_small_groups(group_series, window_start, end)
             if others:
                 series[OTHER_PRINCIPALS] = (others, [], [])
             if remainder:
@@ -256,14 +269,14 @@ class BreakdownBuilder:
             # the logs (retention, a newer log group); the report says which
             partial = window_start > period_start
             periods[period] = {'rows': rows, 'total_tokens': total[0] + total[1], 'total_requests': total[2],
-                               'covered_from': window_start.isoformat(), 'covered_to': logs_end.isoformat(),
+                               'covered_from': window_start.isoformat(), 'covered_to': end.isoformat(),
                                'partial': partial,
                                'partial_reason': (None if not partial else
                                                   'cloudwatch' if cw_from >= logs_from else 'logs')}
             time_series[period] = period_series
         if self.breakdown.kind == PRINCIPAL:
             self._add_tags(periods)
-        return {'coverage': {'start': covered_from.isoformat(), 'end': logs_end.isoformat()},
+        return {'coverage': {'start': covered_from.isoformat(), 'end': end.isoformat()},
                 'periods': periods, 'time_series': time_series}
 
     def _add_tags(self, periods: Dict) -> None:
@@ -358,8 +371,9 @@ def _next_minute(moment: datetime) -> datetime:
 
 def _caller_value(value: str) -> str:
     """A metadata or tag value as a row name. The tool's own rows are named '(...)', so a
-    value of that form is quoted and can never take one of their places."""
-    return f'"{value}"' if value.startswith('(') and value.endswith(')') else value
+    value starting with '(' is quoted and can never take one of their places; one starting
+    with a quote is quoted too, so that two different values never share a name."""
+    return f'"{value}"' if value.startswith(('(', '"')) else value
 
 
 def _add(values: List[float], row: Dict) -> None:

@@ -39,6 +39,12 @@ def missing_deployment_api(error: Exception) -> bool:
     return isinstance(error, AttributeError) and \
         any(api in str(error) for api in ('custom_model_deployment', 'get_custom_model'))
 
+
+def deployment_read_error(error: Exception) -> bool:
+    """True when a custom model deployment read failed in a way to report and carry on
+    from (an AWS error, or a boto3 without the API); anything else is a bug to raise."""
+    return isinstance(error, AWS_ERRORS) or missing_deployment_api(error)
+
 # Regions behind the country-level Asia Pacific profiles, extended at run time from the
 # listed profiles. Used only for copies of a country profile the region does not list.
 COUNTRY_PROFILE_REGIONS = {
@@ -153,7 +159,7 @@ class InferenceProfileFetcher:
         try:
             deployments = self.list_custom_deployments()
         except Exception as e:
-            if not (isinstance(e, AWS_ERRORS) or missing_deployment_api(e)):
+            if not deployment_read_error(e):
                 raise
             logger.debug(f"Could not list custom model deployments: {e}")
             return []
@@ -556,7 +562,7 @@ class InferenceProfileFetcher:
                 try:
                     name = self.read_custom_deployment(arn)['name']
                 except Exception as e:
-                    if not (isinstance(e, AWS_ERRORS) or missing_deployment_api(e)):
+                    if not deployment_read_error(e):
                         raise
                     logger.debug(f"Could not read custom model deployment {arn}: {e}")
             name = name or deployment_short_id(arn)

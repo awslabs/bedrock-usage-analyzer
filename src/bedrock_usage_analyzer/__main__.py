@@ -96,7 +96,11 @@ def cmd_analyze(args):
             sys.exit(1)
     
     breakdown = None
-    if args.breakdown or args.principal or args.log_group:
+    if args.log_group and not (args.breakdown or args.principal):
+        # Naming the log group alone does not start a (billed) Logs Insights scan
+        logger.error("Error: --log-group needs --breakdown or --principal")
+        sys.exit(1)
+    if args.breakdown or args.principal:
         try:
             breakdown = Breakdown.parse(args.breakdown or PRINCIPAL, args.principal or (), args.log_group)
         except BreakdownError as e:
@@ -312,8 +316,8 @@ def main():
                           help='Limit the breakdown to this caller: role/<name>, user/<name> or an IAM ARN. '
                                'Repeat for several; implies --breakdown principal')
     p_analyze.add_argument('--log-group',
-                          help='Invocation log group to read (default: the region\'s model invocation '
-                               'logging destination)')
+                          help='With --breakdown or --principal: the invocation log group to read '
+                               '(default: the region\'s model invocation logging destination)')
     p_analyze.set_defaults(func=cmd_analyze)
     
     # refresh

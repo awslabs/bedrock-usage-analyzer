@@ -137,6 +137,8 @@ def test_principals_and_log_group_are_validated():
         Breakdown.parse('principal', ['role/x"; drop'])
     with pytest.raises(BreakdownError, match='use role/<name>'):
         Breakdown.parse('principal', ['OrdersService'])  # a bare name would match nothing
+    with pytest.raises(BreakdownError):
+        Breakdown.parse('principal', ['role/'])  # no name
     # A user's IAM path is dropped, as in the logged principals
     assert Breakdown.parse('principal', ['user/ops/alice']).principals == ('user/alice',)
     with pytest.raises(BreakdownError):
@@ -222,6 +224,11 @@ def test_long_model_id_lists_are_split_across_queries(monkeypatch):
     # Every spelling is in exactly one query
     assert sorted(i for i in ids for q in queries if f'"{i}"' in q) == sorted(ids)
     assert il.query_batches([US_HAIKU], Breakdown()) == [build_query([US_HAIKU], Breakdown())]
+    assert il.query_batches([], Breakdown()) == []
+    # The counted lengths are the real ones: each batch is as full as the budget allows
+    for query, nxt in zip(queries, queries[1:]):
+        first_next = re.search(r'\["([^"]+)"', nxt).group(1)
+        assert len(query) + len(first_next) + 4 > 700 - il.QUERY_END_FILTER_LENGTH
 
     logs = FakeLogs([row(END - timedelta(minutes=5), 'assumed-role/A', model=ids[0]),
                      row(END - timedelta(minutes=5), 'assumed-role/A', model=ids[-1])])
@@ -264,6 +271,17 @@ def test_a_full_window_is_split_until_it_fits(monkeypatch):
     logs = FakeLogs([row(s, 'assumed-role/A') for s in stamps])
     rows = fetcher_for(logs).fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(hours=1), END)
     assert len(rows) == 8 and len(logs.queries) > 1
+
+
+def test_a_full_window_is_run_again_in_quarters():
+    stamps = [END - timedelta(minutes=m) for m in range(5, 60, 10)]  # 6 rows, at most 2 per quarter-hour
+    logs = FakeLogs([row(s, 'assumed-role/A') for s in stamps])
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(il, 'MAX_ROWS', 3)
+        rows = fetcher_for(logs).fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(hours=1), END)
+    # The full hour is run again as four quarter-hours (not halves), which fit
+    assert len(rows) == 6 and len(logs.queries) == 1 + il.SPLIT_PARTS
+    assert [q['end'] - q['start'] for q in logs.queries[1:]] == [15 * 60] * il.SPLIT_PARTS
 
 
 def test_a_window_at_the_minimum_keeps_its_rows_and_warns(monkeypatch, caplog):
@@ -472,6 +490,16 @@ def test_a_principal_filter_shows_the_others_as_one_row():
     assert section['principal_filter'] == ['role/OrdersService']
 
 
+def test_tag_keys_and_principal_names_match_regardless_of_case():
+    # IAM tag keys and role/user names are case-insensitive
+    logs = FakeLogs([row(T1, 'assumed-role/Billing'), row(T1, 'assumed-role/Orders')])
+    iam = FakeIam(role_tags={'Billing': {'Team': 'finance'}})
+    builder = builder_for(Breakdown.parse('tag:team', ['role/billing']), logs, iam)
+    builder.prepare([US_HAIKU], END, 1)
+    rows = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({})}, GRANULARITY, ['1hour'])['periods']['1hour']['rows']
+    assert [(r['name'], r['principals']) for r in rows] == [('finance', ['role/Billing']), ('(other principals)', [])]
+
+
 def test_tags_are_read_only_for_the_selected_principals():
     logs = FakeLogs([row(T1, 'assumed-role/OrdersService'), row(T1, 'assumed-role/Billing')])
     iam = FakeIam()
@@ -633,6 +661,21 @@ def test_caller_values_never_take_the_place_of_the_tools_own_rows():
     builder.prepare([US_HAIKU], END, 1)
     rows = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({})}, GRANULARITY, ['1hour'])['periods']['1hour']['rows']
     assert [r['name'] for r in rows] == ['"(other principals)"', '(other principals)']
+    # Distinct values keep distinct names, even one that is already quoted
+    logs = FakeLogs([row(T1, 'assumed-role/A', meta='(batch)'), row(T1, 'assumed-role/A', meta='"(batch)"')])
+    builder = builder_for(Breakdown.parse('metadata:app'), logs)
+    builder.prepare([US_HAIKU], END, 1)
+    rows = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({})}, GRANULARITY, ['1hour'])['periods']['1hour']['rows']
+    assert sorted(r['name'] for r in rows) == ['""(batch)""', '"(batch)"']
+
+
+def test_a_principal_filter_that_matches_no_logged_caller_is_noted():
+    logs = FakeLogs([row(T1, 'assumed-role/Orders')])
+    builder = builder_for(Breakdown.parse('principal', ['role/Orders', 'role/Typo']), logs)
+    builder.prepare([US_HAIKU], END, 1)
+    section = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({})}, GRANULARITY, ['1hour'])
+    assert any('no logged call from role/Typo' in n for n in section['notes'])
+    assert not any('role/Orders' in n for n in section['notes'])
 
 
 @pytest.mark.parametrize('bedrock,logs,expected', [
@@ -715,7 +758,7 @@ def analyzer(sydney_bedrock, monkeypatch):
 @pytest.mark.parametrize('argv,expected', [
     (['--breakdown', 'tag:team'], ('tag', 'team', ())),
     (['--principal', 'role/A'], ('principal', None, ('role/A',))),
-    (['--log-group', '/g'], ('principal', None, ())),
+    (['--breakdown', 'session', '--log-group', '/g'], ('session', None, ())),
 ])
 def test_cli_options_become_a_breakdown(monkeypatch, tmp_path, argv, expected):
     from bedrock_usage_analyzer import __main__ as cli
@@ -740,6 +783,7 @@ def test_cli_options_become_a_breakdown(monkeypatch, tmp_path, argv, expected):
     cli.main()
     b = seen['breakdown']
     assert (b.kind, b.key, b.principals) == expected
+    assert b.log_group == ('/g' if '--log-group' in argv else None)
     assert seen['analyzer']['breakdown'] is b and seen['analyzer']['account'] == ACCOUNT and seen['ran']
 
 
@@ -749,6 +793,14 @@ def test_an_invalid_cli_breakdown_exits(monkeypatch, caplog):
     with pytest.raises(SystemExit):
         cli.main()
     assert 'unknown breakdown' in caplog.text
+
+
+def test_a_log_group_alone_does_not_start_a_breakdown(monkeypatch, caplog):
+    from bedrock_usage_analyzer import __main__ as cli
+    monkeypatch.setattr('sys.argv', ['bua', 'analyze', '-r', REGION, '-m', HAIKU, '--log-group', '/g'])
+    with pytest.raises(SystemExit):
+        cli.main()
+    assert '--log-group needs --breakdown or --principal' in caplog.text
 
 
 # ------------------------------------------------------------------ interactive question

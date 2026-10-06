@@ -42,6 +42,8 @@ MAX_CONCURRENT_QUERIES = 4
 QUERY_TIMEOUT_SECONDS = 900
 # A query window is never split below this, even if it returns MAX_ROWS rows
 MIN_WINDOW = timedelta(minutes=10)
+# A window that returns MAX_ROWS rows is run again as this many parts
+SPLIT_PARTS = 4
 # StartQuery accepts query strings of up to 10,000 characters; each window adds its end
 # filter (QUERY_END_FILTER_LENGTH characters at most) to the query
 MAX_QUERY_LENGTH = 10000
@@ -92,7 +94,8 @@ class Breakdown:
             raise BreakdownError(f"'{kind}' takes no key: '{value}'")
         names = tuple(normalize_principal(p.strip()) for p in principals if p and p.strip())
         for name in names:
-            if not _PRINCIPAL_PATTERN.match(name) or not name.startswith(('role/', 'user/', 'arn:')):
+            if not _PRINCIPAL_PATTERN.match(name) or not name.startswith(('role/', 'user/', 'arn:')) \
+                    or name in ('role/', 'user/'):
                 raise BreakdownError(f"invalid principal '{name}': use role/<name>, user/<name> or an IAM ARN")
         if log_group is not None and not re.match(r'^[A-Za-z0-9_./#-]{1,512}$', log_group):
             raise BreakdownError(f"invalid log group name '{log_group}'")
@@ -217,15 +220,23 @@ def _parse_minute(value: str) -> datetime:
 def query_batches(forms: Iterable[str], breakdown: Breakdown) -> List[str]:
     """The breakdown queries for these modelId spellings: one, or several when one query
     string would pass the StartQuery limit of MAX_QUERY_LENGTH characters."""
+    values = sorted(set(forms))
+    if not values:
+        return []
+    # A query is its fixed text plus '"value", ' per spelling: count instead of rebuilding
+    fixed = len(build_query(values[:1], breakdown)) - len(values[0]) - 2
+    budget = MAX_QUERY_LENGTH - QUERY_END_FILTER_LENGTH
     queries: List[str] = []
     batch: List[str] = []
-    for value in sorted(set(forms)):
-        if batch and len(build_query(batch + [value], breakdown)) > MAX_QUERY_LENGTH - QUERY_END_FILTER_LENGTH:
+    length = fixed
+    for value in values:
+        added = len(value) + 2 + (2 if batch else 0)
+        if batch and length + added > budget:
             queries.append(build_query(batch, breakdown))
-            batch = []
+            batch, length, added = [], fixed, len(value) + 2
         batch.append(value)
-    if batch:
-        queries.append(build_query(batch, breakdown))
+        length += added
+    queries.append(build_query(batch, breakdown))
     return queries
 
 
@@ -306,9 +317,12 @@ class InvocationLogFetcher:
                 logger.info(f"  Warning: the invocation-log query for {start:%Y-%m-%d %H:%M} returned the "
                             f"{MAX_ROWS}-row limit; some callers of that window may be missing")
             return results
-        middle = start + (end - start) / 2
-        middle = middle.replace(second=0, microsecond=0)
-        return self._run_window(query, start, middle) + self._run_window(query, middle, end)
+        # Four parts, not two: each split scans the window's bytes again, and a busy window
+        # (many sessions per minute) then reaches a size that fits in fewer rounds
+        step = (end - start) / SPLIT_PARTS
+        edges = [start] + [(start + step * i).replace(second=0, microsecond=0) for i in range(1, SPLIT_PARTS)] + [end]
+        edges = sorted(set(edges))
+        return [row for a, b in zip(edges, edges[1:]) for row in self._run_window(query, a, b)]
 
     def _run_query(self, query: str, start: datetime, end: datetime) -> List[Dict]:
         # startTime and endTime are whole seconds and both inclusive: the window's end is

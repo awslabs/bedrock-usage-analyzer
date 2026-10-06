@@ -6,7 +6,7 @@ All notable changes to the Bedrock Usage Analyzer will be documented in this fil
 
 ### Added
 - **Usage by IAM principal** (`--breakdown principal|session|tag:<key>|metadata:<key>`, `--principal`,
-  `--log-group`, or the interactive question): for services that share an endpoint instead of having their
+  or the interactive question; `--log-group` names another log group): for services that share an endpoint instead of having their
   own application inference profiles, each report breaks its usage down by calling IAM role or user, role
   session, IAM principal tag or `requestMetadata` key, read from the model invocation logs with CloudWatch
   Logs Insights (metadata fields only). Rows show tokens, requests, shares of the endpoint total, TPM/RPM
