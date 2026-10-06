@@ -16,7 +16,8 @@ models:
   - ON_DEMAND
   model_id: amazon.titan-embed-text-v2:0
   provider: Amazon
-- inference_types: []
+- endpoints: {}
+  inference_types: []
   model_id: amazon.titan-embed-text-v2:0:8k
   provider: Amazon
 - endpoints:
@@ -62,9 +63,9 @@ models:
           name: Cross-region model inference requests per minute for Anthropic Claude
             Haiku 4.5
         tpd:
-          code: L-6120CF2D
-          name: Model invocation max tokens per day for Anthropic Claude Haiku 4.5
-            (doubled for cross-region calls)
+          code: L-B5C049AE
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Haiku 4.5
         tpm:
           code: L-58BE175A
           name: Cross-region model inference tokens per minute for Anthropic Claude
@@ -110,24 +111,79 @@ models:
     global:
       quotas:
         concurrent: null
-        rpm:
-          code: L-58424D95
-          name: Global cross-region model inference requests per minute for Anthropic
-            Claude Opus 4.5
-        tpd:
-          code: L-E2985A8E
-          name: Global cross-region model inference tokens per day for Anthropic Claude
-            Opus 4.5
-        tpm:
-          code: L-3ABF6ACC
-          name: Global cross-region model inference tokens per minute for Anthropic
-            Claude Opus 4.5
+        rpm: null
+        tpd: null
+        tpm: null
   inference_profiles:
   - eu
   - global
   inference_types:
   - INFERENCE_PROFILE
   model_id: anthropic.claude-opus-4-5-20251101-v1:0
+  provider: Anthropic
+- endpoints:
+    eu:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-11DFF789
+          name: Cross-region model inference requests per minute for Anthropic Claude
+            Opus 4.6 V1
+        tpd:
+          code: L-82CD9B28
+          name: Model invocation max tokens per day for Anthropic Claude Opus 4.6
+            V1 (doubled for cross-region calls)
+        tpm:
+          code: L-0AD9BBE8
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            Opus 4.6 V1
+    global:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-3DD46812
+          name: Global cross-region model inference requests per minute for Anthropic
+            Claude Opus 4.6 V1
+        tpd:
+          code: L-ED2BADF9
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Opus 4.6 V1
+        tpm:
+          code: L-3DCCFAA4
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Opus 4.6 V1
+  inference_profiles:
+  - eu
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-opus-4-6-v1
+  provider: Anthropic
+- endpoints:
+    eu:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm:
+          code: L-5DB28B7B
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            Opus 4.7
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm:
+          code: L-34152C1D
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Opus 4.7
+  inference_profiles:
+  - eu
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-opus-4-7
   provider: Anthropic
 - endpoints:
     eu:
@@ -149,17 +205,17 @@ models:
       quotas:
         concurrent: null
         rpm:
-          code: L-DB84CE56
+          code: L-F6E116D7
           name: Global cross-region model inference requests per minute for Anthropic
-            Claude Sonnet 4.5 V1
+            Claude Sonnet 4.6
         tpd:
-          code: L-BC182137
+          code: L-248E47B7
           name: Global cross-region model inference tokens per day for Anthropic Claude
-            Sonnet 4.5 V1
+            Sonnet 4.6
         tpm:
-          code: L-27C57EE8
+          code: L-7BEE40FB
           name: Global cross-region model inference tokens per minute for Anthropic
-            Claude Sonnet 4.5 V1
+            Claude Sonnet 4.6
   inference_profiles:
   - eu
   - global
@@ -168,6 +224,58 @@ models:
   model_id: anthropic.claude-sonnet-4-5-20250929-v1:0
   provider: Anthropic
 - endpoints:
+    eu:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-00FF3314
+          name: Cross-region model inference requests per minute for Anthropic Claude
+            Sonnet 4.6
+        tpd:
+          code: L-248E47B7
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Sonnet 4.6
+        tpm:
+          code: L-15B8E632
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            Sonnet 4.6
+    global:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-F6E116D7
+          name: Global cross-region model inference requests per minute for Anthropic
+            Claude Sonnet 4.6
+        tpd:
+          code: L-248E47B7
+          name: Global cross-region model inference tokens per day for Anthropic Claude
+            Sonnet 4.6
+        tpm:
+          code: L-7BEE40FB
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Sonnet 4.6
+  inference_profiles:
+  - eu
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: anthropic.claude-sonnet-4-6
+  provider: Anthropic
+- endpoints:
+    eu:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-EB8C1F30
+          name: Cross-region model inference requests per minute for Cohere Embed
+            V4
+        tpd:
+          code: L-795ADAB0
+          name: Global cross-region model inference tokens per day for Cohere Embed
+            V4
+        tpm:
+          code: L-4C3F0FE6
+          name: Cross-region model inference tokens per minute for Cohere Embed V4
     global:
       quotas:
         concurrent: null
@@ -184,6 +292,7 @@ models:
           name: Global cross-region model inference tokens per minute for Cohere Embed
             V4
   inference_profiles:
+  - eu
   - global
   inference_types:
   - INFERENCE_PROFILE

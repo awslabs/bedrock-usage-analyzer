@@ -14,6 +14,9 @@ from bedrock_usage_analyzer.utils.paths import get_writable_path
 
 logger = logging.getLogger(__name__)
 
+# Regions to skip due to region disruption
+SKIP_REGIONS = {'me-south-1', 'me-central-1'}
+
 
 def fetch_enabled_regions() -> List[str]:
     """Fetch enabled AWS regions for the account (legacy function for compatibility)
@@ -42,6 +45,9 @@ def refresh_regions_legacy():
     
     # Use the enhanced regions functionality
     regions_data = refresh_regions()
+    regions_data['regions'] = [r for r in regions_data.get('regions', []) if (r['name'] if isinstance(r, dict) else r) not in SKIP_REGIONS]
+    if SKIP_REGIONS:
+        logger.info(f"Skipping regions: {', '.join(sorted(SKIP_REGIONS))}")
     
     # Save to file
     regions_file = get_writable_path('regions.yml')

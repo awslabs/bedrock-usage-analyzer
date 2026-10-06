@@ -1,6 +1,6 @@
 {
   "name": "Bedrock Usage Analyzer",
-  "version": "0.4.2-beta",
+  "version": "0.5.1-beta",
   "description": "CLI tool to calculate token usage statistics (TPM, RPM, TPD, p50, p90) for Amazon Bedrock foundation models, with quota visualization and application inference profile aggregation across CloudWatch metrics",
   "technologies": ["Python", "Bash", "boto3", "numpy", "jinja2", "pyyaml", "defusedcsv", "platformdirs", "Chart.js"],
   "structure": {

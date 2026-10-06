@@ -8,6 +8,7 @@ import sys
 import os
 import logging
 from typing import List, Dict, Optional
+from bedrock_usage_analyzer.utils.partition import build_arn
 
 logger = logging.getLogger(__name__)
 
@@ -327,8 +328,8 @@ def create_application_inference_profile(bedrock_client, model_id: str, profile_
                 print(f"Could not find system profile for {profile_prefix}.{model_id}", file=sys.stderr)
                 return None
         else:
-            # Base model ARN
-            source_arn = f"arn:aws:bedrock:{region}::foundation-model/{model_id}"
+            # Base model ARN with correct partition
+            source_arn = build_arn('bedrock', region, '', f"foundation-model/{model_id}")
         
         # Create application profile
         response = bedrock_client.create_inference_profile(
