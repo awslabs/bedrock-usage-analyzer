@@ -96,7 +96,7 @@ def cmd_analyze(args):
             sys.exit(1)
     
     breakdown = None
-    if args.log_group and args.breakdown is None and not args.principal:
+    if args.log_group is not None and args.breakdown is None and not args.principal:
         # Naming the log group alone does not start a (billed) Logs Insights scan
         logger.error("Error: --log-group needs --breakdown or --principal")
         sys.exit(1)

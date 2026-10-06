@@ -988,6 +988,13 @@ def test_a_model_id_whose_cloudwatch_fetch_failed_is_left_out():
     rows = section['periods']['1hour']['rows']
     assert [(r['name'], r['share_tokens']) for r in rows] == [('role/A', 1.0)]
     assert any('1-minute data could not be fetched for app0000002' in n for n in section['notes'])
+    # A --principal whose calls are only in the left-out rows did call: no 'no logged call'
+    builder = builder_for(Breakdown.parse('principal', ['role/B']), logs)
+    builder.prepare(['app0000001', 'app0000002'], END, 1)
+    section = builder.section(['app0000001', 'app0000002'], {},
+                              {'app0000001': cloudwatch({T1: (100, 0, 1)}), 'app0000002': failed},
+                              GRANULARITY, ['1hour'])
+    assert not any('no logged call' in n for n in section['notes'])
 
 
 def test_notes_belong_to_the_report_they_are_about():
@@ -1198,9 +1205,10 @@ def test_an_invalid_cli_breakdown_exits(monkeypatch, caplog, value, extra):
     assert 'unknown breakdown' in caplog.text
 
 
-def test_a_log_group_alone_does_not_start_a_breakdown(monkeypatch, caplog):
+@pytest.mark.parametrize('group', ['/g', ''])  # an empty --log-group "$LG" too
+def test_a_log_group_alone_does_not_start_a_breakdown(monkeypatch, caplog, group):
     from bedrock_usage_analyzer import __main__ as cli
-    monkeypatch.setattr('sys.argv', ['bua', 'analyze', '-r', REGION, '-m', HAIKU, '--log-group', '/g'])
+    monkeypatch.setattr('sys.argv', ['bua', 'analyze', '-r', REGION, '-m', HAIKU, '--log-group', group])
     with pytest.raises(SystemExit):
         cli.main()
     assert '--log-group needs --breakdown or --principal' in caplog.text
@@ -1246,6 +1254,12 @@ def test_interactive_breakdown_with_a_log_group_it_cannot_use_asks_nothing_more(
     inputs = inputs_with(monkeypatch, FakeBedrock(logging_config=logging), answers)
     assert inputs._select_breakdown() is None
     assert 'log group' in capsys.readouterr().out
+
+
+def test_interactive_breakdown_is_skipped_for_an_api_callers_own_fetcher(monkeypatch):
+    inputs = inputs_with(monkeypatch, FakeBedrock(logging_config=LOGGING), [])
+    inputs.profile_fetcher = object()  # no bedrock_client: the question is not asked
+    assert inputs._select_breakdown() is None
 
 
 def test_interactive_breakdown_is_not_offered_without_logging(monkeypatch, caplog):

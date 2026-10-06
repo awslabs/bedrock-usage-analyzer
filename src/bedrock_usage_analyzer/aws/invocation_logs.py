@@ -256,24 +256,29 @@ def _parse_minute(value: str) -> datetime:
 def query_batches(forms: Iterable[str], breakdown: Breakdown) -> List[str]:
     """The breakdown queries for these modelId spellings: one, or several when one query
     string would pass the StartQuery limit of MAX_QUERY_LENGTH characters."""
+    return [build_query(batch, breakdown) for batch in _value_batches(forms, breakdown)]
+
+
+def _value_batches(forms: Iterable[str], breakdown: Breakdown) -> List[List[str]]:
+    """The modelId spellings of each breakdown query (see query_batches)."""
     values = sorted(set(forms))
     if not values:
         return []
     # A query is its fixed text plus '"value", ' per spelling: count instead of rebuilding
     fixed = len(build_query(values[:1], breakdown)) - len(values[0]) - 2
     budget = MAX_QUERY_LENGTH - QUERY_END_FILTER_LENGTH
-    queries: List[str] = []
+    batches: List[List[str]] = []
     batch: List[str] = []
     length = fixed
     for value in values:
         added = len(value) + 2 + (2 if batch else 0)
         if batch and length + added > budget:
-            queries.append(build_query(batch, breakdown))
+            batches.append(batch)
             batch, length, added = [], fixed, len(value) + 2
         batch.append(value)
         length += added
-    queries.append(build_query(batch, breakdown))
-    return queries
+    batches.append(batch)
+    return batches
 
 
 def _number(value) -> float:
@@ -344,10 +349,10 @@ class InvocationLogFetcher:
             windows.append((cursor, min(cursor + timedelta(days=1), end)))
             cursor = windows[-1][1]
         # Each modelId spelling is in exactly one query, so the results simply add up
-        batches = query_batches(forms, breakdown)
-        # The report ModelIds each query covers (its spellings are quoted in its modelId list)
-        self._batch_ids = {query: frozenset(cw for form, cw in forms.items() if f'"{form}"' in query)
-                           for query in batches}
+        # Each query and the report ModelIds its spellings belong to
+        self._batch_ids = {build_query(values, breakdown): frozenset(forms[v] for v in values)
+                           for values in _value_batches(forms, breakdown)}
+        batches = list(self._batch_ids)
         jobs = [(query, w_start, w_end, False) for query in batches for w_start, w_end in windows]
         rows: List[Dict] = []
         self._cancel.clear()

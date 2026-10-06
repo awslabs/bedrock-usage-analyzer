@@ -202,8 +202,11 @@ class UserInputs:
     def _select_breakdown(self) -> Optional[Breakdown]:
         """Ask whether to break usage down by caller, when the region logs invocations to
         CloudWatch Logs (the only per-caller source of tokens and requests)."""
+        fetcher = self._get_profile_fetcher()
+        if not isinstance(fetcher, InferenceProfileFetcher):  # an API caller's own fetcher
+            return None
         try:
-            group, reason = logging_destination(self._get_profile_fetcher().bedrock_client)
+            group, reason = logging_destination(fetcher.bedrock_client)
         except AWS_ERRORS as e:
             # Logging may well be on: the fix is the permission, or naming the group
             logger.info(f"\nUsage by caller (IAM principal) is not offered: the model invocation logging "
