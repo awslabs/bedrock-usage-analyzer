@@ -442,9 +442,10 @@ class CloudWatchMetricsFetcher:
             return {
                 'timestamps': [],
                 'data': {'invocations': [], 'input_tokens': [], 'output_tokens': []},
-                'period': period
+                'period': period,
+                'fetch_failed': True,  # not "no usage": the usage breakdown leaves it out
             }
-    
+
     def _fetch_other_metrics(self, model_id, start_time, end_time, period):
         """Fetch non-token metrics (throttles, errors, latency)
         

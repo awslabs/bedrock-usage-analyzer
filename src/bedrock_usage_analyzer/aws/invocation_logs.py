@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, ConnectTimeoutError, EndpointConnectionError
 
 from bedrock_usage_analyzer.aws.bedrock import endpoint_id, split_profile_id
 from bedrock_usage_analyzer.core.errors import AWS_ERRORS, is_access_denied
@@ -340,15 +340,19 @@ class InvocationLogFetcher:
         end_ms = int(end.timestamp() * 1000)
         query = query.replace(_QUERY_HEAD, f"{_QUERY_HEAD}| filter @timestamp < {end_ms}\n", 1)
         for attempt in range(START_ATTEMPTS):
+            if self._cancel.is_set():  # another window failed while this one was backing off
+                raise LogsQueryError("cancelled")
             try:
                 response = self.start_client.start_query(
                     logGroupName=self.log_group, queryString=query,
                     startTime=int(start.timestamp()), endTime=int(end.timestamp()), limit=MAX_ROWS)
                 break
-            except ClientError as e:
-                # Refused (throttled, or too many queries at once): no query was started
-                code = e.response.get('Error', {}).get('Code')
-                if code not in START_RETRY_CODES or attempt == START_ATTEMPTS - 1:
+            except (ClientError, EndpointConnectionError, ConnectTimeoutError) as e:
+                # Refused (throttled, or too many queries at once), or no connection was made:
+                # no query was started. Any other failure may have started one, so no retry
+                code = e.response.get('Error', {}).get('Code') if isinstance(e, ClientError) else None
+                retry = code in START_RETRY_CODES or not isinstance(e, ClientError)
+                if not retry or attempt == START_ATTEMPTS - 1:
                     raise
                 self._sleep(2 ** attempt)
         query_id = response.get('queryId')

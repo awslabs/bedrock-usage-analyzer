@@ -809,7 +809,18 @@
         const quotas = {{ quotas | tojson }};
         const profileNames = {{ profile_names | tojson }};
         const colors = ['#4285F4', '#EA4335', '#FBBC04', '#34A853', '#FF6D00', '#46BDC6', '#7BAAF7', '#F07B72', '#FDD663', '#81C995'];
-        
+        // 6-digit hex (no '#'), so that an alpha suffix can be appended like the palette's
+        function hslToHex(h, s, l) {
+            s /= 100; l /= 100;
+            const a = s * Math.min(l, 1 - l);
+            const f = n => {
+                const k = (n + h / 30) % 12;
+                const c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+                return Math.round(c * 255).toString(16).padStart(2, '0');
+            };
+            return f(0) + f(8) + f(4);
+        }
+
         // Create consistent color mapping for all profiles across all charts
         const profileColorMap = {};
         let nextColorIndex = 0;
@@ -1063,18 +1074,28 @@
         {% endfor %}
 
         // Usage by caller: one TPM line per breakdown row, against the endpoint's quota
-        const breakdownSeries = {{ (breakdown.time_series if breakdown else {}) | tojson }};
-        for (const [period, rows] of Object.entries(breakdownSeries || {})) {
+        // [[period, [[caller, TPM series], ...]], ...]: caller names are never object keys
+        const breakdownSeries = {{ breakdown_tpm | tojson }};
+        // One color per caller in every period's chart; past the palette, evenly spread hues
+        const callerColorMap = new Map();
+        for (const [, rows] of breakdownSeries) {
+            for (const [name] of rows) {
+                if (callerColorMap.has(name)) continue;
+                const n = callerColorMap.size;
+                callerColorMap.set(name, n < colors.length ? colors[n]
+                    : '#' + hslToHex((n * 137.508) % 360, 65, 45));
+            }
+        }
+        for (const [period, rows] of breakdownSeries) {
             const canvas = document.getElementById('breakdown_tpm_' + period);
             if (!canvas) continue;
             const datasets = [];
-            let index = 0;
-            for (const [name, series] of Object.entries(rows || {})) {
-                if (!series.TPM || !series.TPM.timestamps.length) continue;
-                const color = colors[index++ % colors.length];
+            for (const [name, tpm] of rows) {
+                if (!tpm.timestamps.length) continue;
+                const color = callerColorMap.get(name);
                 datasets.push({
                     label: name,
-                    data: series.TPM.timestamps.map((ts, i) => ({ x: ts, y: series.TPM.values[i] })),
+                    data: tpm.timestamps.map((ts, i) => ({ x: ts, y: tpm.values[i] })),
                     borderColor: color, backgroundColor: color + '20',
                     borderWidth: 0.8, pointRadius: 0.5, tension: 0.1, spanGaps: false
                 });

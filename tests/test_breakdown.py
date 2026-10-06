@@ -341,6 +341,47 @@ def test_start_query_retries_only_refusals_that_started_nothing():
     assert starter.calls == il.START_ATTEMPTS
 
 
+def test_start_query_retries_a_connection_that_was_never_made():
+    from botocore.exceptions import ConnectTimeoutError, EndpointConnectionError, ReadTimeoutError
+
+    class Unreachable(FakeLogs):
+        def __init__(self, errors):
+            super().__init__()
+            self.errors, self.calls = list(errors), 0
+
+        def start_query(self, **kwargs):
+            self.calls += 1
+            if self.errors:
+                raise self.errors.pop(0)
+            return super().start_query(**kwargs)
+    starter = Unreachable([EndpointConnectionError(endpoint_url='https://logs'),
+                           ConnectTimeoutError(endpoint_url='https://logs')])
+    fetcher = InvocationLogFetcher(starter, '/bedrock/logs', sleep=lambda s: None, start_client=starter)
+    fetcher.fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(hours=1), END)
+    assert starter.calls == 3 and len(starter.queries) == 1
+    # A read timeout: the request was sent and may have started a query, so no retry
+    starter = Unreachable([ReadTimeoutError(endpoint_url='https://logs')])
+    fetcher = InvocationLogFetcher(FakeLogs(), '/bedrock/logs', sleep=lambda s: None, start_client=starter)
+    with pytest.raises(ReadTimeoutError):
+        fetcher.fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(hours=1), END)
+    assert starter.calls == 1
+
+
+def test_start_query_backoff_stops_when_the_run_is_cancelled():
+    class Throttled(FakeLogs):
+        calls = 0
+
+        def start_query(self, **kwargs):
+            self.calls += 1
+            raise aws_error('ThrottlingException')
+    starter = Throttled()
+    fetcher = InvocationLogFetcher(FakeLogs(), '/bedrock/logs', start_client=starter,
+                                   sleep=lambda s: fetcher._cancel.set())  # another window failed
+    with pytest.raises(LogsQueryError, match='cancelled'):
+        fetcher._run_query(il._QUERY_HEAD, END - timedelta(hours=1), END)
+    assert starter.calls == 1  # no new (billed) query after the cancel
+
+
 def test_a_stop_failure_does_not_hide_the_query_error():
     class NoStop(FakeLogs):
         def stop_query(self, queryId):
@@ -674,6 +715,24 @@ def test_the_logs_are_read_no_further_back_than_cloudwatch_keeps_minutes():
     assert [r['name'] for r in section['periods']['30days']['rows']] == ['role/A']
 
 
+def test_a_failed_one_minute_token_fetch_is_flagged_not_reported_as_no_usage():
+    # The breakdown leaves a ModelId out only if the fetcher says its fetch failed
+    class Failing:
+        def get_metric_data(self, **kwargs):
+            raise aws_error('ThrottlingException', 'GetMetricData')
+    fetcher = CloudWatchMetricsFetcher(Failing())
+    fetcher.total_chunks = 1
+    failed = fetcher._fetch_token_metrics(US_HAIKU, END - timedelta(hours=1), END, 60)
+    assert failed['fetch_failed'] is True and failed['timestamps'] == []
+
+    class Empty:
+        def get_metric_data(self, **kwargs):
+            return {'MetricDataResults': []}
+    fetcher = CloudWatchMetricsFetcher(Empty())
+    fetcher.total_chunks = 1
+    assert 'fetch_failed' not in fetcher._fetch_token_metrics(US_HAIKU, END - timedelta(hours=1), END, 60)
+
+
 def test_minutes_logged_before_this_reports_cloudwatch_data_starts_are_left_out():
     # The report's CloudWatch data was fetched 10 minutes after the logs were read: its
     # 1-minute data starts 10 minutes later too, and so does the breakdown
@@ -808,6 +867,15 @@ def test_report_renders_the_breakdown_escaped(analyzer, tmp_path, monkeypatch):
     assert 'breakdown_tpm_1hour' in html
 
 
+def test_the_chart_gets_tpm_pairs_so_no_caller_name_is_an_object_key():
+    from bedrock_usage_analyzer.core.output_generator import _breakdown_tpm
+    tpm = {'timestamps': ['t'], 'values': [1]}
+    breakdown = {'time_series': {'1hour': {'__proto__': {'TPM': tpm, 'RPM': tpm}, 'constructor': {'TPM': tpm},
+                                           'no-tpm': {}}}}
+    assert _breakdown_tpm(breakdown) == [['1hour', [['__proto__', tpm], ['constructor', tpm]]]]
+    assert _breakdown_tpm(None) == [] and _breakdown_tpm({'unavailable': 'x'}) == []
+
+
 def test_no_breakdown_keeps_the_report_as_before(analyzer, tmp_path):
     out = tmp_path / 'results'
     analyzer.analyze([{'model_id': HAIKU, 'profile_prefix': 'au'}], output_dir=str(out))
@@ -917,6 +985,15 @@ def test_interactive_breakdown_choice(monkeypatch, answers, expected):
     assert (None if chosen is None else (chosen.kind, chosen.key)) == expected
     if chosen:
         assert chosen.log_group == '/bedrock/logs'
+
+
+@pytest.mark.parametrize('answers', [['2'], ['3'], ['4']])
+def test_interactive_breakdown_with_a_log_group_it_cannot_use_asks_nothing_more(monkeypatch, capsys, answers):
+    # No key the user types can fix the log group: no breakdown instead of asking forever
+    logging = {'cloudWatchConfig': {'logGroupName': 'bad group!'}}
+    inputs = inputs_with(monkeypatch, FakeBedrock(logging_config=logging), answers)
+    assert inputs._select_breakdown() is None
+    assert 'log group' in capsys.readouterr().out
 
 
 def test_interactive_breakdown_is_not_offered_without_logging(monkeypatch, caplog):

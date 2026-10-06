@@ -264,10 +264,9 @@ class BreakdownBuilder:
                 remainder[minute] = list(gap)
 
         group_series = {name: (g['minutes'], g['principals'], g['via']) for name, g in groups.items()}
-        # Each series' minutes in the fetcher's shape, built once for all periods
-        datasets = {name: self._dataset(minutes, end) for name, (minutes, _, _) in group_series.items()}
-        datasets[OTHER_PRINCIPALS] = self._dataset(others, end)
-        datasets[UNATTRIBUTED] = self._dataset(remainder, end)
+        # Each shown series' minutes in the fetcher's shape, built once for all periods (and
+        # only for series some period shows: thousands of sessions are folded in every period)
+        datasets: Dict[str, Dict] = {}
 
         periods, time_series = {}, {}
         for period in time_periods:
@@ -284,7 +283,12 @@ class BreakdownBuilder:
                 series[UNATTRIBUTED] = (remainder, {}, {})
             rows, period_series = [], {}
             for name, (minutes, principal_last, via_last) in series.items():
-                dataset = datasets[name] if name != folded_name else self._dataset(minutes, end)
+                if name == folded_name:
+                    dataset = self._dataset(minutes, end)
+                else:
+                    if name not in datasets:
+                        datasets[name] = self._dataset(minutes, end)
+                    dataset = datasets[name]
                 ts_data = self.metrics_fetcher.slice_and_process_data(dataset, period, granularity_config)
                 principals, via = _active(principal_last, window_start), _active(via_last, window_start)
                 stats = self._stats(ts_data, period)

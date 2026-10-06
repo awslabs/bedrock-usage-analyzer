@@ -32,6 +32,15 @@ def https_url(value) -> str:
     return text if text.startswith('https://') else ''
 
 
+def _breakdown_tpm(breakdown) -> list:
+    """The breakdown chart's data: [[period, [[caller, TPM series], ...]], ...]. Pairs, not
+    objects, as callers are names chosen by whoever calls Bedrock (an object key such as
+    "__proto__" would be dropped by the script); TPM only, the one series it draws."""
+    series = (breakdown or {}).get('time_series') or {}
+    return [[period, [[name, s['TPM']] for name, s in rows.items() if s.get('TPM')]]
+            for period, rows in series.items()]
+
+
 class OutputGenerator:
     """Handles JSON and HTML output generation"""
 
@@ -251,6 +260,7 @@ class OutputGenerator:
                 profile_names=data.get('profile_names', {}),
                 contributions=data.get('contributions', {}),
                 breakdown=data.get('breakdown'),
+                breakdown_tpm=_breakdown_tpm(data.get('breakdown')),
                 unattributed_label=UNATTRIBUTED,
                 period_ms={period: days * 86400 * 1000 for period, days in PERIOD_DAYS.items()},
                 granularity_config=data.get('granularity_config', {}),
