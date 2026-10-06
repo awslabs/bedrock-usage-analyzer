@@ -61,7 +61,7 @@ class OutputGenerator:
         # Add quota disclaimer if quotas exist
         quotas = data.get('quotas', {})
         if quotas:
-            console_domain = get_console_domain()
+            console_domain = get_console_domain(data.get('region'))
             disclaimers['quota_mapping'] = (
                 "Quota mappings were inferred using AI and may not be accurate. "
                 f"Always verify with AWS Service Quotas console: "
@@ -178,7 +178,7 @@ class OutputGenerator:
         
         html_file = f"{self.output_dir}/{filename}.html"
         logger.info(f"Generating HTML with granularity config: {data.get('granularity_config', {})}")
-        console_domain = get_console_domain()
+        console_domain = get_console_domain(data.get('region'))
         with open(html_file, 'w', encoding='utf-8') as f:
             # Inline Template().render() to avoid Semgrep pattern match
             f.write(Template(self._get_html_template()).render(
