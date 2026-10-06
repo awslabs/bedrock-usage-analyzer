@@ -96,7 +96,7 @@ This tool requires different IAM permissions depending on which features you use
 }
 ```
 
-Replace the placeholders in the `QueryInvocationLogs` statement with the invocation log group of each analyzed Region (or drop the statement if you do not use `--breakdown`).
+Replace the placeholders in the `QueryInvocationLogs` statement with the invocation log group of each analyzed Region (or drop the statement if you do not use `--breakdown`). In AWS GovCloud (US), write its ARN with the `aws-us-gov` partition (`arn:aws-us-gov:logs:...`).
 
 **What this allows:**
 - `sts:GetCallerIdentity` - Get your AWS account ID

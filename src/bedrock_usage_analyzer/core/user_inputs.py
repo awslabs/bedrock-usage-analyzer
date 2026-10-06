@@ -232,7 +232,12 @@ class UserInputs:
         if kind == PRINCIPAL:
             return breakdown
         while True:
-            key = input(f"{'Tag' if kind == TAG else 'Metadata'} key: ").strip() if kind in (TAG, METADATA) else ''
+            if kind in (TAG, METADATA):
+                key = input(f"{'Tag' if kind == TAG else 'Metadata'} key (Enter for no breakdown): ").strip()
+                if not key:  # a way out for a choice made by mistake, or a key not known
+                    return None
+            else:
+                key = ''
             try:
                 return Breakdown.parse(f"{kind}:{key}" if key else kind, log_group=group)
             except BreakdownError as e:  # only the key is left to be wrong

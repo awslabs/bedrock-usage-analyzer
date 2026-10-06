@@ -322,7 +322,11 @@ class BreakdownBuilder:
         """The IAM tags of the principals shown as rows, read once each (not those of every
         logged caller: only the rows show them)."""
         names = {r['name'] for p in periods.values() for r in p['rows']}
-        self._read_tags(names - self._tags_read)
+        unread = names - self._tags_read
+        try:
+            self._read_tags(unread)
+        except Exception as e:  # tags are one column: their failure must not discard the rows
+            self._tag_errors.update({n: e for n in unread if n.startswith(('role/', 'user/'))})
         for p in periods.values():
             for r in p['rows']:
                 r['tags'] = (self._tags or {}).get(r['name'], {})

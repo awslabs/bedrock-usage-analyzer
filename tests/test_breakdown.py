@@ -917,6 +917,44 @@ def test_an_unavailable_breakdown_says_why_and_keeps_the_report(bedrock, logs, e
     assert expected in section['unavailable'] and section['periods'] == {}
 
 
+def test_the_log_group_is_found_past_the_first_page_of_prefix_matches():
+    class Paged(FakeLogs):
+        def describe_log_groups(self, logGroupNamePrefix, nextToken=None):
+            self.pages = getattr(self, 'pages', 0) + 1
+            if nextToken is None:  # a page of other groups sharing the prefix
+                return {'logGroups': [{'logGroupName': f'/bedrock/logs-{n}'} for n in range(50)], 'nextToken': 't'}
+            return {'logGroups': [{'logGroupName': '/bedrock/logs', 'creationTime': 0}]}
+    logs = Paged()
+    assert InvocationLogFetcher(logs, '/bedrock/logs').coverage_start(END - timedelta(days=1), END) == END - timedelta(days=1)
+    assert logs.pages == 2
+    missing = FakeLogs(groups=[{'logGroupName': '/bedrock/logs-other'}])
+    assert InvocationLogFetcher(missing, '/bedrock/logs').coverage_start(END - timedelta(days=1), END) is None
+
+
+def test_a_query_times_out_on_wall_time_too(monkeypatch):
+    # Slow (retried) polls count, not only the waits between them
+    clock = iter(range(0, 10 ** 6, 400))
+    monkeypatch.setattr(il.time, 'monotonic', lambda: next(clock))
+    logs = FakeLogs(statuses=['Running'])
+    with pytest.raises(LogsQueryError, match='did not finish'):
+        InvocationLogFetcher(logs, '/bedrock/logs', sleep=lambda s: None).fetch(
+            {US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(hours=1), END)
+    assert logs.stopped == ['q0']
+
+
+def test_a_tag_read_failure_keeps_the_rows():
+    class Broken(FakeIam):
+        def list_role_tags(self, RoleName):
+            raise RuntimeError('no iam')
+    logs = FakeLogs([row(T1, 'assumed-role/A')])
+    builder = builder_for(Breakdown(), logs, iam=Broken())
+    builder.prepare([US_HAIKU], END, 1)
+    section = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({T1: (150, 0, 1)})}, GRANULARITY, ['1hour'])
+    assert [r['name'] for r in section['periods']['1hour']['rows']] == ['role/A']
+    assert section['periods']['1hour']['rows'][0]['tags'] == {}
+    assert any('tags could not be read (no iam)' in n for n in section['notes'])
+
+
 def test_a_log_group_newer_than_the_breakdown_end_says_why_it_is_empty():
     # Logging enabled a moment ago: no window to read, and the report says so
     logs = FakeLogs(groups=[{'logGroupName': '/bedrock/logs', 'creationTime': int(END.timestamp() * 1000) + 60000}])
@@ -1070,6 +1108,8 @@ LOGGING = {'cloudWatchConfig': {'logGroupName': '/bedrock/logs'}}
     (['3'], ('session', None)),
     (['4', 'bad key!', 'team'], ('tag', 'team')),
     (['5', 'app'], ('metadata', 'app')),
+    # Enter at the key prompt: no breakdown (a way out of a mistaken choice)
+    (['4', 'bad key!', ''], None), (['5', ''], None),
 ])
 def test_interactive_breakdown_choice(monkeypatch, answers, expected):
     inputs = inputs_with(monkeypatch, FakeBedrock(logging_config=LOGGING), answers)

@@ -16,6 +16,7 @@ Only metadata fields are queried: prompts and completions are never read.
 import logging
 import re
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -292,8 +293,7 @@ class InvocationLogFetcher:
     def coverage_start(self, start: datetime, end: datetime) -> Optional[datetime]:
         """The earliest time of [start, end] the log group can hold (its creation time and
         retention), or None when it does not exist."""
-        response = self.logs_client.describe_log_groups(logGroupNamePrefix=self.log_group)
-        group = next((g for g in response.get('logGroups') or [] if g.get('logGroupName') == self.log_group), None)
+        group = self._log_group()
         if group is None:
             return None
         earliest = start
@@ -305,6 +305,20 @@ class InvocationLogFetcher:
             earliest = max(earliest, end - timedelta(days=retention))
         # On a minute: window boundaries then fall on whole seconds (startTime is in seconds)
         return min(earliest.replace(second=0, microsecond=0), end)
+
+    def _log_group(self) -> Optional[Dict]:
+        """The log group's description. The name is a prefix filter, so other groups whose
+        names start with it may fill the first pages: read on until the exact name."""
+        token = None
+        while True:
+            kwargs = {'logGroupNamePrefix': self.log_group, **({'nextToken': token} if token else {})}
+            response = self.logs_client.describe_log_groups(**kwargs)
+            for group in response.get('logGroups') or []:
+                if group.get('logGroupName') == self.log_group:
+                    return group
+            token = response.get('nextToken')
+            if not token:
+                return None
 
     def fetch(self, forms: Dict[str, str], breakdown: Breakdown, start: datetime, end: datetime) -> List[Dict]:
         """Rows of the window: {'minute', 'cw_id', 'principal', 'key', 'input', 'output',
@@ -377,7 +391,7 @@ class InvocationLogFetcher:
             raise LogsQueryError("StartQuery returned no query ID")
         with self._count_lock:  # queries run in several threads
             self.queries_run += 1
-        waited, polls = 0.0, 0
+        waited, polls, started = 0.0, 0, time.monotonic()
         try:
             while True:
                 if self._cancel.is_set():
@@ -391,7 +405,8 @@ class InvocationLogFetcher:
                             for row in result.get('results') or []]
                 if status in ('Failed', 'Cancelled', 'Timeout', 'Unknown'):
                     raise LogsQueryError(f"the Logs Insights query {status.lower()}")
-                if waited >= QUERY_TIMEOUT_SECONDS:
+                # Wall time too: slow (retried) polls count, not only the waits between them
+                if max(waited, time.monotonic() - started) >= QUERY_TIMEOUT_SECONDS:
                     raise LogsQueryError(f"the Logs Insights query did not finish in {QUERY_TIMEOUT_SECONDS} s")
                 # Each poll returns the partial results so far: poll less often as a query
                 # runs longer, so a long query's rows are not fetched again every second
