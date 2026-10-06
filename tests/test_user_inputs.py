@@ -377,7 +377,7 @@ def test_application_profile_name_with_dots(inputs):
 def test_application_profile_id_lookup_bug_is_raised(inputs, monkeypatch):
     monkeypatch.setattr(inputs.profile_fetcher, 'resolve_application_profile', lambda identifier: 1 / 0)
     with pytest.raises(ZeroDivisionError):
-        inputs._application_profile_config('abc123def456')
+        inputs._application_profile_config('appprofile01')
 
 
 def test_menu_marks_a_base_copy_of_a_model_no_longer_on_demand(inputs, monkeypatch, capsys):
