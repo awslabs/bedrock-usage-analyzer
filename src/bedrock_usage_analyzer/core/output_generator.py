@@ -4,37 +4,73 @@
 """Output generation for Bedrock usage analysis reports"""
 
 import os
+import re
 import json
 import logging
 from datetime import datetime, timedelta
-from jinja2 import Template
-from bedrock_usage_analyzer.utils.partition import get_console_domain
+from jinja2 import Environment, PackageLoader, select_autoescape
 
-from bedrock_usage_analyzer.metadata.regions import get_region_display_info
+from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quotas_console_url
 
 logger = logging.getLogger(__name__)
 
+
+def safe_filename(label: str) -> str:
+    """Turn a model/profile label into a file name (no path separators or odd characters)."""
+    return re.sub(r'[^A-Za-z0-9_-]+', '_', label).strip('_') or 'report'
+
+
+def https_url(value) -> str:
+    """Template filter: keep only https:// links (no javascript: or data: URIs in href)."""
+    text = str(value or '')
+    return text if text.startswith('https://') else ''
+
+
 class OutputGenerator:
     """Handles JSON and HTML output generation"""
-    
+
     def __init__(self, output_dir: str = 'results'):
         self.output_dir = output_dir
         os.makedirs(self.output_dir, exist_ok=True)
-    
+        # Autoescape protects the report from profile names, tags or model IDs that contain markup.
+        # This is a static report writer, not a Flask app; escaping is covered by
+        # tests/test_analyzer_and_output.py::test_report_escapes_markup_and_script_breakout.
+        self._env = Environment(  # nosemgrep: python.flask.security.xss.audit.direct-use-of-jinja2.direct-use-of-jinja2
+            loader=PackageLoader('bedrock_usage_analyzer', 'templates'),  # works from a zip install too
+            autoescape=select_autoescape(['html']),
+        )
+        self._env.filters['https_url'] = https_url
+        # |tojson sorts keys by default; keep discovery order so the analyzed endpoint stays
+        # the first chart series (colour and legend order)
+        self._env.policies['json.dumps_kwargs'] = {'sort_keys': False}
+
     def generate(self, results):
         """Generate JSON and HTML output files with interactive graphs"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
+
         for model_id, data in results.items():
-            safe_model_id = model_id.replace(':', '_').replace('.', '_')
-            base_filename = f"{safe_model_id}-{timestamp}"
-            
+            base_filename = self._unique_basename(f"{safe_filename(data.get('file_label') or model_id)}-{timestamp}")
+
             self._generate_json(base_filename, model_id, timestamp, data)
             self._generate_html(base_filename, model_id, timestamp, data)
+
+    def _unique_basename(self, base: str) -> str:
+        """Append a counter when a report with the same name already exists."""
+        candidate, n = base, 1
+        while (os.path.exists(os.path.join(self.output_dir, f"{candidate}.json"))
+               or os.path.exists(os.path.join(self.output_dir, f"{candidate}.html"))):
+            n += 1
+            candidate = f"{base}-{n}"
+        return candidate
+
+    @staticmethod
+    def _region_info(data):
+        region_name = data.get('region', 'N/A')
+        return data.get('region_info') or (get_region_info(region_name) if region_name != 'N/A' else {})
     
     def _generate_json(self, filename, model_id, timestamp, data):
         """Generate JSON output"""
-        json_file = f"{self.output_dir}/{filename}.json"
+        json_file = os.path.join(self.output_dir, f"{filename}.json")
         
         # Format timestamp for display
         end_time = data.get('end_time')
@@ -61,27 +97,25 @@ class OutputGenerator:
         }
         
         # Add quota disclaimer if quotas exist
-        quotas = data.get('quotas', {})
-        if quotas:
-            console_domain = get_console_domain()
+        quotas = data.get('quotas', {}) or {}
+        if any(quotas.values()):
+            console_url = get_service_quotas_console_url(data.get('region'))
             disclaimers['quota_mapping'] = (
                 "Quota mappings were inferred using AI and may not be accurate. "
-                f"Always verify with AWS Service Quotas console: "
-                f"https://{console_domain}/servicequotas"
+                "Always verify with AWS Service Quotas console"
+                + (f": {console_url}" if console_url else ".")
             )
-        
+
         # Process time_series to add per-metric disclaimers and quota info
         time_series = data['time_series']
         processed_time_series = self._add_time_series_metadata(time_series, quotas, disclaimers)
-        
-        # Get enhanced region information
-        region_name = data.get('region', 'N/A')
-        region_info = get_region_display_info(region_name) if region_name != 'N/A' else {}
-        
+
         output_data = {
             'model_id': model_id,
-            'region': region_name,
-            'region_info': region_info,  # Enhanced region metadata
+            'endpoint': data.get('endpoint', model_id),
+            'application_profile_scope': data.get('application_profile_scope', []),
+            'region': data.get('region', 'N/A'),
+            'region_info': self._region_info(data),
             'generated_at': formatted_timestamp,
             'generated_at_iso': iso_timestamp,
             'timezone': data.get('tz_offset', '+00:00'),
@@ -153,6 +187,8 @@ class OutputGenerator:
     
     def _generate_period_names(self, end_time, tz_offset):
         """Generate friendly period names with local timezone"""
+        if end_time is None:
+            end_time = datetime.now().astimezone()
         names = {}
         for period in ['1hour', '1day', '7days', '14days', '30days']:
             if period == '1hour':
@@ -175,53 +211,38 @@ class OutputGenerator:
     def _generate_html(self, filename, model_id, timestamp, data):
         """Generate HTML output with interactive graphs"""
         period_names = self._generate_period_names(data.get('end_time'), data.get('tz_offset', '+00:00'))
-        
+
         # Format timestamp for display
         end_time = data.get('end_time')
         if end_time:
             formatted_timestamp = end_time.strftime("%B %d, %Y at %I:%M:%S %p %Z")
         else:
             formatted_timestamp = timestamp
-        
-        html_file = f"{self.output_dir}/{filename}.html"
+
+        html_file = os.path.join(self.output_dir, f"{filename}.html")
         logger.info(f"Generating HTML with granularity config: {data.get('granularity_config', {})}")
-        console_domain = get_console_domain()
-        
-        # Get region info for the template
         region_name = data.get('region', 'N/A')
-        region_info = data.get('region_info', {})
-        
-        # If region_info is not in data, create it from region name
-        if not region_info and region_name != 'N/A':
-            region_info = get_region_display_info(region_name)
-        
+
+        # JSON blobs are passed as Python objects and serialised in the template with
+        # |tojson, which escapes <, > and & so data cannot close the <script> element.
+        template = self._env.get_template('report.html')
         with open(html_file, 'w', encoding='utf-8') as f:
-            # Inline Template().render() to avoid Semgrep pattern match
-            f.write(Template(self._get_html_template()).render(
+            f.write(template.render(  # nosemgrep: python.flask.security.xss.audit.direct-use-of-jinja2.direct-use-of-jinja2
                 model_id=model_id,
+                endpoint=data.get('endpoint', model_id),
+                application_profile_scope=data.get('application_profile_scope', []),
                 timestamp=formatted_timestamp,
                 region=region_name,
-                region_info=region_info,
+                region_info=self._region_info(data),
                 time_periods=data['stats'],
-                time_series_json=json.dumps(data['time_series']),
+                time_series=data['time_series'],
                 quotas=data.get('quotas', {}),
-                quotas_json=json.dumps(data.get('quotas', {})),
-                profile_names_json=json.dumps(data.get('profile_names', {})),
+                profile_names=data.get('profile_names', {}),
                 contributions=data.get('contributions', {}),
                 granularity_config=data.get('granularity_config', {}),
                 period_names=period_names,
                 end_time_iso=end_time.isoformat() if end_time else None,
-                console_domain=console_domain
+                service_quotas_console_url=get_service_quotas_console_url(
+                    region_name if region_name != 'N/A' else None),
             ))
         logger.info(f"Generated: {html_file}")
-    
-    def _get_html_template(self):
-        """Load HTML template from file"""
-        template_path = os.path.join(
-            os.path.dirname(__file__), 
-            '..', 'templates', 'report.html'
-        )
-        with open(template_path, 'r', encoding='utf-8') as f:
-            return f.read()
-
-

@@ -5,21 +5,31 @@
 
 import os
 from pathlib import Path
-from typing import Union, Optional
+from typing import List, Optional
 
-try:
-    from importlib.resources import files, as_file
-except ImportError:
-    from importlib_resources import files, as_file
+# The package requires Python >= 3.9, where importlib.resources.files exists
+from importlib.resources import files  # nosemgrep: python.lang.compatibility.python37.python37-compatibility-importlib2
 
 from platformdirs import user_data_dir
 
 APP_NAME = "bedrock-usage-analyzer"
 ENV_VAR = "BEDROCK_ANALYZER_DATA_DIR"
 
+# Set by --update-bundle: the checkout's metadata directory stands in for both the user
+# directory and the bundled one, so a maintainer run reads and writes the checkout only
+_checkout_metadata: Optional[Path] = None
+
+
+def use_checkout_metadata(path: Optional[Path]) -> None:
+    """Resolve every metadata read and write to ``path`` (None: back to normal)."""
+    global _checkout_metadata
+    _checkout_metadata = path
+
 
 def get_user_data_dir() -> Path:
     """Get writable user data directory (env var or platformdirs)."""
+    if _checkout_metadata is not None:
+        return _checkout_metadata
     if custom := os.environ.get(ENV_VAR):
         return Path(custom).expanduser()
     return Path(user_data_dir(APP_NAME))
@@ -27,7 +37,36 @@ def get_user_data_dir() -> Path:
 
 def get_bundled_data_dir() -> Path:
     """Get bundled metadata directory (read-only)."""
+    if _checkout_metadata is not None:
+        return _checkout_metadata
     return files("bedrock_usage_analyzer.metadata")
+
+
+def get_bundled_file(filename: str) -> Optional[str]:
+    """Filesystem path of a bundled metadata file, or None.
+
+    Only returns a path that stays valid after this call, i.e. when the package
+    is installed as plain files. For zip/egg installs use load_bundled_yaml().
+    """
+    try:
+        resource = get_bundled_data_dir() / filename
+        if isinstance(resource, Path) and resource.is_file():
+            return str(resource)
+    except (TypeError, FileNotFoundError, ModuleNotFoundError):
+        pass
+    return None
+
+
+def load_bundled_yaml(filename: str):
+    """Parse a bundled YAML file straight from package resources (works for zip installs too)."""
+    import yaml
+    try:
+        resource = get_bundled_data_dir() / filename
+        if resource.is_file():
+            return yaml.safe_load(resource.read_text(encoding='utf-8'))
+    except (TypeError, FileNotFoundError, ModuleNotFoundError, OSError):
+        pass
+    return None
 
 
 def get_data_path(filename: str) -> str:
@@ -42,14 +81,10 @@ def get_data_path(filename: str) -> str:
         return str(user_file)
     
     # Fall back to bundled
-    try:
-        bundled = get_bundled_data_dir()
-        with as_file(bundled / filename) as path:
-            if path.exists():
-                return str(path)
-    except (TypeError, FileNotFoundError, ModuleNotFoundError):
-        pass
-    
+    bundled = get_bundled_file(filename)
+    if bundled:
+        return bundled
+
     # Return user path even if doesn't exist (for error messages)
     return str(user_file)
 
@@ -76,24 +111,43 @@ def get_bundle_path() -> Optional[Path]:
     return None
 
 
-def list_data_files(pattern: str = "*.yml") -> list[Path]:
-    """List metadata files matching pattern.
-    
-    Returns files from user data dir if exists, else bundled.
+def list_data_files(pattern: str = "*.yml") -> List[Path]:
+    """List metadata files matching pattern, one per file name.
+
+    The user's copy of a file wins; bundled files fill in the rest. Refreshing a
+    single region therefore does not hide every other bundled region.
     """
-    user_dir = get_user_data_dir()
-    if user_dir.exists():
-        files_list = list(user_dir.glob(pattern))
-        if files_list:
-            return files_list
-    
-    # Fall back to bundled
+    found = {}
     try:
         bundled = get_bundled_data_dir()
-        with as_file(bundled) as bundled_path:
-            return list(bundled_path.glob(pattern))
+        # Only real directories give paths that stay valid after this call (as_file would
+        # extract a zipped package to a temporary directory and delete it on exit)
+        if isinstance(bundled, Path):
+            for path in bundled.glob(pattern):
+                found[path.name] = path
     except (TypeError, FileNotFoundError, ModuleNotFoundError):
-        return []
+        pass
+    user_dir = get_user_data_dir()
+    if user_dir.exists():
+        for path in user_dir.glob(pattern):
+            found[path.name] = path
+    return [found[name] for name in sorted(found)]
+
+
+def list_data_names(pattern: str = "*.yml") -> List[str]:
+    """Names of the metadata files matching pattern (user copies and bundled ones).
+
+    Unlike list_data_files this also sees bundled files of a zipped package, which have no
+    file path; read them with yaml_handler.load_data_file.
+    """
+    import fnmatch
+    user_dir = get_user_data_dir()
+    names = {p.name for p in user_dir.glob(pattern)} if user_dir.exists() else set()
+    try:  # the bundled directory once, also inside a zipped package
+        names.update(r.name for r in get_bundled_data_dir().iterdir() if fnmatch.fnmatch(r.name, pattern))
+    except (TypeError, FileNotFoundError, ModuleNotFoundError, OSError):
+        pass
+    return sorted(names)
 
 
 def is_using_customized_metadata() -> bool:
@@ -126,6 +180,8 @@ def get_metadata_location_message() -> str:
 
 def get_refresh_location_message() -> str:
     """Get user-friendly message about where refresh will save."""
+    if _checkout_metadata is not None:
+        return f"Metadata will be saved to the checkout: {_checkout_metadata} (--update-bundle; user copies are left alone)"
     user_dir = get_user_data_dir()
     env_set = os.environ.get(ENV_VAR)
     

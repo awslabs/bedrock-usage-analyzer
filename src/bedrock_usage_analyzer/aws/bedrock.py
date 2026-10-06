@@ -3,12 +3,15 @@
 
 """AWS Bedrock service operations"""
 
-import boto3
 import sys
-import os
 import logging
-from typing import List, Dict, Optional
-from bedrock_usage_analyzer.utils.partition import build_arn
+from typing import List, Dict, Optional, Tuple
+
+import yaml
+
+from bedrock_usage_analyzer.aws.client_factory import create_client
+from bedrock_usage_analyzer.core.errors import is_access_denied
+from bedrock_usage_analyzer.utils.partition import build_arn, partition_region_prefix
 
 logger = logging.getLogger(__name__)
 
@@ -18,38 +21,101 @@ QUOTA_KEYWORD_ON_DEMAND = 'on-demand'
 QUOTA_KEYWORD_CROSS_REGION = 'cross-region'
 QUOTA_KEYWORD_GLOBAL = 'global'
 
+# Used only when no prefix-mapping.yml can be read at all (the bundled file is the source
+# of truth and normally always present)
+FALLBACK_PROFILE_PREFIXES = frozenset({'us', 'eu', 'apac', 'jp', 'au', 'ca', 'in', 'us-gov', 'global'})
+
 # Cache for prefix mapping to avoid repeated file reads
 _prefix_mapping_cache = None
+_profile_prefixes_cache = None  # (mapping it was built from, frozenset)
+
+
+def _valid_prefix_entries(data, source) -> List[Dict]:
+    """The usable entries of parsed prefix-mapping.yml ``data``: mappings with a string
+    'prefix' and 'quota_keyword'. Anything else in a hand-edited file is skipped with a
+    warning, so the other layer (or the fallback set) still applies."""
+    if not data:
+        return []  # empty file
+    entries = data.get('prefixes') if isinstance(data, dict) else None
+    if not isinstance(entries, list):
+        if entries is not None or not isinstance(data, dict):
+            logger.warning(f"Ignoring {source}: expected 'prefixes:' with a list of entries")
+        return []
+    valid = [e for e in entries if isinstance(e, dict) and isinstance(e.get('prefix'), str)
+             and isinstance(e.get('quota_keyword'), str)]
+    if len(valid) != len(entries):
+        logger.warning(f"Ignoring {len(entries) - len(valid)} malformed entr(ies) in {source} "
+                       f"(each needs 'prefix' and 'quota_keyword')")
+    return valid
+
+
+def read_prefix_file(path) -> List[Dict]:
+    from bedrock_usage_analyzer.utils.yaml_handler import load_yaml
+    try:
+        data = load_yaml(str(path))
+    except (FileNotFoundError, OSError):
+        return []
+    except yaml.YAMLError as e:
+        # A hand-edited file with a syntax error: use the other layer (or the fallback set)
+        logger.warning(f"Ignoring unreadable {path}: {e}")
+        return []
+    return _valid_prefix_entries(data, path)
 
 
 def _load_prefix_mapping() -> List[Dict]:
-    """Load prefix mapping from metadata file or discover if missing
-    
+    """Load the prefix mapping: bundled entries, overridden by the user's copy
+
+    Merging (instead of letting the user file hide the bundled one) keeps
+    prefixes added in newer releases, such as 'us-gov' and 'in', available to
+    users whose prefix-mapping.yml was written by an older version.
+
     Returns:
         List of prefix mapping dictionaries
-        
+
     Raises:
-        FileNotFoundError: If prefix-mapping.yml doesn't exist
+        FileNotFoundError: If no prefix-mapping.yml exists at all
     """
     global _prefix_mapping_cache
-    
+
     if _prefix_mapping_cache is not None:
+        if not _prefix_mapping_cache:
+            raise FileNotFoundError("prefix-mapping.yml not found")  # known missing: no re-read
         return _prefix_mapping_cache
-    
-    from bedrock_usage_analyzer.utils.yaml_handler import load_yaml
-    from bedrock_usage_analyzer.utils.paths import get_data_path
-    
-    try:
-        metadata_file = get_data_path('prefix-mapping.yml')
-        data = load_yaml(metadata_file)
-        _prefix_mapping_cache = data.get('prefixes', [])
-        return _prefix_mapping_cache
-    except FileNotFoundError:
+
+    bundled, user = prefix_mapping_layers()
+    merged: Dict[str, Dict] = {}
+    for entry in bundled + user:
+        merged[entry['prefix']] = entry
+
+    if not merged:
+        # Remembered (an empty list) until load_prefix_mapping(refresh=True), so the fallback
+        # prefixes are used without reading both files on every call
+        _prefix_mapping_cache = []
         raise FileNotFoundError(
             "\nprefix-mapping.yml not found!\n"
-            "Please run: ./bin/refresh-fm-list\n"
+            "Please run: bua refresh fm-list\n"
             "This will refresh both foundation model lists and prefix mapping."
         )
+    _prefix_mapping_cache = sorted(merged.values(), key=lambda m: m['prefix'])
+    return _prefix_mapping_cache
+
+
+def prefix_mapping_layers():
+    """(bundled entries, user entries) of prefix-mapping.yml, each read once."""
+    from bedrock_usage_analyzer.utils.paths import get_user_data_dir, load_bundled_yaml
+    bundled = _valid_prefix_entries(load_bundled_yaml('prefix-mapping.yml'), 'bundled prefix-mapping.yml')
+    return bundled, list(read_prefix_file(get_user_data_dir() / 'prefix-mapping.yml'))
+
+
+def load_prefix_mapping(refresh: bool = False) -> List[Dict]:
+    """Public accessor for the merged prefix mapping; ``refresh`` re-reads the files."""
+    global _prefix_mapping_cache
+    if refresh:
+        _prefix_mapping_cache = None
+    try:
+        return list(_load_prefix_mapping())
+    except FileNotFoundError:
+        return []
 
 
 def get_endpoint_quota_keywords() -> Dict[str, str]:
@@ -58,7 +124,14 @@ def get_endpoint_quota_keywords() -> Dict[str, str]:
     Returns:
         Dict mapping prefix to quota keyword (e.g., {'base': 'on-demand', 'us': 'cross-region'})
     """
-    mapping = _load_prefix_mapping()
+    try:
+        mapping = _load_prefix_mapping()
+    except FileNotFoundError:
+        mapping = []
+    if not mapping:
+        # No prefix-mapping.yml at all: the keywords of the prefixes this release knows
+        return {'base': QUOTA_KEYWORD_ON_DEMAND, 'global': QUOTA_KEYWORD_GLOBAL,
+                **{p: QUOTA_KEYWORD_CROSS_REGION for p in FALLBACK_PROFILE_PREFIXES - {'global'}}}
     return {m['prefix']: m['quota_keyword'] for m in mapping}
 
 
@@ -68,8 +141,15 @@ def get_endpoint_descriptions() -> Dict[str, str]:
     Returns:
         Dict mapping prefix to description (e.g., {'base': 'on-demand', 'us': 'cross-region inference profile'})
     """
-    mapping = _load_prefix_mapping()
-    return {m['prefix']: m['description'] for m in mapping}
+    try:
+        mapping = _load_prefix_mapping()
+    except FileNotFoundError:
+        mapping = []
+    if not mapping:
+        # No prefix-mapping.yml at all: describe the prefixes this release knows
+        return {'base': 'on-demand', 'global': 'global inference profile',
+                **{p: 'cross-region inference profile' for p in FALLBACK_PROFILE_PREFIXES - {'global'}}}
+    return {m['prefix']: m.get('description') or m['prefix'] for m in mapping}
 
 
 def get_regional_profile_prefixes() -> List[str]:
@@ -78,8 +158,15 @@ def get_regional_profile_prefixes() -> List[str]:
     Returns:
         List of regional prefixes (e.g., ['us', 'eu', 'jp', 'au', 'apac', 'ca'])
     """
-    mapping = _load_prefix_mapping()
-    return [m['prefix'] for m in mapping if m['is_regional']]
+    try:
+        mapping = _load_prefix_mapping()
+    except FileNotFoundError:
+        mapping = []
+    if not mapping:
+        # No prefix-mapping.yml at all: fall back to the prefixes this release knows
+        return sorted(FALLBACK_PROFILE_PREFIXES - {'global'})
+    # prefix-mapping.yml is the single source of truth once it exists
+    return sorted(m['prefix'] for m in mapping if m.get('is_regional'))
 
 
 def get_default_region_prefix_map() -> Dict[str, str]:
@@ -88,13 +175,84 @@ def get_default_region_prefix_map() -> Dict[str, str]:
     Returns:
         Dict mapping region prefix to system profile prefix (e.g., {'us': 'us', 'ap': 'apac'})
     """
-    mapping = _load_prefix_mapping()
-    result = {m['prefix']: m['prefix'] for m in mapping if m['is_regional']}
+    # Same source and fallback as get_regional_profile_prefixes
+    result = {prefix: prefix for prefix in get_regional_profile_prefixes()}
     result['ap'] = 'apac'  # Special case: 'ap' region prefix maps to 'apac' system profile
     return result
 
 
-def discover_prefix_mapping(region: str) -> List[Dict]:
+def get_profile_prefixes() -> frozenset:
+    """All system inference profile prefixes, from prefix-mapping.yml (fallback set without it)."""
+    global _profile_prefixes_cache
+    try:
+        mapping = _load_prefix_mapping()
+    except FileNotFoundError:
+        return FALLBACK_PROFILE_PREFIXES
+    # Keyed by the mapping list itself: the loader returns the same cached list until it is
+    # reloaded, so a reload (or a stubbed loader) always rebuilds the set
+    if _profile_prefixes_cache is None or _profile_prefixes_cache[0] is not mapping:
+        mapped = frozenset(m['prefix'] for m in mapping if m.get('prefix') != 'base')
+        _profile_prefixes_cache = (mapping, mapped or FALLBACK_PROFILE_PREFIXES)
+    return _profile_prefixes_cache[1]
+
+
+def endpoint_id(model_id: str, prefix: Optional[str] = None) -> str:
+    """Endpoint ID of a model: '<prefix>.<model>' for a profile, the model ID for its base
+    (on-demand) endpoint, written as prefix None or 'base'. The inverse of split_profile_id."""
+    return model_id if prefix in (None, 'base') else f"{prefix}.{model_id}"
+
+
+def split_profile_id(endpoint_id: str) -> Tuple[str, Optional[str]]:
+    """Split an endpoint ID into (model_id, prefix).
+
+    'us.amazon.nova-pro-v1:0' -> ('amazon.nova-pro-v1:0', 'us')
+    'deepseek.v3.2'           -> ('deepseek.v3.2', None)   # base model, not a prefix
+    """
+    if '.' in endpoint_id:
+        first, rest = endpoint_id.split('.', 1)
+        if first in get_profile_prefixes():
+            return rest, first
+    return endpoint_id, None
+
+
+def region_group(region: str) -> str:
+    """Region family used to guess a profile prefix.
+
+    'eu-west-1' -> 'eu', 'us-gov-west-1' -> 'us-gov', 'us-iso-east-1' -> 'us-iso',
+    so regions of other partitions never fall into a commercial family.
+    """
+    # The partition table decides (one place for new partitions); commercial: first segment
+    return partition_region_prefix(region) or region.split('-')[0]
+
+
+def model_id_from_arn(arn: str) -> Optional[str]:
+    """'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0' -> 'amazon.nova-pro-v1:0'."""
+    if ':foundation-model/' in arn:
+        return arn.split(':foundation-model/', 1)[1]
+    return None
+
+
+def region_from_arn(arn: str) -> str:
+    """Region field of an ARN ('' for region-less ARNs such as global routing targets)."""
+    parts = arn.split(':')
+    return parts[3] if len(parts) > 3 else ''
+
+
+def list_inference_profiles(bedrock_client, type_equals: str) -> List[Dict]:
+    """List all inference profiles of one type ('SYSTEM_DEFINED' or 'APPLICATION')."""
+    profiles = []
+    params = {'maxResults': 1000, 'typeEquals': type_equals}
+    while True:
+        response = bedrock_client.list_inference_profiles(**params)
+        profiles.extend(response.get('inferenceProfileSummaries', []))
+        token = response.get('nextToken')
+        if not token:
+            break
+        params['nextToken'] = token
+    return profiles
+
+
+def discover_prefix_mapping(region: str, profiles: Optional[List[Dict]] = None) -> List[Dict]:
     """Discover system profile prefixes from Bedrock API
     
     Discovers regional inference profile prefixes (us, eu, jp, au, apac, ca, etc.)
@@ -103,7 +261,8 @@ def discover_prefix_mapping(region: str) -> List[Dict]:
     
     Args:
         region: AWS region to use for API calls
-        
+        profiles: SYSTEM_DEFINED profiles already listed for the region (skips the API call)
+
     Returns:
         List of discovered prefix mappings with structure:
         [
@@ -118,39 +277,28 @@ def discover_prefix_mapping(region: str) -> List[Dict]:
         ]
     """
     try:
-        bedrock = boto3.client('bedrock', region_name=region)
-        response = bedrock.list_inference_profiles(maxResults=1000)
-        
-        # Collect all profiles with pagination
-        all_profiles = []
-        while True:
-            all_profiles.extend(response['inferenceProfileSummaries'])
-            if 'nextToken' in response:
-                response = bedrock.list_inference_profiles(
-                    maxResults=1000,
-                    nextToken=response['nextToken']
-                )
-            else:
-                break
-        
+        all_profiles = profiles if profiles is not None else \
+            list_inference_profiles(create_client('bedrock', region), 'SYSTEM_DEFINED')
+
         # Extract system profile prefixes
         discovered = []
         seen_prefixes = set()
         
         for profile in all_profiles:
-            if profile['type'] == 'SYSTEM_DEFINED' and '.' in profile['inferenceProfileId']:
-                system_prefix = profile['inferenceProfileId'].split('.')[0]
+            profile_id = profile.get('inferenceProfileId') or ''
+            if profile.get('type') == 'SYSTEM_DEFINED' and '.' in profile_id:
+                system_prefix = profile_id.split('.')[0]
                 
                 # Skip if already processed or if it's 'global'
                 if system_prefix in seen_prefixes or system_prefix == 'global':
                     continue
                 
-                model_arns = [m['modelArn'] for m in profile['models']]
+                model_arns = [m.get('modelArn', '') for m in profile.get('models') or []]
                 
                 # Classify as regional if multiple ARNs in same region prefix
                 if len(model_arns) > 1:
-                    regions = [arn.split(':')[3] for arn in model_arns]
-                    region_prefixes = set(r.split('-')[0] for r in regions)
+                    regions = [region_from_arn(arn) for arn in model_arns]
+                    region_prefixes = set(region_group(r) for r in regions)
                     
                     # Regional: all ARNs in same region prefix (us-*, eu-*, etc.)
                     if len(region_prefixes) == 1:
@@ -181,7 +329,7 @@ def fetch_foundation_models(region: str) -> Optional[List[Dict]]:
         List of model dictionaries or None if access denied
     """
     try:
-        bedrock = boto3.client('bedrock', region_name=region)
+        bedrock = create_client('bedrock', region)
         response = bedrock.list_foundation_models()
         
         models = []
@@ -196,10 +344,21 @@ def fetch_foundation_models(region: str) -> Optional[List[Dict]]:
     
     except Exception as e:
         error_msg = str(e)
-        if any(x in error_msg for x in ['AccessDenied', 'UnauthorizedOperation', 'not enabled', 'not subscribed']):
+        # The shared permission rule, plus the opt-in messages of a region not enabled
+        if is_access_denied(e) or any(x in error_msg for x in ['not enabled', 'not subscribed']):
             print(f"  ⊘ Skipping {region} (access denied or not enabled)", file=sys.stderr)
         else:
             print(f"  ✗ Failed to fetch models for {region}: {e}", file=sys.stderr)
+        return None
+
+
+def list_system_profiles(region: str) -> Optional[List[Dict]]:
+    """The region's system inference profiles, or None when the listing failed (not "none listed")."""
+    try:
+        return list_inference_profiles(create_client('bedrock', region), 'SYSTEM_DEFINED')
+    except Exception as e:
+        # Inference profiles might not be available in all regions
+        logger.warning(f"  Could not list inference profiles in {region}: {e}")
         return None
 
 
@@ -212,23 +371,10 @@ def fetch_all_inference_profiles(region: str) -> List[Dict]:
         region: AWS region name
         
     Returns:
-        List of inference profile dictionaries
+        List of inference profile dictionaries; [] on failure (the contract from earlier
+        releases; list_system_profiles tells a failure apart)
     """
-    try:
-        bedrock = boto3.client('bedrock', region_name=region)
-        
-        # Use paginator to handle large result sets
-        paginator = bedrock.get_paginator('list_inference_profiles')
-        all_profiles = []
-        
-        for page in paginator.paginate():
-            all_profiles.extend(page.get('inferenceProfileSummaries', []))
-        
-        return all_profiles
-    
-    except Exception as e:
-        # Inference profiles might not be available in all regions
-        return []
+    return list_system_profiles(region) or []
 
 
 def build_profile_map(profiles: List[Dict]) -> Dict[str, List[str]]:
@@ -246,19 +392,16 @@ def build_profile_map(profiles: List[Dict]) -> Dict[str, List[str]]:
     for profile in profiles:
         profile_id = profile.get('inferenceProfileId', '')
         
-        # Extract prefix (us, eu, jp, au, apac, global)
+        # A system profile ID always starts with its prefix (us, eu, jp, au, apac, global, ...).
+        # Taken literally rather than via split_profile_id: new prefixes are discovered here.
         if '.' not in profile_id:
             continue
         prefix = profile_id.split('.')[0]
-        
+
         # Add this prefix to all models in this profile
-        for model in profile.get('models', []):
-            model_arn = model.get('modelArn', '')
-            
-            # Extract model_id from ARN (format: arn:aws:bedrock:region::foundation-model/model-id)
-            if ':foundation-model/' in model_arn:
-                model_id = model_arn.split(':foundation-model/')[-1]
-                
+        for model in profile.get('models') or []:
+            model_id = model_id_from_arn(model.get('modelArn', ''))
+            if model_id:
                 if model_id not in profile_map:
                     profile_map[model_id] = []
                 if prefix not in profile_map[model_id]:
@@ -284,23 +427,9 @@ def get_inference_profile_arn(bedrock_client, model_id: str, profile_prefix: str
     """
     try:
         target_profile_id = f"{profile_prefix}.{model_id}"
-        next_token = None
-        
-        while True:
-            params = {'maxResults': 1000}
-            if next_token:
-                params['nextToken'] = next_token
-            
-            response = bedrock_client.list_inference_profiles(**params)
-            
-            for profile in response.get('inferenceProfileSummaries', []):
-                if profile.get('inferenceProfileId') == target_profile_id:
-                    return profile.get('inferenceProfileArn')
-            
-            next_token = response.get('nextToken')
-            if not next_token:
-                break
-        
+        for profile in list_inference_profiles(bedrock_client, 'SYSTEM_DEFINED'):
+            if profile.get('inferenceProfileId') == target_profile_id:
+                return profile.get('inferenceProfileArn')
         return None
     except Exception as e:
         print(f"Error fetching inference profile: {e}", file=sys.stderr)

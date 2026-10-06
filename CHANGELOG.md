@@ -2,24 +2,58 @@
 
 All notable changes to the Bedrock Usage Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.6.0-beta] - 2026-09-30
+
+Combines the AWS GovCloud work from #5 and #6 into one partition layer and fixes #7.
 
 ### Added
-- **AWS GovCloud and Multi-Partition Support**: The tool now automatically detects and supports AWS GovCloud, China, ISO, and ISO-B partitions in addition to commercial AWS
-  - Automatic partition detection from STS GetCallerIdentity
-  - Partition-aware ARN construction
-  - Correct console URLs for each partition (console.amazonaws-us-gov.com for GovCloud, etc.)
-  - Region detection utilities for GovCloud and China regions
-  - See [GOVCLOUD_SUPPORT.md](GOVCLOUD_SUPPORT.md) for detailed documentation
+- **AWS GovCloud (US) support** (#5, #6): partition of each region is resolved from botocore
+  endpoint data; ARNs, endpoints and Service Quotas console links follow it. The region picker
+  lists only regions of the credentials' partition (from the STS caller identity). Bundled
+  metadata includes `us-gov-east-1`, `us-gov-west-1` and the `us-gov` profile prefix.
+- **Application inference profile selection** (#7): choose specific application profiles
+  interactively (`1,3-4` or `all`), or pass an application profile ID or ARN with `-m`.
+- `-m/--model-id` can be repeated; it also accepts system inference profile and
+  foundation-model ARNs.
+- A note when an endpoint has no application profiles but the same model has profiles under
+  another endpoint.
+- Error hints for credential, permission and network errors, with partition-specific advice.
+- pytest suite (`tests/`) that runs offline against stubbed AWS clients.
+
+### Fixed
+- Application profiles copied from `au.*` or `jp.*` profiles were attributed to `apac.*`, so
+  the analysis showed no data for them (#7). Sources are now matched on the exact set of model
+  ARNs of the system profiles.
+- `bua refresh fm-quotas` dropped endpoints that got no quota mapping from the model list.
+- Two reports for the same model (different endpoints) in one run overwrote each other.
+- Missing `regions.yml` or `fm-list-<region>.yml` crashed instead of printing the refresh hint.
+- CloudWatch fetch warned "Connection pool is full" on hosts with many CPUs.
+- Python 3.9: `Path | None` and `list[Path]` annotations failed at import (#5).
+
+### Security
+- HTML report rendered with Jinja2 autoescaping; embedded data uses `|tojson`, so profile names,
+  tags or model IDs cannot inject markup or close the `<script>` block.
+- Chart.js and plugins pinned to exact versions with Subresource Integrity hashes.
+- Region names are validated before they are used in metadata file names.
 
 ### Changed
-- ARN construction now uses detected partition instead of hardcoded `aws` partition
-- Console URLs in reports and output now use correct domain based on partition
-- Service quota URLs now point to correct console domain for the partition
+- `regions.yml` stays a plain list of region names; entries in the `{name: ...}` form are
+  still read.
+- `refresh regions` keeps regions of other partitions when it updates the list.
+- `--update-bundle` (maintainers) reads and writes only the checkout's
+  `src/bedrock_usage_analyzer/metadata` for every refresh command; user copies are no longer
+  updated alongside it. Outside a checkout the commands exit before any AWS call.
+- All AWS clients are created in one place (`aws/client_factory.py`): adaptive retries (up to 9 attempts) for CloudWatch, Service Quotas and Bedrock Runtime, standard retries (up to 4 attempts) for the others, and a single quick attempt for the cross-partition STS probes.
 
-### Technical Details
-- New module: `src/bedrock_usage_analyzer/utils/partition.py`
-- Updated modules: `aws/bedrock.py`, `aws/sts.py`, `core/analyzer.py`, `core/output_generator.py`, `templates/report.html`
+### Removed
+- Hardcoded GovCloud endpoint URLs and the service allowlist from #5 (botocore resolves them).
+- Duplicate partition modules and the documentation files added by #5 and #6; the README has one
+  GovCloud section.
+
+## [0.5.1-beta]
+
+### Changed
+- Skip `me-south-1` and `me-central-1` during region refresh; refreshed bundled metadata.
 
 ## [0.5.0-beta] - 2025-02-25
 
@@ -34,4 +68,4 @@ All notable changes to the Bedrock Usage Analyzer will be documented in this fil
 
 ## [Previous versions]
 
-(See git history for changes prior to multi-partition support)
+(See git history for changes prior to 0.5.0)

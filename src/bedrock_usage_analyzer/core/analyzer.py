@@ -3,62 +3,85 @@
 
 """Main orchestrator for Bedrock token usage analysis"""
 
-import boto3
+import hashlib
 import numpy as np
 import logging
 import traceback
-import os
-import yaml
-from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
-from bedrock_usage_analyzer.core.user_inputs import UserInputs
-from bedrock_usage_analyzer.core.profile_fetcher import InferenceProfileFetcher
+from bedrock_usage_analyzer.core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
+from bedrock_usage_analyzer.sync.quota_rules import scrub_conflicting
 from bedrock_usage_analyzer.core.metrics_fetcher import CloudWatchMetricsFetcher
 from bedrock_usage_analyzer.core.output_generator import OutputGenerator
-from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
-from bedrock_usage_analyzer.aws.client_factory import EnhancedClientFactory
-from bedrock_usage_analyzer.core.govcloud_errors import create_govcloud_error_handler
-from bedrock_usage_analyzer.utils.paths import get_data_path
-from bedrock_usage_analyzer.utils.partition import get_service_quota_url
+from bedrock_usage_analyzer.aws.bedrock import endpoint_id, get_endpoint_quota_keywords, get_regional_profile_prefixes
+from bedrock_usage_analyzer.aws.client_factory import create_client
+from bedrock_usage_analyzer.aws.servicequotas import (
+    QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK, list_quota_codes, lookup_quota)
+from bedrock_usage_analyzer.utils.yaml_handler import (
+    endpoint_quotas, fm_endpoints, has_endpoint, load_fm_list, profile_endpoints)
+from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
 
 logger = logging.getLogger(__name__)
+
+# Above this many distinct quota codes per run, the region's quotas are listed once. The
+# listing pages sequentially through every Bedrock quota of the region (hundreds), so it only
+# beats parallel per-code lookups (4 at a time) for a few dozen codes
+QUOTA_LISTING_THRESHOLD = 40
 
 class BedrockAnalyzer:
     """Main orchestrator for Bedrock token usage analysis"""
     
     TIME_PERIODS = ["1hour", "1day", "7days", "14days", "30days"]
     
-    def __init__(self, region, granularity_config):
+    def __init__(self, region, granularity_config, profile_fetcher=None, fm_models=None):
         self.region = region
         self.granularity_config = granularity_config
-        
+
         # Get local timezone - use system's local timezone
         local_dt = datetime.now().astimezone()
         self.local_tz = local_dt.tzinfo
         offset = local_dt.strftime('%z')
         self.tz_offset = f"{offset[:3]}:{offset[3:]}"  # +08:00 format
         self.tz_api_format = offset[:5]  # +0800 format for API
-        
-        # Initialize enhanced client factory with GovCloud support
-        self.client_factory = EnhancedClientFactory(region)
-        self.error_handler = create_govcloud_error_handler(region)
-        
-        # Initialize clients using the enhanced factory
-        try:
-            self.bedrock_client = self.client_factory.create_bedrock_client()
-            self.cloudwatch_client = self.client_factory.create_cloudwatch_client()
-            self.sq_client = self.client_factory.create_service_quotas_client()
-        except Exception as e:
-            context = {'service': 'initialization', 'operation': 'client_creation'}
-            enhanced_error = self.error_handler.enhance_error_message(e, context)
-            logger.error(enhanced_error)
-            raise
-        
-        self.profile_fetcher = InferenceProfileFetcher(self.bedrock_client)
+
+        # botocore picks the endpoint for the region's partition (commercial, GovCloud, China)
+        self.cloudwatch_client = create_client('cloudwatch', region)
+        # Region's fm-list: the one parsed during input collection, else read on first lookup
+        self._fm_models = fm_models
+        # One ListServiceQuotas pass pays off only for many codes; a short run uses direct
+        # GetServiceQuota calls (set in analyze())
+        self._quota_listings = {}
+        self._quota_results = {}  # quota code -> (status, quota) of this run's region
+        self._use_quota_listing = False
+        # Reuse the fetcher from input collection so profiles are listed only once
+        if profile_fetcher is not None:
+            self.profile_fetcher = profile_fetcher
+            self.bedrock_client = profile_fetcher.bedrock_client
+        else:
+            self.bedrock_client = create_client('bedrock', region)
+            self.profile_fetcher = InferenceProfileFetcher.for_region(self.bedrock_client, self._fm_list(), region)
         self.metrics_fetcher = CloudWatchMetricsFetcher(self.cloudwatch_client, self.tz_api_format)
         self.output_generator = None  # Initialized in analyze() with output_dir
     
-    def _load_quota_codes(self, model_id, profile_prefix=None):
+    def _system_profile_listed(self, profile_id) -> bool:
+        """True unless the region's system profiles were listed and do not include it."""
+        try:
+            return self.profile_fetcher.is_system_profile(profile_id)
+        except Exception:
+            return True  # cannot tell; keep the refresh hint
+
+    def _endpoint_listed(self, model_id, profile_prefix) -> bool:
+        """True when the region's fm-list has this model with this endpoint."""
+        return has_endpoint(self._fm_list(), model_id, profile_prefix)
+
+    def _fm_list(self):
+        """The region's fm-list models, parsed once per run (every target reads the same file)."""
+        if self._fm_models is None:
+            self._fm_models = load_fm_list(self.region) or []
+        return self._fm_models
+
+    def _load_quota_codes(self, model_id, profile_prefix=None, quiet=False):
         """Load quota codes for a model from FM list based on endpoint
         
         Args:
@@ -68,29 +91,23 @@ class BedrockAnalyzer:
         Returns:
             dict: Quota codes for the specified endpoint (tpm, rpm, tpd, concurrent)
         """
-        try:
-            fm_file = get_data_path(f'fm-list-{self.region}.yml')
-        except FileNotFoundError:
+        if profile_prefix == UNKNOWN_SOURCE:
             return {}
-        
-        with open(fm_file, 'r', encoding='utf-8') as f:
-            data = yaml.safe_load(f)
-            models = data.get('models', [])
-            
-            for model in models:
-                if model['model_id'] == model_id:
-                    endpoints = model.get('endpoints', {})
-                    
-                    # Determine which endpoint to use
-                    endpoint_key = profile_prefix if profile_prefix else 'base'
-                    
-                    # Get quotas from the specified endpoint
-                    if endpoint_key in endpoints:
-                        return endpoints[endpoint_key].get('quotas', {})
-                    
-                    # Fallback to old structure for backward compatibility
-                    return model.get('quotas', {})
-        
+        endpoint_key = profile_prefix if profile_prefix else 'base'
+        for model in self._fm_list():
+            if model['model_id'] != model_id:
+                continue
+            # The guarded walk every reader uses (hand-edited 'us: null', 'quotas: TODO');
+            # old-format model-level quotas were migrated to 'base' by load_fm_list
+            quotas = dict(dict(endpoint_quotas(model)).get(endpoint_key) or {})
+            # Skip codes that contradict this model or endpoint (e.g. saved by an older
+            # version, before the mapping checks existed) instead of showing another limit
+            for metric, quota, reason in scrub_conflicting(
+                    model_id, endpoint_key, quotas, set(get_regional_profile_prefixes())):
+                if not quiet:
+                    logger.info(f"  Ignoring {metric} quota {quota.get('code')}: {reason}")
+            return quotas
+
         return {}
     
     def _fetch_quotas(self, model_id, quota_codes, profile_prefix=None):
@@ -104,41 +121,61 @@ class BedrockAnalyzer:
         Returns:
             dict: Quota metadata (tpm, rpm, tpd) - each containing {value, code, name, url}
         """
-        quotas = {'tpm': None, 'rpm': None, 'tpd': None}
-        
+        quotas = {'tpm': None, 'rpm': None, 'tpd': None, 'concurrent': None}
+
         if not quota_codes:
             return quotas
-        
+
         logger.info(f"  Fetching quotas from Service Quotas API...")
+        wanted = []
         for quota_type, quota_data in quota_codes.items():
             # Handle new structure: {code: L-xxx, name: "..."} or null
-            if quota_data and isinstance(quota_data, dict):
-                code = quota_data.get('code')
-                name = quota_data.get('name')
-                
-                if code:
-                    try:
-                        response = self.sq_client.get_service_quota(
-                            ServiceCode='bedrock',
-                            QuotaCode=code
-                        )
-                        value = response['Quota']['Value']
-                        url = get_service_quota_url(self.region, 'bedrock', code)
+            if not (quota_data and isinstance(quota_data, dict) and quota_data.get('code')):
+                continue
+            key = next((k for k in quotas if k in quota_type.lower()), None)
+            if key is not None:
+                wanted.append((quota_type, quota_data, key))
 
-                        quota_info = {'value': value, 'code': code, 'name': name, 'url': url}
-                        
-                        if 'tpm' in quota_type.lower():
-                            quotas['tpm'] = quota_info
-                        elif 'rpm' in quota_type.lower():
-                            quotas['rpm'] = quota_info
-                        elif 'tpd' in quota_type.lower():
-                            quotas['tpd'] = quota_info
-                    
-                    except Exception as e:
-                        logger.info(f"  Warning: Could not fetch {quota_type} quota for {model_id}: {e}")
+        def lookup(code):
+            # One lookup per code and run: targets sharing an endpoint reuse the result. A failed
+            # lookup is not kept, so the next target sharing the code tries again
+            if code in self._quota_results:
+                return self._quota_results[code]
+            result = lookup_quota(code, self.region, self._quota_listings, use_listing=self._use_quota_listing)
+            if result[0] != QUOTA_ERROR:
+                self._quota_results[code] = result
+            return result
+
+        if self._use_quota_listing and self.region not in self._quota_listings:
+            # The region's listing once, before the pool (never listed again from the threads)
+            self._quota_listings[self.region] = list_quota_codes(self.region, quiet_denied=True)
+        # Per-code lookups (up to two calls each) run in parallel, as confirm_statuses does
+        # (no pool when at most one code is not yet cached: nothing to run in parallel)
+        uncached = sorted({item[1]['code'] for item in wanted} - set(self._quota_results))
+        fetched = {}  # this target's results, failed lookups included (looked up once here)
+        if len(uncached) > 1:
+            with ThreadPoolExecutor(max_workers=min(4, len(uncached))) as pool:
+                fetched = dict(zip(uncached, pool.map(lookup, uncached)))
+        for code in {item[1]['code'] for item in wanted} - set(fetched):
+            fetched[code] = lookup(code)
+        results = [fetched[item[1]['code']] for item in wanted]
+        for (quota_type, quota_data, key), (status, quota) in zip(wanted, results):
+            code = quota_data['code']
+            if status == QUOTA_OK and quota.get('Value') is None:
+                logger.info(f"  Warning: {quota_type} quota {code} has no value; not shown")
+            elif status == QUOTA_OK:
+                quotas[key] = {'value': quota['Value'], 'code': code, 'name': quota_data.get('name'),
+                               'url': get_service_quota_url(self.region, 'bedrock', code)}
+            elif status == QUOTA_MISSING:
+                # Not shown. 'bua refresh quota-index' removes it from a user copy of the list;
+                # a bundled list is corrected in the next release
+                logger.info(f"  Warning: {quota_type} quota {code} does not exist in {self.region}; "
+                            f"shown without this limit")
+            else:
+                logger.info(f"  Warning: Could not fetch {quota_type} quota {code} for {model_id}")
         
         # Apply 2x multiplier for TPD on regional cross-region profiles
-        regional_profile_prefixes = get_regional_profile_prefixes()
+        regional_profile_prefixes = set(get_regional_profile_prefixes())
         if profile_prefix in regional_profile_prefixes and quotas['tpd'] and quotas['tpd']['value'] is not None:
             quotas['tpd']['value'] = quotas['tpd']['value'] * 2
         
@@ -206,102 +243,176 @@ class BedrockAnalyzer:
         
         return contributions
     
+    @staticmethod
+    def _scope_key(model_config):
+        """Cache key for one analysis target (model, endpoint and optional profile subset)."""
+        app_ids = tuple(sorted(model_config.get('application_profile_ids') or ()))
+        return (model_config['model_id'], model_config.get('profile_prefix'), app_ids)
+
+    def _warn_other_sources(self, model_id, profile_prefix, final_model_ids):
+        """Tell the user when their application profiles sit under a different endpoint."""
+        if len(final_model_ids) > 1:
+            return
+        others = self.profile_fetcher.other_sources_for_model(model_id, profile_prefix)
+        if others:
+            where = ', '.join(f"{count} on '{key}'" for key, count in sorted(others.items()))
+            logger.info(f"  Note: no application inference profile of {model_id} is based on "
+                        f"'{profile_prefix or 'base'}', but {where}. Choose that endpoint in the "
+                        f"menu or pass its endpoint ID with -m, or pass the application profile "
+                        f"ID/ARN with -m to analyze it directly.")
+
     def analyze(self, models, output_dir: str = 'results'):
         """Analyze token usage for given models
-        
+
         Args:
-            models: List of model configurations
+            models: List of model configurations. Each has 'model_id' and
+                'profile_prefix', and optionally 'application_profile_ids' to
+                analyze only those application inference profiles.
             output_dir: Directory to save results
         """
         self.output_generator = OutputGenerator(output_dir)
-        
+
         # Step 0: Discover all profiles once for all models
         logger.info(f"\n{'='*80}")
         logger.info(f"Discovering inference profiles for {len(models)} model(s)...")
         logger.info(f"{'='*80}")
-        
-        all_profiles_map = {}  # {model_id: {profile_prefix: (final_model_ids, profile_names, profile_metadata)}}
-        
+
+        all_profiles_map = {}  # {scope_key: (final_model_ids, profile_names, profile_metadata)}
+
         for model_config in models:
-            model_id = model_config['model_id']
-            profile_prefix = model_config['profile_prefix']
-            
-            if model_id not in all_profiles_map:
-                all_profiles_map[model_id] = {}
-            
-            if profile_prefix not in all_profiles_map[model_id]:
-                final_model_ids, profile_names, profile_metadata = self.profile_fetcher.find_profiles(model_id, profile_prefix)
-                all_profiles_map[model_id][profile_prefix] = (final_model_ids, profile_names, profile_metadata)
-                
-                # Display profiles for this model
-                profile_list = [profile_names.get(pid, pid) for pid in final_model_ids]
-                logger.info(f"  {model_id} ({profile_prefix or 'base'}): {len(final_model_ids)} profile(s) - {', '.join(profile_list)}")
-        
+            key = self._scope_key(model_config)
+            if key in all_profiles_map:
+                continue
+            model_id, profile_prefix, app_ids = key
+            final_model_ids, profile_names, profile_metadata = self.profile_fetcher.find_profiles(
+                model_id, profile_prefix, application_profile_ids=list(app_ids) or None)
+            all_profiles_map[key] = (final_model_ids, profile_names, profile_metadata)
+
+            profile_list = [profile_names.get(pid, pid) for pid in final_model_ids]
+            logger.info(f"  {model_id} ({profile_prefix or 'base'}): {len(final_model_ids)} profile(s) - {', '.join(profile_list)}")
+            if not app_ids:
+                self._warn_other_sources(model_id, profile_prefix, final_model_ids)
+
         logger.info(f"Profile discovery complete.\n")
-        
+
+        # Many quota codes to look up (several models): one paginated listing of the region's
+        # quotas is cheaper than one GetServiceQuota call each
+        # Counted with the same reader the lookups use (it also reads the legacy model-level
+        # 'quotas' of a base endpoint)
+        targets = {(model_id, prefix) for model_id, prefix, _ in all_profiles_map}
+        codes = {q['code'] for model_id, prefix in targets
+                 for q in self._load_quota_codes(model_id, prefix, quiet=True).values()
+                 if isinstance(q, dict) and q.get('code')}
+        self._use_quota_listing = len(codes) > QUOTA_LISTING_THRESHOLD
+
+        region_info = get_region_info(self.region)
+        processed = set()
+
         # Process each model
         for model_config in models:
-            model_id = model_config['model_id']
-            profile_prefix = model_config['profile_prefix']
-            
+            key = self._scope_key(model_config)
+            if key in processed:
+                continue
+            processed.add(key)
+            model_id, profile_prefix, app_ids = key
+
             logger.info(f"\n{'='*80}")
             logger.info(f"Processing model: {model_id}")
             logger.info(f"{'='*80}")
-            
+
             # Step 1: Get profiles from cache
-            final_model_ids, profile_names, profile_metadata = all_profiles_map[model_id][profile_prefix]
+            final_model_ids, profile_names, profile_metadata = all_profiles_map[key]
             logger.info(f"Using {len(final_model_ids)} profile(s)")
-            
+            if not final_model_ids:
+                logger.info("  No matching profiles; skipping.")
+                continue
+
             # Step 2: Fetch quotas
             quota_codes = self._load_quota_codes(model_id, profile_prefix)
+            retired = profile_prefix not in (None, UNKNOWN_SOURCE) and \
+                not self._system_profile_listed(endpoint_id(model_id, profile_prefix))
+            if profile_prefix is None and app_ids:
+                # A base-model copy of a model the fm-list knows without an on-demand endpoint:
+                # that endpoint was retired (no refresh can map its limits)
+                listed = fm_endpoints(self._fm_list(), model_id)
+                retired = listed is not None and 'base' not in listed
+            if retired:
+                # e.g. a copy of a retired au.* profile; an older fm-list may still map its quotas
+                ending = "the limits shown come from the saved mapping" if any(quota_codes.values()) \
+                    else "the report will show usage without limits"
+                logger.info(f"  {endpoint_id(model_id, profile_prefix)} is not offered in "
+                            f"{self.region}; {ending}")
+            elif not any(quota_codes.values()) and profile_prefix != UNKNOWN_SOURCE:
+                profiles = profile_endpoints(self._fm_list(), model_id)
+                if (profile_prefix or 'base') not in get_endpoint_quota_keywords():
+                    # e.g. a one-region country prefix that prefix-mapping.yml does not know:
+                    # fm-quotas has no quota keyword for it, so refreshing cannot map one
+                    fix = None
+                elif self._endpoint_listed(model_id, profile_prefix):
+                    fix = f"bua refresh fm-quotas {self.region}"
+                elif profile_prefix is None and profiles:
+                    # No on-demand endpoint: refreshing cannot add one, its profiles have the limits
+                    fix = "analyze one of its inference profiles instead: " + \
+                        ', '.join(endpoint_id(model_id, p) for p in profiles)
+                else:
+                    # fm-quotas only maps endpoints already in the model list
+                    fix = f"bua refresh fm-list {self.region}, then bua refresh fm-quotas {self.region}"
+                if fix is None:
+                    logger.info(f"  No quota codes mapped for this endpoint in {self.region}; the report will "
+                                f"show usage without limits. '{profile_prefix}' endpoints have no quota type "
+                                f"in prefix-mapping.yml, so bua refresh fm-quotas cannot map them yet.")
+                else:
+                    logger.info(f"  No quota codes mapped for this endpoint in {self.region}; the report will "
+                                f"show usage without limits. To map them: {fix}")
             quotas = self._fetch_quotas(model_id, quota_codes, profile_prefix)
             if any(quotas.values()):
-                logger.info(f"  Quotas: TPM={quotas['tpm']}, RPM={quotas['rpm']}, TPD={quotas['tpd']}")
-            
+                logger.info(f"  Quotas: TPM={quotas['tpm']}, RPM={quotas['rpm']}, TPD={quotas['tpd']}, "
+                            f"concurrent={quotas.get('concurrent')}")
+
             # Step 3: Fetch all data upfront with configured granularities
             # Data reuse optimization: if all periods use same granularity, only fetch once
             # If granularities differ, fetch separately for each unique granularity
             logger.info(f"  Fetching data with configured granularities (parallel)...")
             fetched_data_all_profiles = self.metrics_fetcher.fetch_all_data_mixed_granularity(
-                final_model_ids, 
+                final_model_ids,
                 self.granularity_config
             )
-            
+
             model_results = {}
             time_series_data = {}
-            
+
             # Step 4: Process each time period
             for time_period in self.TIME_PERIODS:
                 logger.info(f"  Processing {time_period}...")
-                
+
                 period_stats = {}
                 period_time_series = {}
-                
+
                 try:
                     for final_model_id in final_model_ids:
                         # Slice data from fetched datasets
                         if final_model_id in fetched_data_all_profiles:
                             ts_data = self.metrics_fetcher.slice_and_process_data(
-                                fetched_data_all_profiles[final_model_id], 
+                                fetched_data_all_profiles[final_model_id],
                                 time_period,
                                 self.granularity_config
                             )
                             period_time_series[final_model_id] = ts_data
-                            
+
                             # Calculate statistics from time series data
                             stats = self._calculate_stats_from_time_series(ts_data, time_period)
                             period_stats[final_model_id] = stats
-                    
+
                     # Always create aggregated metrics for consistent template behavior
                     agg_stats = self.metrics_fetcher.aggregate_statistics(period_stats, time_period)
                     agg_ts = self.metrics_fetcher.aggregate_time_series(period_time_series, time_period)
-                    
+
                     period_stats['__AGGREGATED__'] = agg_stats
                     period_time_series['__AGGREGATED__'] = agg_ts
-                    
+
                     model_results[time_period] = period_stats
                     time_series_data[time_period] = period_time_series
-                    
+
                 except Exception as e:
                     logger.info(f"\n  ERROR in {time_period} processing:")
                     logger.info(f"  Error type: {type(e).__name__}")
@@ -309,17 +420,19 @@ class BedrockAnalyzer:
                     logger.info(f"  Traceback:")
                     traceback.print_exc()
                     raise
-            
+
             # Step 5: Calculate contributions
             contributions = self._calculate_contributions(model_results, time_series_data, profile_names, profile_metadata)
-            
+
             # Step 6: Generate output
             logger.info(f"  Generating output files...")
             end_time_local = datetime.now(self.local_tz)
-            
-            # Get region info for output
-            region_info = self.client_factory.get_region_info()
-            
+            if profile_prefix == UNKNOWN_SOURCE:
+                endpoint = f"{model_id} (source endpoint unknown)"
+            else:
+                endpoint = endpoint_id(model_id, profile_prefix)
+            scope = [profile_names.get(pid, pid) for pid in final_model_ids] if app_ids else []
+
             self.output_generator.generate({
                 model_id: {
                     'stats': model_results,
@@ -331,25 +444,31 @@ class BedrockAnalyzer:
                     'end_time': end_time_local,
                     'tz_offset': self.tz_offset,
                     'region': self.region,
-                    'region_info': region_info
+                    'region_info': region_info,
+                    'endpoint': endpoint,
+                    'application_profile_scope': scope,
+                    'file_label': self._file_label(endpoint, app_ids),
                 }
             })
 
+    @staticmethod
+    def _file_label(endpoint, app_ids):
+        """Distinct output name per target, so two endpoints of one model do not overwrite each other."""
+        if app_ids:
+            if len(app_ids) <= 3:
+                return f"{endpoint}-app-{'-'.join(app_ids)}"
+            # Many profiles: a short digest of the sorted IDs keeps different sets apart
+            digest = hashlib.sha256('\n'.join(sorted(app_ids)).encode()).hexdigest()[:8]
+            return f"{endpoint}-app-{len(app_ids)}profiles-{digest}"
+        return endpoint
+
 
 def main():
-    try:
-        user_inputs = UserInputs()
-        user_inputs.collect()
-        
-        analyzer = BedrockAnalyzer(user_inputs.region, user_inputs.granularity_config)
-        analyzer.analyze(user_inputs.models)
-        
-        logger.info(f"\nCompleted! Check the 'results' directory for output files.")
-        
-    except KeyboardInterrupt:
-        logger.info("\nOperation cancelled by user.")
-    except Exception as e:
-        logger.info(f"Error: {e}")
+    """Run the analysis as `bua analyze` does (kept for `python -m ...core.analyzer`)."""
+    import sys
+    from bedrock_usage_analyzer.__main__ import main as cli_main
+    sys.argv = [sys.argv[0], 'analyze', *sys.argv[1:]]
+    cli_main()
 
 
 if __name__ == "__main__":

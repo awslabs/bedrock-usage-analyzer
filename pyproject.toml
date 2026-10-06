@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=77", "wheel"]  # 77: SPDX license string (PEP 639); 61: [project] table
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "bedrock-usage-analyzer"
-version = "0.5.1-beta"
+version = "0.6.0-beta"
 description = "Calculate token usage statistics and map quotas for Amazon Bedrock models. Supports both standard AWS regions and AWS GovCloud (US) regions."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -14,14 +14,19 @@ authors = [
 ]
 keywords = ["aws", "bedrock", "cloudwatch", "metrics", "tokens", "usage", "statistics", "govcloud", "government"]
 
+# Floors exclude releases with known CVEs or missing APIs. No upper bounds: this is a
+# CLI installed next to other tools, and caps would block security fixes.
 dependencies = [
-    "boto3",
-    "numpy",
-    "jinja2",
-    "pyyaml",
-    "defusedcsv",
-    "platformdirs",
+    "boto3>=1.35.51",  # ListInferenceProfiles with typeEquals
+    "numpy>=1.22",
+    "jinja2>=3.1.6",
+    "pyyaml>=6.0.1",
+    "defusedcsv>=2.0",
+    "platformdirs>=3.0",
 ]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
 
 [project.urls]
 Repository = "https://github.com/awslabs/bedrock-usage-analyzer"
@@ -38,3 +43,6 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 bedrock_usage_analyzer = ["templates/*.html", "metadata/*.yml", "metadata/*.csv"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

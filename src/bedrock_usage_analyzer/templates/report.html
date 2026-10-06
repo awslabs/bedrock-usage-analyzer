@@ -2,14 +2,16 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <!-- Without this, browsers guess the encoding and show the ▲ and ⚠️ symbols as mojibake -->
+    <meta charset="utf-8">
     <title>Bedrock Model Usage Statistics</title>
-    </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-crosshair@2"></script>
+    <!-- Pinned versions with Subresource Integrity, so a changed CDN file is refused by the browser -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script><!-- pragma: allowlist secret (SRI hash) -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js" integrity="sha384-cVMg8E3QFwTvGCDuK+ET4PD341jF3W8nO1auiXfuZNQkzbUUiBGLsIQUE+b1mxws" crossorigin="anonymous"></script><!-- pragma: allowlist secret (SRI hash) -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-crosshair@2.0.0/dist/chartjs-plugin-crosshair.min.js" integrity="sha384-CAlqtbKiUqdBdWXYDUJpiKq0IipdjVG1QZxqBL5XBAmZq0UIS91aaX1kIzl9VXsa" crossorigin="anonymous"></script><!-- pragma: allowlist secret (SRI hash) -->
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; }
         h1, h2, h3 { color: #333; }
@@ -54,32 +56,24 @@
 <body>
     <h1>Bedrock Model Usage Statistics</h1>
     <h2>Model: {{ model_id }}</h2>
-    <p><strong>Region:</strong> 
-        {% if region_info and region_info.is_govcloud %}🏛️ {% endif %}{{ (region_info.display_name if region_info else region) or region }}
-        {% if region_info and region_info.is_govcloud %}<span style="color: #666; font-size: 0.9em;"> (GovCloud)</span>{% endif %}
+    {% if endpoint and endpoint != model_id %}<p><strong>Endpoint:</strong> {{ endpoint }}</p>{% endif %}
+    {% if application_profile_scope %}<p><strong>Application inference profiles analyzed:</strong> {{ application_profile_scope | join(', ') }}</p>{% endif %}
+    <p><strong>Region:</strong> {{ region }}{% if region_info and region_info.display_name and region_info.display_name != region %} ({{ region_info.display_name }}){% endif %}
+        {% if region_info and region_info.partition and region_info.partition != 'aws' %}<span style="color: #666; font-size: 0.9em;"> &middot; {{ region_info.partition_name }}</span>{% endif %}
     </p>
     <p><strong>Generated:</strong> {{ timestamp }}</p>
     
     {% if quotas.tpm or quotas.rpm or quotas.tpd or quotas.concurrent %}
     <div class="quota-section">
         <h4>Quota Limits</h4>
-        {% if quotas.tpm %}
-        <p><strong>TPM (Tokens Per Minute):</strong> {{ "{:,.0f}".format(quotas.tpm.value) }}<br>
-        <span style="font-size: 0.85em;"><a href="{{ quotas.tpm.url }}" target="_blank">[{{ quotas.tpm.code }}]</a> {{ quotas.tpm.name }}</span></p>
-        {% endif %}
-        {% if quotas.rpm %}
-        <p><strong>RPM (Requests Per Minute):</strong> {{ "{:,.0f}".format(quotas.rpm.value) }}<br>
-        <span style="font-size: 0.85em;"><a href="{{ quotas.rpm.url }}" target="_blank">[{{ quotas.rpm.code }}]</a> {{ quotas.rpm.name }}</span></p>
-        {% endif %}
-        {% if quotas.tpd %}
-        <p><strong>TPD (Tokens Per Day):</strong> {{ "{:,.0f}".format(quotas.tpd.value) }}<br>
-        <span style="font-size: 0.85em;"><a href="{{ quotas.tpd.url }}" target="_blank">[{{ quotas.tpd.code }}]</a> {{ quotas.tpd.name }}</span></p>
-        {% endif %}
-        {% if quotas.concurrent %}
-        <p><strong>Concurrent Requests:</strong> {{ "{:,.0f}".format(quotas.concurrent.value) }}<br>
-        <span style="font-size: 0.85em;"><a href="{{ quotas.concurrent.url }}" target="_blank">[{{ quotas.concurrent.code }}]</a> {{ quotas.concurrent.name }}</span></p>
-        {% endif %}
-        <p><strong>IMPORTANT:</strong> These quotas (and those on the charts) were intelligently mapped with large language model. It is always good to crosscheck with <a href="https://{{ console_domain }}/servicequotas">AWS service quotas</a></p>
+        {%- macro quota_line(label, quota) %}
+        <p><strong>{{ label }}:</strong> {{ "{:,.0f}".format(quota.value) }}<br>
+        <span style="font-size: 0.85em;">{% if quota.url | https_url %}<a href="{{ quota.url | https_url }}" target="_blank" rel="noopener noreferrer">[{{ quota.code }}]</a>{% else %}[{{ quota.code }}]{% endif %} {{ quota.name }}</span></p><!-- nosemgrep: generic.html-templates.security.var-in-href.var-in-href (https_url filter allows only https:// links) -->
+        {%- endmacro %}
+        {% for key, label in [('tpm', 'TPM (Tokens Per Minute)'), ('rpm', 'RPM (Requests Per Minute)'), ('tpd', 'TPD (Tokens Per Day)'), ('concurrent', 'Concurrent Requests')] %}
+        {% if quotas[key] %}{{ quota_line(label, quotas[key]) }}{% endif %}
+        {% endfor %}
+        <p><strong>IMPORTANT:</strong> These quotas (and those on the charts) were intelligently mapped with large language model. It is always good to crosscheck with {% if service_quotas_console_url | https_url %}<a href="{{ service_quotas_console_url | https_url }}" target="_blank" rel="noopener noreferrer">AWS service quotas</a>{% else %}AWS service quotas{% endif %}</p><!-- nosemgrep: generic.html-templates.security.var-in-href.var-in-href (https_url filter allows only https:// links) -->
     </div>
     {% endif %}
     
@@ -753,9 +747,9 @@
             }
         };
 
-        const timeSeriesData = {{ time_series_json | safe }};
-        const quotas = {{ quotas_json | safe }};
-        const profileNames = {{ profile_names_json | safe }};
+        const timeSeriesData = {{ time_series | tojson }};
+        const quotas = {{ quotas | tojson }};
+        const profileNames = {{ profile_names | tojson }};
         const colors = ['#4285F4', '#EA4335', '#FBBC04', '#34A853', '#FF6D00', '#46BDC6', '#7BAAF7', '#F07B72', '#FDD663', '#81C995'];
         
         // Create consistent color mapping for all profiles across all charts
@@ -855,7 +849,21 @@
                     disclaimer.style.fontStyle = 'italic';
                     disclaimer.style.color = '#666';
                     disclaimer.style.marginBottom = '10px';
-                    disclaimer.innerHTML = `Note: Quota mapping inferred using AI. Verify with <a href="${quotaInfo.url}" target="_blank">[${quotaInfo.code}] ${quotaInfo.name}</a>`;
+                    // Built with DOM nodes, not innerHTML: quota names come from metadata files
+                    // and must not be interpreted as markup; only https links are rendered
+                    disclaimer.appendChild(document.createTextNode('Note: Quota mapping inferred using AI. Verify with '));
+                    const label = `[${quotaInfo.code}] ${quotaInfo.name || ''}`;
+                    const url = typeof quotaInfo.url === 'string' && quotaInfo.url.startsWith('https://') ? quotaInfo.url : null;
+                    if (url) {
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.target = '_blank';
+                        link.rel = 'noopener noreferrer';
+                        link.textContent = label;
+                        disclaimer.appendChild(link);
+                    } else {
+                        disclaimer.appendChild(document.createTextNode(label));
+                    }
                     canvasElement.parentNode.insertBefore(disclaimer, canvasElement);
                 }
             }
@@ -873,7 +881,8 @@
                     throttleDisclaimer.style.padding = '8px';
                     throttleDisclaimer.style.borderRadius = '4px';
                     throttleDisclaimer.style.marginBottom = '10px';
-                    throttleDisclaimer.innerHTML = `⚠️ Low ${metricType} does not rule out throttling. Bedrock reserves <code>input_tokens + max_tokens</code> at request start. <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/quotas-token-burndown.html" target="_blank">Learn more</a>`;
+                    // Static text only (metricType is one of TPM/TPD); no data is interpolated as HTML
+                    throttleDisclaimer.innerHTML = `⚠️ Low ${metricType === 'TPD' ? 'TPD' : 'TPM'} does not rule out throttling. Bedrock reserves <code>input_tokens + max_tokens</code> at request start. <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/quotas-token-burndown.html" target="_blank" rel="noopener noreferrer">Learn more</a>`;
                     canvasElement.parentNode.insertBefore(throttleDisclaimer, canvasElement);
                 }
             }
@@ -890,7 +899,7 @@
                     note.style.fontStyle = 'italic';
                     note.style.color = '#888';
                     note.style.marginBottom = '5px';
-                    note.innerHTML = `Note: Values show peak ${metricType} within each aggregation period (for quota monitoring)`;
+                    note.textContent = `Note: Values show peak ${metricType} within each aggregation period (for quota monitoring)`;
                     canvasElement.parentNode.insertBefore(note, canvasElement);
                 }
             }
@@ -940,7 +949,7 @@
                 };
                 const timePeriod = '{{ time_period }}';
                 const duration = periodDurations[timePeriod];
-                const endTimeIso = '{{ end_time_iso }}';
+                const endTimeIso = {{ end_time_iso | tojson }};
                 
                 var xAxisMax = new Date(endTimeIso).getTime();
                 var xAxisMin = xAxisMax - duration;

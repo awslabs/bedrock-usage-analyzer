@@ -297,7 +297,8 @@ class CloudWatchMetricsFetcher:
         all_fetched_data = {}
         
         # Parallel fetching across all model IDs
-        max_workers = os.cpu_count() or 4
+        # Bounded by the client's connection pool (see aws/client_factory.py)
+        max_workers = min(os.cpu_count() or 4, 16)
         logger.info(f"  Using {max_workers} parallel workers")
         
         with ThreadPoolExecutor(max_workers=max_workers) as executor:

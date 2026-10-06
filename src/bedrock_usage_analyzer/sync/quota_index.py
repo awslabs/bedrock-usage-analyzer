@@ -3,17 +3,32 @@
 
 """Generate quota index CSV for validation"""
 
-import glob
 import logging
-from typing import Dict, List, Set
+from concurrent.futures import ThreadPoolExecutor
+from typing import Dict
 import sys
 
-from bedrock_usage_analyzer.utils.yaml_handler import load_yaml, save_yaml
+import yaml
+
+from bedrock_usage_analyzer.utils.yaml_handler import (
+    endpoint_quotas, fm_file_data, load_data_file, load_yaml, model_endpoints, quota_slots, save_yaml, valid_models)
 from bedrock_usage_analyzer.utils.csv_handler import write_csv
-from bedrock_usage_analyzer.utils.paths import list_data_files, get_writable_path, get_bundle_path
-from bedrock_usage_analyzer.aws.servicequotas import get_quota_details
+from bedrock_usage_analyzer.utils.paths import get_bundle_path, get_user_data_dir, get_writable_path, list_data_names
+from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, is_missing, list_quota_codes, lookup_quota, QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK
+from bedrock_usage_analyzer.aws.bedrock import get_regional_profile_prefixes
+from bedrock_usage_analyzer.sync.quota_rules import slot_conflict
 
 logger = logging.getLogger(__name__)
+
+# 'partition' tells apart identical rows of commercial and GovCloud lists
+CSV_HEADERS = ['model_id', 'endpoint', 'quota_type', 'quota_code', 'quota_name', 'partition']
+
+
+def _account_regions(partition: str):
+    """Regions the account has enabled in ``partition`` (account:ListRegions, else
+    ec2:DescribeRegions), or [] if neither works: no guess from a static list."""
+    from bedrock_usage_analyzer.sync.regions import fetch_enabled_regions
+    return fetch_enabled_regions(partition, static_fallback=False)
 
 
 class QuotaIndexGenerator:
@@ -23,12 +38,27 @@ class QuotaIndexGenerator:
         self.models = {}
         self.entries = []
         self.error_entries = []
-    
+        self.mismatch_entries = []
+        self.update_bundle = False
+        # Filled by _cleanup_errors: per-(code, region) lookup results, regional prefixes,
+        # and slots already known to contradict their model/endpoint
+        self._region_checks = {}
+        self._listings = {}  # region -> {code: quota} from ListServiceQuotas (None: not listed)
+        self._checked_regions = set()  # regions the account can call (regions.yml)
+        self._files_written = 0  # fm-list files the cleanup rewrote
+        self._removed = 0  # quota codes removed from files that were written
+        self._left_in_bundle = 0  # codes to remove that only bundled lists (not written) have
+        self._regional = set()
+        self._mismatched = set()
+        self._mismatch_cache = {}  # region -> slots removed as mismatches
+        # Parsed fm-lists of the credentials' partition, by region (read once per run)
+        self._fm_data = {}
+
     def run(self, update_bundle: bool = False):
         """Execute quota index generation
         
         Args:
-            update_bundle: Also update bundled metadata (for maintainers)
+            update_bundle: Update the checkout's bundled metadata instead of user copies (maintainers)
         """
         self.update_bundle = update_bundle
         logger.info("Generating quota index for validation...\n")
@@ -43,46 +73,113 @@ class QuotaIndexGenerator:
         logger.info("Review quota-index.csv to validate quota mappings")
     
     def _load_all_models(self):
-        """Load all FM list files and merge endpoints from all regions"""
-        fm_files = list_data_files('fm-list-*.yml')
-        
+        """Load the FM lists and merge endpoints from all regions of each partition
+
+        Every partition's lists go into the index (so a GovCloud run does not drop the
+        commercial rows, and vice versa), but only the credentials' partition is
+        validated against Service Quotas and cleaned up.
+        """
+        from bedrock_usage_analyzer.sync.regions import (
+            SKIP_REGIONS, credentials_partition_or_exit, load_region_names, read_region_file)
+        from bedrock_usage_analyzer.utils.partition import (
+            PARTITION_HOME_REGIONS, filter_regions_by_partition, get_partition_for_region)
+
+        self._partition = credentials_partition_or_exit()
+        fm_files = []
+        # By name: also finds the bundled lists of a zipped package (no file paths there)
+        for fm_file in list_data_names('fm-list-*.yml'):
+            region = fm_file.replace('fm-list-', '').replace('.yml', '')
+            # Disrupted regions are skipped like in every refresh (their endpoints time out)
+            if region not in SKIP_REGIONS:
+                fm_files.append((region, fm_file))
+
         if not fm_files:
             logger.error("No fm-list files found")
             sys.exit(1)
-        
+
+        # Each model endpoint is validated in the first region listing a mapping for it, so
+        # order the partition's home region first, then regions the account has enabled
+        # (the user's regions.yml), and opt-in regions it may not have enabled last
+        # (with --update-bundle the checkout's regions.yml, which `refresh regions --update-bundle` writes)
+        checkout = get_bundle_path() if self.update_bundle else None
+        # (read-only: get_writable_path would create the user data directory)
+        enabled = set(read_region_file((checkout or get_user_data_dir()) / 'regions.yml'))
+        homes = set(PARTITION_HOME_REGIONS.values())
+        # Only regions the account can call are validated and cleaned: an opt-in region it
+        # has not enabled answers every lookup with an error (its codes are kept as they are)
+        # Only this partition's regions: a regions.yml written with other credentials says
+        # nothing about which regions of this partition are enabled
+        known = set(filter_regions_by_partition(enabled, self._partition))
+        if not known:
+            # No regions.yml of this partition yet: ask the account which regions it enabled
+            # (the bundled list also has opt-in regions it may not have)
+            known = set(_account_regions(self._partition))
+            if not known:
+                known = set(filter_regions_by_partition(load_region_names(update_bundle=self.update_bundle),
+                                                        self._partition))
+                logger.warning("  Could not list the account's enabled regions (account:ListRegions or "
+                               "ec2:DescribeRegions); checking the bundled regions, opt-in ones included. "
+                               "Run 'bua refresh regions' to limit the check to enabled regions.")
+        # Callable regions first, so each endpoint is validated in a region that can answer
+        fm_files.sort(key=lambda item: (item[0] not in homes, item[0] not in known, item[0]))
+
         logger.info(f"Found {len(fm_files)} fm-list files")
-        
-        for fm_file in fm_files:
-            # Extract region from filename
-            filename = fm_file.name if hasattr(fm_file, 'name') else str(fm_file)
-            region = filename.replace('fm-list-', '').replace('.yml', '')
-            data = load_yaml(str(fm_file))
-            
-            for model in data.get('models', []):
-                model_id = model['model_id']
-                
-                if model_id not in self.models:
-                    # First time seeing this model - initialize
-                    self.models[model_id] = {
-                        'model_id': model_id,
+
+        for region, fm_file in fm_files:
+            # --update-bundle indexes and cleans the checkout's lists (the files it rewrites),
+            # as fm-quotas does, not the maintainer's user copies
+            checkout_file = checkout / fm_file if checkout else None
+            if checkout_file and not checkout_file.exists():
+                # Only a user copy: not the checkout's to index or clean (as fm-quotas skips it)
+                logger.info(f"  ⊘ {region}: the checkout does not bundle {fm_file}, skipped")
+                continue
+            try:
+                loaded = load_yaml(str(checkout_file)) if checkout_file else load_data_file(fm_file)
+            except yaml.YAMLError as e:
+                # One hand-edited list with a syntax error: skip that region, index the others
+                logger.warning(f"  ⊘ {region}: could not read {fm_file} ({e}); fix or delete it, "
+                               f"or run: bua refresh fm-list {region}")
+                continue
+            # Malformed entries are skipped, not fatal, and kept as they are when the file is
+            # written back (the valid entries are the same dicts, so cleanups reach the file)
+            data = fm_file_data(loaded)
+            models = valid_models(data)
+            partition = get_partition_for_region(region)
+            if partition == self._partition:
+                self._fm_data[region] = data
+
+            for model in models:
+                key = (partition, model['model_id'])
+
+                if key not in self.models:
+                    # First time seeing this model in this partition - initialize
+                    self.models[key] = {
+                        'model_id': model['model_id'],
+                        'partition': partition,
                         'provider': model.get('provider'),
                         'inference_types': model.get('inference_types', []),
                         'inference_profiles': model.get('inference_profiles', []),
                         'endpoints': {}
                     }
-                
-                # Merge endpoints from this region, to the dictionary that aggregates all regions
-                self._merge_endpoints(model_id, model, region)
-        
+
+                # Merge endpoints from this region, to the dictionary that aggregates the partition
+                self._merge_endpoints(key, model, region)
+
+        # Without any regions list, every fm-list region of the partition is checked
+        self._checked_regions = (known or set(self._fm_data)) | homes
         logger.info(f"Loaded {len(self.models)} unique models\n")
-    
-    def _merge_endpoints(self, model_id: str, model: Dict, region: str):
+
+    def _merge_endpoints(self, key, model: Dict, region: str):
         """Merge endpoints from model into existing model entry"""
-        new_endpoints = model.get('endpoints', {})
-        
+        new_endpoints = model_endpoints(model)
+
         for endpoint_type, endpoint_data in new_endpoints.items():
-            existing_endpoints = self.models[model_id]['endpoints']
-            
+            # 'us: null' or a hand-edited 'us: TODO' / 'quotas: TODO' is kept without quotas
+            endpoint_data = dict(endpoint_data) if isinstance(endpoint_data, dict) else {}
+            if not isinstance(endpoint_data.get('quotas'), dict):
+                endpoint_data.pop('quotas', None)
+            existing_endpoints = self.models[key]['endpoints']
+
             if endpoint_type not in existing_endpoints:
                 # New endpoint - add it
                 existing_endpoints[endpoint_type] = {
@@ -91,29 +188,30 @@ class QuotaIndexGenerator:
                 }
             else:
                 # Endpoint exists, potentially from other regions - check if new one has quotas
-                existing_quotas = existing_endpoints[endpoint_type].get('quotas', {})
-                new_quotas = endpoint_data.get('quotas', {})
-                
+                existing_quotas = existing_endpoints[endpoint_type].get('quotas', {}) or {}
+                new_quotas = endpoint_data.get('quotas', {}) or {}
+
                 existing_has_quotas = any(v is not None for v in existing_quotas.values())
                 new_has_quotas = any(v is not None for v in new_quotas.values())
-                
+
                 # Replace if new one has quotas and existing doesn't
                 if new_has_quotas and not existing_has_quotas:
                     existing_endpoints[endpoint_type] = {
                         **endpoint_data,
                         '_source_region': region
                     }
-    
+
     def _extract_quota_entries(self):
         """Extract all quota mappings from models"""
         # Avoid duplicate by listing only a unique combination of model ID, profile prefix, and metric/quota
         seen = set()
         
-        for model_id, model in self.models.items():
+        for model in self.models.values():
+            model_id = model['model_id']
             endpoints = model.get('endpoints', {})
             
             for endpoint_type, endpoint_data in endpoints.items():
-                quotas = endpoint_data.get('quotas', {})
+                quotas = endpoint_data.get('quotas') or {}
                 source_region = endpoint_data.get('_source_region', 'unknown')
                 
                 for quota_type, quota_data in quotas.items():
@@ -123,7 +221,7 @@ class QuotaIndexGenerator:
                         quota_name = quota_data.get('name')
                         
                         if quota_code:
-                            key = (model_id, endpoint_type, quota_type, quota_code)
+                            key = (model['partition'], model_id, endpoint_type, quota_type, quota_code)
                             if key not in seen:
                                 seen.add(key)
                                 self.entries.append({
@@ -132,116 +230,229 @@ class QuotaIndexGenerator:
                                     'quota_type': quota_type,
                                     'quota_code': quota_code,
                                     'quota_name': quota_name,
-                                    'source_region': source_region
+                                    'source_region': source_region,
+                                    'partition': model['partition'],
                                 })
         
         logger.info(f"Found {len(self.entries)} unique quota mappings\n")
     
     def _fetch_quota_details(self):
-        """Fetch quota details from AWS (skipped if names already present)"""
+        """Validate every mapped quota code against Service Quotas.
+
+        Names are refreshed from the API. A code that Service Quotas reports as
+        missing is marked ERROR and later removed from the fm-lists; other failures
+        (throttling, network) leave the entry untouched.
+        """
         if not self.entries:
             return
-        
-        # Check if we already have quota names (new format)
-        entries_without_names = [e for e in self.entries if not e.get('quota_name')]
-        
-        if not entries_without_names:
-            logger.info(f"All {len(self.entries)} entries already have quota names (new format)\n")
-            return
-        
-        logger.info(f"Fetching quota details for {len(entries_without_names)} entries without names...\n")
-        
-        for entry in entries_without_names:
-            quota_code = entry['quota_code']
-            region = entry['source_region']
-            
-            quota = get_quota_details(quota_code, region)
-            
-            if quota:
-                entry['quota_name'] = quota.get('QuotaName', 'N/A')
-            else:
+
+        logger.info(f"Validating {len(self.entries)} quota mappings against Service Quotas...\n")
+        regional = set(get_regional_profile_prefixes())
+        # Only codes of the credentials' partition can be looked up with these credentials
+        own = [e for e in self.entries if e['partition'] == self._partition]
+        keys = sorted({(e['quota_code'], e['source_region']) for e in own})
+        # One listing per region (a few paginated calls) instead of one call per code; the
+        # cleanup reuses these listings and results
+        regions = sorted((set(self._fm_data) | {region for _, region in keys}) & self._checked_regions)
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            # Without ListServiceQuotas each code is looked up on its own (no warning needed)
+            self._listings = dict(zip(regions, pool.map(
+                lambda region: list_quota_codes(region, quiet_denied=True), regions)))
+            cache = dict(zip(keys, pool.map(lambda key: self._lookup(*key), keys)))
+
+        unverified = not_enabled = 0
+        for entry in self.entries:
+            if entry['partition'] != self._partition:
+                # Another partition: kept in the index with its stored name, not validated,
+                # and never cleaned up with these credentials
+                entry['quota_name'] = entry.get('quota_name') or 'N/A'
+                continue
+            status, quota = cache[(entry['quota_code'], entry['source_region'])]
+            if status == QUOTA_OK:
+                entry['quota_name'] = quota.get('QuotaName') or entry.get('quota_name') or 'N/A'
+            # Checked for every entry, whatever the lookup outcome, with the best name known,
+            # so the CSV and the fm-list cleanup always agree
+            reason = slot_conflict(entry['model_id'], entry['endpoint'], entry['quota_type'],
+                                   entry.get('quota_name'), regional)
+            if reason:
+                # The code belongs to another model or endpoint type
+                logger.info(f"  Mismatch: {entry['model_id']} {entry['endpoint']} {entry['quota_type']} "
+                            f"-> {entry['quota_code']} ({entry.get('quota_name')}): {reason}")
+                entry['quota_name'] = 'MISMATCH'
+                self.mismatch_entries.append(entry)
+            elif status == QUOTA_MISSING:
+                entry['previous_name'] = entry.get('quota_name')
                 entry['quota_name'] = 'ERROR'
                 self.error_entries.append(entry)
-    
+            elif status != QUOTA_OK:
+                if entry['source_region'] in self._checked_regions:
+                    unverified += 1
+                else:
+                    not_enabled += 1  # never looked up
+                entry['quota_name'] = entry.get('quota_name') or 'N/A'
+        if unverified:
+            logger.info(f"  {unverified} mapping(s) could not be verified (API errors); kept as is")
+        if not_enabled:
+            logger.info(f"  {not_enabled} mapping(s) are in regions not enabled for this account; "
+                        f"kept as is, not checked")
+
     def _cleanup_errors(self):
-        """Remove ERROR entries from YAML files"""
-        if not self.error_entries:
-            logger.info(f"\nThere is no erroneous entry.")
+        """Remove quota codes that do not exist, or belong to another model/endpoint, from every fm-list"""
+        if not self.error_entries and not self.mismatch_entries:
+            logger.info(f"\nNo index entry is missing or mismatched; checking every region's list...")
+        else:
+            logger.info(f"\nCleaning up {len(self.error_entries)} missing and "
+                        f"{len(self.mismatch_entries)} mismatched entries...")
+        # Quota availability differs by region: a code can exist in the entry's source region
+        # and be missing in another (or the reverse), so every (code, region) pair an fm-list
+        # uses is checked, and a code is removed only from the regions where it is missing
+        self._regional = set(get_regional_profile_prefixes())
+        self._mismatched = {(e['model_id'], e['endpoint'], e['quota_type'], e['quota_code'])
+                            for e in self.mismatch_entries}
+        self._mismatch_cache = {}
+        regions = sorted(set(self._fm_data) & self._checked_regions)
+        # Codes the cleanup removes as mismatches anyway need no lookup
+        pending = {(slot[3], region) for region in regions
+                   for slot in quota_slots(valid_models(self._fm_data[region]))
+                   if slot not in self._mismatch_slots(region)}
+        # Codes absent from a region's listing (or in a region that could not be listed) are
+        # confirmed one by one, so a code is never removed on the listing alone
+        unresolved = sorted(k for k in pending - set(self._region_checks)
+                            if k[0] not in (self._listings.get(k[1]) or {}))
+        confirm_statuses(unresolved, self._region_checks)
+        for key in pending - set(self._region_checks):
+            self._region_checks[key] = QUOTA_OK  # in the region's listing
+        # Every region file is also checked for mismatches by the quota name stored with each
+        # code, because the index itself samples only one source region per model endpoint
+        # Mismatches (by stored name, no API call) are cleaned in every region of the partition
+        for region in sorted(self._fm_data):
+            self._cleanup_region_errors(region)
+
+        # A code confirmed in any region is still a valid mapping for the index
+        confirmed = {code for (code, _), status in self._region_checks.items() if status == QUOTA_OK}
+        for entry in list(self.error_entries):
+            if entry['quota_code'] in confirmed:
+                entry['quota_name'] = entry.get('previous_name') or 'N/A'
+                self.error_entries.remove(entry)
+
+    def _lookup(self, code: str, region: str):
+        """(status, quota) from the region's listing, else from GetServiceQuota (recorded for the cleanup)."""
+        if region not in self._checked_regions:
+            return (QUOTA_ERROR, None)  # not enabled for the account: kept, not looked up
+        # Listings were fetched up front (in a pool); this only reads them
+        result = lookup_quota(code, region, self._listings, lister=lambda r: None)
+        self._region_checks[(code, region)] = result[0]
+        return result
+
+    def _missing_in(self, code: str, region: str) -> bool:
+        if region not in self._checked_regions:
+            return False  # not enabled for the account: cannot be verified, kept
+        return is_missing(code, region, self._region_checks)
+
+    def _mismatch_slots(self, region) -> set:
+        """(model, endpoint, metric, code) slots of a region that the cleanup removes as
+        mismatches: contradicting their model/endpoint by stored name, or flagged by the
+        index. Computed once per region; used both to skip lookups and to clean up."""
+        if region not in self._mismatch_cache:
+            slots = set()
+            for model in valid_models(self._fm_data[region]):
+                for endpoint, quotas in endpoint_quotas(model):
+                    for metric, quota in quotas.items():
+                        if not isinstance(quota, dict) or not quota.get('code'):
+                            continue
+                        slot = (model['model_id'], endpoint, metric, quota['code'])
+                        if slot in self._mismatched or slot_conflict(
+                                model['model_id'], endpoint, metric, quota.get('name'), self._regional):
+                            slots.add(slot)
+            self._mismatch_cache[region] = slots
+        return self._mismatch_cache[region]
+
+    def _cleanup_region_errors(self, region: str):
+        """Null out codes missing in this region or contradicting their model/endpoint (user copy, else bundled)"""
+        mismatches = self._mismatch_slots(region)
+        data = self._fm_data[region]  # only the credentials' partition is cleaned
+
+        modified = 0  # codes removed in this region
+        reasons = set()
+        for model in valid_models(data):
+            for endpoint, quotas in endpoint_quotas(model):
+                # Contradicting this model/endpoint by the stored name (the same rule the
+                # analyzer and fm-quotas apply) or flagged by the index, then codes the region lacks
+                removed = []
+                for quota_type, quota in quotas.items():
+                    if not isinstance(quota, dict):
+                        continue
+                    code = quota.get('code')
+                    if (model['model_id'], endpoint, quota_type, code) in mismatches:
+                        removed.append((quota_type, quota, 'mismatch'))
+                    elif code and self._missing_in(code, region):
+                        removed.append((quota_type, quota, 'missing'))
+                for quota_type, quota, reason in removed:
+                    reasons.add(reason)
+                    logger.info(f"  Removing {model['model_id']} -> {endpoint} -> {quota_type} "
+                                f"({quota.get('code')}) in {region}: {reason}")
+                    quotas[quota_type] = None
+                    modified += 1
+
+        if not modified:
             return
-        
-        logger.info(f"\nCleaning up {len(self.error_entries)} ERROR entries...")
-        
-        # Group by region
-        by_region = {}
-        for entry in self.error_entries:
-            region = entry['source_region']
-            if region not in by_region:
-                by_region[region] = []
-            by_region[region].append(entry)
-        
-        # Update each region's YAML
-        for region, entries in by_region.items():
-            self._cleanup_region_errors(region, entries)
-    
-    def _cleanup_region_errors(self, region: str, entries: List[Dict]):
-        """Clean up errors for a specific region"""
-        yaml_file = get_writable_path(f'fm-list-{region}.yml')
-        data = load_yaml(str(yaml_file))
-        
-        modified = False
-        for entry in entries:
-            model_id = entry['model_id']
-            endpoint = entry['endpoint']
-            quota_type = entry['quota_type']
-            
-            for model in data.get('models', []):
-                if model['model_id'] == model_id:
-                    if 'endpoints' in model and endpoint in model['endpoints']:
-                        if 'quotas' in model['endpoints'][endpoint]:
-                            if quota_type in model['endpoints'][endpoint]['quotas']:
-                                logger.info(f"  Removing {model_id} -> {endpoint} -> {quota_type}")
-                                model['endpoints'][endpoint]['quotas'][quota_type] = None
-                                modified = True
-        
-        if modified:
-            save_yaml(str(yaml_file), data)
-            logger.info(f"  ✓ Updated {yaml_file}")
-            
-            if getattr(self, 'update_bundle', False):
-                bundle_path = get_bundle_path()
-                if bundle_path:
-                    bundle_file = bundle_path / f'fm-list-{region}.yml'
-                    save_yaml(str(bundle_file), data)
-                    logger.info(f"  ✓ Updated {bundle_file} (bundled)")
-    
+        user_file = get_user_data_dir() / f'fm-list-{region}.yml'  # read-only: no mkdir
+        # Only an existing user copy is rewritten. Creating one from a bundled list would hide
+        # every later bundled update for that region; the analyzer applies the same checks
+        # when it reads quotas, so bundled lists are corrected by maintainers (--update-bundle).
+        written = False
+        bundle_path = get_bundle_path() if self.update_bundle else None
+        # With --update-bundle `data` is the checkout's list: never written over a user copy
+        if user_file.exists() and not bundle_path:
+            save_yaml(str(user_file), data)
+            self._files_written += 1
+            written = True
+            logger.info(f"  ✓ Updated {user_file}")
+        bundle_file = bundle_path / f'fm-list-{region}.yml' if bundle_path else None
+        # With --update-bundle `data` was read from this checkout file (_load_all_models), so
+        # the removals above are already in it. A region the checkout does not bundle came
+        # from another copy and is not written into the checkout.
+        if bundle_file and bundle_file.exists():
+            save_yaml(str(bundle_file), data)
+            self._files_written += 1
+            written = True
+            logger.info(f"  ✓ Updated {bundle_file} (bundled)")
+        if written:
+            self._removed += modified
+        else:
+            self._left_in_bundle += modified
+            # The analyzer re-applies the mismatch checks; a missing code is looked up and
+            # reported as missing, then the report shows usage without that limit
+            effect = 'the analyzer skips mismatched codes' if reasons == {'mismatch'} else \
+                'the analyzer skips mismatched codes and shows usage without the missing limits'
+            logger.info(f"  (bundled list for {region} left unchanged ({effect}); a maintainer fixes "
+                        f"it with --update-bundle)")
+
     def _generate_csv(self):
         """Generate CSV file with valid entries"""
         valid_rows = [
-            [e['model_id'], e['endpoint'], e['quota_type'], e['quota_code'], e['quota_name']]
-            for e in self.entries if e.get('quota_name') != 'ERROR'
+            [e['model_id'], e['endpoint'], e['quota_type'], e['quota_code'], e['quota_name'], e['partition']]
+            for e in self.entries if e.get('quota_name') not in ('ERROR', 'MISMATCH')
         ]
         
-        output_file = get_writable_path('quota-index.csv')
-        write_csv(
-            str(output_file),
-            ['model_id', 'endpoint', 'quota_type', 'quota_code', 'quota_name'],
-            valid_rows
-        )
-        logger.info(f"\n✓ Generated {output_file} with {len(valid_rows)} valid entries")
+        bundle_path = get_bundle_path() if self.update_bundle else None
+        if bundle_path:
+            # The rows come from the checkout's lists only: the user's index (of the user's
+            # own lists) is left alone, as every --update-bundle refresh leaves user copies
+            bundle_file = bundle_path / 'quota-index.csv'
+            write_csv(str(bundle_file), CSV_HEADERS, valid_rows)
+            logger.info(f"\n✓ Generated {bundle_file} (bundled) with {len(valid_rows)} valid entries")
+        else:
+            output_file = get_writable_path('quota-index.csv')
+            write_csv(str(output_file), CSV_HEADERS, valid_rows)
+            logger.info(f"\n✓ Generated {output_file} with {len(valid_rows)} valid entries")
         
-        if getattr(self, 'update_bundle', False):
-            bundle_path = get_bundle_path()
-            if bundle_path:
-                bundle_file = bundle_path / 'quota-index.csv'
-                write_csv(
-                    str(bundle_file),
-                    ['model_id', 'endpoint', 'quota_type', 'quota_code', 'quota_name'],
-                    valid_rows
-                )
-                logger.info(f"✓ Generated {bundle_file} (bundled)")
-        
-        if self.error_entries:
-            logger.info(f"✓ Cleaned up {len(self.error_entries)} ERROR entries from YAML files")
+        # Codes removed in any region (not only index entries), and only files really written
+        if self._removed:
+            logger.info(f"✓ Removed {self._removed} quota code(s) from {self._files_written} fm-list file(s)")
+        if self._left_in_bundle:
+            logger.info(f"{self._left_in_bundle} quota code(s) to remove were found only in bundled lists, "
+                        f"which were left unchanged (maintainers: --update-bundle)")
 
 
 def main():
