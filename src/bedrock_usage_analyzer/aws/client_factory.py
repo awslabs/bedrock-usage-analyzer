@@ -21,8 +21,8 @@ DEFAULT_MAX_POOL_CONNECTIONS = 50
 # Bulk data calls (metric fetches, quota lookups, LLM mapping) are throttled under load,
 # so they retry longer with client-side rate adaptation. Everything else, including the
 # Bedrock control-plane calls made while the user answers prompts, uses the standard
-# policy with up to 4 attempts (max_attempts counts retries) and a 10 s connect timeout
-# per attempt, so a bad network fails in under a minute rather than many.
+# policy with up to 4 attempts (max_attempts counts retries), a 10 s connect timeout and a
+# 20 s read timeout per attempt, so a bad network fails in about a minute rather than many.
 _BULK_SERVICES = {'cloudwatch', 'service-quotas', 'bedrock-runtime'}
 
 
@@ -42,7 +42,12 @@ def create_client(service: str, region: Optional[str] = None,
             retries = {'max_attempts': 8, 'mode': 'adaptive'}
         else:
             retries = {'max_attempts': 3, 'mode': 'standard'}
-        config = Config(retries=retries, max_pool_connections=max_pool_connections, connect_timeout=10)
+        # A stalled read (a proxy that accepts and never answers) fails within read_timeout
+        # per attempt instead of botocore's 60 s; Bedrock Runtime keeps the default because a
+        # model reply can legitimately take longer
+        read_timeout = 60 if service == 'bedrock-runtime' else 20
+        config = Config(retries=retries, max_pool_connections=max_pool_connections, connect_timeout=10,
+                        read_timeout=read_timeout)
     if region:
         return boto3.client(service, region_name=region, config=config)
     return boto3.client(service, config=config)

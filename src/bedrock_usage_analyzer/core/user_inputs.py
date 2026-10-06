@@ -380,11 +380,21 @@ class UserInputs:
         try:
             return self._get_profile_fetcher().resolve_application_profile(identifier)
         except Exception as e:
+            if not self._listing_error():
+                raise
             # Not silent: an application profile name with '.' or ':' would otherwise be
             # analyzed as a model ID without saying why
             logger.warning(f"  WARNING: could not list {self._failed_listing()} inference profiles in {self.region}, "
                            f"so {identifier} is treated as a model or system profile ID: {e}")
             return None
+
+    def _listing_error(self) -> bool:
+        """True when the last profile-fetcher error was a listing (or client) failure, not a bug.
+
+        A bug in source resolution is raised, not reported as missing permissions.
+        """
+        fetcher = self.profile_fetcher
+        return not isinstance(fetcher, InferenceProfileFetcher) or fetcher.listing_failed()
 
     def _failed_listing(self) -> str:
         """'application' or 'system': which listing failed (see InferenceProfileFetcher.failed_listing)."""
@@ -418,6 +428,8 @@ class UserInputs:
         try:
             app_profiles = self._get_profile_fetcher().list_application_profiles()
         except Exception as e:
+            if not self._listing_error():
+                raise
             logger.info(f"  Could not list {self._failed_listing()} inference profiles: {e}")
             app_profiles = []
 
@@ -439,7 +451,11 @@ class UserInputs:
         """Pick one or more application inference profiles by number."""
         print("\nApplication inference profiles:")
         for i, app in enumerate(app_profiles, 1):
-            print(f"  {i}. {app['name']} ({app['id']}) - based on {app['source'] or 'an unknown endpoint'}")
+            # A guessed source the region no longer lists is marked here, before it is picked
+            retired = app['profile_prefix'] not in (None, UNKNOWN_SOURCE) and app['source'] and \
+                not self._is_system_profile(app['source'])
+            note = f" (not offered in {self.region} any more)" if retired else ""
+            print(f"  {i}. {app['name']} ({app['id']}) - based on {app['source'] or 'an unknown endpoint'}{note}")
         while True:
             try:
                 text = input(f"\nSelect profiles (e.g. 1,3-4 or all): ")

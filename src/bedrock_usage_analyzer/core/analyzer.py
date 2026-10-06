@@ -17,7 +17,7 @@ from bedrock_usage_analyzer.core.output_generator import OutputGenerator
 from bedrock_usage_analyzer.aws.bedrock import endpoint_id, get_endpoint_quota_keywords, get_regional_profile_prefixes
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.servicequotas import (
-    QUOTA_MISSING, QUOTA_OK, list_quota_codes, lookup_quota)
+    QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK, list_quota_codes, lookup_quota)
 from bedrock_usage_analyzer.utils.yaml_handler import (
     endpoint_quotas, has_endpoint, load_fm_list, profile_endpoints)
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
@@ -137,22 +137,28 @@ class BedrockAnalyzer:
                 wanted.append((quota_type, quota_data, key))
 
         def lookup(code):
-            # One lookup per code and run: targets sharing an endpoint reuse the result
-            if code not in self._quota_results:
-                self._quota_results[code] = lookup_quota(
-                    code, self.region, self._quota_listings, use_listing=self._use_quota_listing)
-            return self._quota_results[code]
+            # One lookup per code and run: targets sharing an endpoint reuse the result. A failed
+            # lookup is not kept, so the next target sharing the code tries again
+            if code in self._quota_results:
+                return self._quota_results[code]
+            result = lookup_quota(code, self.region, self._quota_listings, use_listing=self._use_quota_listing)
+            if result[0] != QUOTA_ERROR:
+                self._quota_results[code] = result
+            return result
 
         if self._use_quota_listing and self.region not in self._quota_listings:
             # The region's listing once, before the pool (never listed again from the threads)
             self._quota_listings[self.region] = list_quota_codes(self.region, quiet_denied=True)
         # Per-code lookups (up to two calls each) run in parallel, as confirm_statuses does
         # (no pool when at most one code is not yet cached: nothing to run in parallel)
-        uncached = {item[1]['code'] for item in wanted} - set(self._quota_results)
+        uncached = sorted({item[1]['code'] for item in wanted} - set(self._quota_results))
+        fetched = {}  # this target's results, failed lookups included (looked up once here)
         if len(uncached) > 1:
             with ThreadPoolExecutor(max_workers=min(4, len(uncached))) as pool:
-                list(pool.map(lookup, sorted(uncached)))
-        results = [lookup(item[1]['code']) for item in wanted]
+                fetched = dict(zip(uncached, pool.map(lookup, uncached)))
+        for code in {item[1]['code'] for item in wanted} - set(fetched):
+            fetched[code] = lookup(code)
+        results = [fetched[item[1]['code']] for item in wanted]
         for (quota_type, quota_data, key), (status, quota) in zip(wanted, results):
             code = quota_data['code']
             if status == QUOTA_OK and quota.get('Value') is None:

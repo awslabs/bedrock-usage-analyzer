@@ -317,6 +317,18 @@ def test_quotas_come_from_the_region_listing(analyzer, monkeypatch):
     assert quotas['tpm']['value'] == 123.0 and asked == ['L-2']                # one lookup, for the unlisted code
 
 
+def test_failed_quota_lookup_is_retried_by_the_next_target(analyzer, monkeypatch):
+    from bedrock_usage_analyzer.aws.servicequotas import QUOTA_ERROR, QUOTA_OK
+    answers = [(QUOTA_ERROR, None), (QUOTA_OK, {'Value': 7.0})]
+    calls = []
+    monkeypatch.setattr(analyzer_module, 'lookup_quota',
+                        lambda code, region, listings, use_listing=False: calls.append(code) or answers.pop(0))
+    codes = {'tpm': {'code': 'L-1', 'name': 'x'}}
+    assert analyzer._fetch_quotas(HAIKU, codes)['tpm'] is None               # throttled: no limit
+    assert analyzer._fetch_quotas(HAIKU, codes)['tpm']['value'] == 7.0       # tried again
+    assert calls == ['L-1', 'L-1']
+
+
 def test_report_names_tell_large_profile_sets_apart():
     a = BedrockAnalyzer._file_label('us.x', ['a1', 'a2', 'a3', 'a4'])
     b = BedrockAnalyzer._file_label('us.x', ['b1', 'b2', 'b3', 'b4'])

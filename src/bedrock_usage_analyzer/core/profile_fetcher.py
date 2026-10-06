@@ -117,6 +117,10 @@ class InferenceProfileFetcher:
                 logger.debug(f"Listing {kind} inference profiles failed (attempt {state['failures']}): {e}")
         return state['result']
 
+    def listing_failed(self) -> bool:
+        """True when a profile listing gave up (the error _list_once raises for the run)."""
+        return any(state['error'] is not None for state in self._listings.values())
+
     def failed_listing(self) -> str:
         """'application' or 'system': the listing that made list_application_profiles fail
         (it also needs the system listing, to resolve sources)."""
@@ -134,7 +138,8 @@ class InferenceProfileFetcher:
                     continue  # malformed summary: nothing to index
                 self._system_ids.add(profile['inferenceProfileId'])
                 # Empty ARNs dropped, as on the application side, so the routing sets compare equal
-                arns = frozenset(filter(None, (m.get('modelArn') for m in profile.get('models') or [])))
+                arns = frozenset(filter(None, (m.get('modelArn') for m in profile.get('models') or []
+                                               if isinstance(m, dict))))
                 if arns:
                     # Several profiles can share one routing set (jp.X and apac.X when a model
                     # is offered only in Tokyo and Osaka), so keep every candidate
@@ -434,8 +439,8 @@ class InferenceProfileFetcher:
         try:
             app_profiles = self.list_application_profiles()
         except Exception as e:
-            if wanted:
-                raise
+            if wanted or not self.listing_failed():
+                raise  # (not a listing failure: a bug, shown as such rather than as missing permissions)
             # e.g. no bedrock:ListInferenceProfiles permission: still analyze the endpoint itself,
             # but say plainly that the report is missing its application profiles
             # The application listing also needs the system one (to resolve sources): name the one that failed

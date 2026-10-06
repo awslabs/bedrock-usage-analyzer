@@ -718,6 +718,20 @@ def test_null_model_arn_in_an_application_profile_does_not_break_the_listing():
     assert ids == ['good0000001']
 
 
+def test_malformed_system_model_entry_is_skipped():
+    system = [{'inferenceProfileId': f"jp.{HAIKU}", 'models': [None, 'x']}, system_profile(f"au.{HAIKU}", AU_ARNS)]
+    fetcher = InferenceProfileFetcher(FakeBedrock(system=system, application=[app_profile('ok000000001', 'o', AU_ARNS)]))
+    assert fetcher.list_application_profiles()[0]['source'] == f"au.{HAIKU}"
+
+
+def test_a_resolution_bug_is_raised_not_reported_as_a_listing_failure(monkeypatch):
+    fetcher = InferenceProfileFetcher(FakeBedrock(system=[system_profile(f"au.{HAIKU}", AU_ARNS)],
+                                                  application=[app_profile('bug00000001', 'b', AU_ARNS)]))
+    monkeypatch.setattr(fetcher, 'resolve_endpoints', lambda arns: 1 / 0)
+    with pytest.raises(ZeroDivisionError):
+        fetcher.find_profiles(HAIKU, 'au')
+
+
 def test_copy_of_a_custom_model_is_named_as_such():
     apps = [app_profile('custom00001', 'mine', ['arn:aws:bedrock:us-east-1:1:custom-model/x'])]
     fetcher = InferenceProfileFetcher(FakeBedrock(application=apps))

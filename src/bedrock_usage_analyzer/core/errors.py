@@ -81,7 +81,7 @@ def troubleshooting_hint(error: Exception, region: Optional[str] = None) -> Opti
         if partition and partition != COMMERCIAL:
             hint += (f" {partition_name} uses separate accounts and credentials from"
                      f" commercial AWS; use a profile for that partition (AWS_PROFILE=...)"
-                     f" and pass --region {region}.")
+                     f" with region {region} (AWS_REGION={region}, or --region for bua analyze).")
         return hint
     if is_access_denied(error):
         return ("The credentials lack a required permission. See the IAM permissions"
