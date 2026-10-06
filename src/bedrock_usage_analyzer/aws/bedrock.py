@@ -20,6 +20,12 @@ logger = logging.getLogger(__name__)
 QUOTA_KEYWORD_ON_DEMAND = 'on-demand'
 QUOTA_KEYWORD_CROSS_REGION = 'cross-region'
 QUOTA_KEYWORD_GLOBAL = 'global'
+QUOTA_KEYWORD_CUSTOM = 'custom model deployment'
+
+# The fm-list endpoint holding a base model's on-demand custom model deployment quotas
+# ("(Model customization) Sum of on demand custom model deployment tokens per minute for
+# Amazon Nova Lite"). Not an inference profile prefix: 'custom.<model>' is never invoked.
+CUSTOM_ENDPOINT = 'custom'
 
 # Used only when no prefix-mapping.yml can be read at all (the bundled file is the source
 # of truth and normally always present)
@@ -130,9 +136,12 @@ def get_endpoint_quota_keywords() -> Dict[str, str]:
         mapping = []
     if not mapping:
         # No prefix-mapping.yml at all: the keywords of the prefixes this release knows
-        return {'base': QUOTA_KEYWORD_ON_DEMAND, 'global': QUOTA_KEYWORD_GLOBAL,
-                **{p: QUOTA_KEYWORD_CROSS_REGION for p in FALLBACK_PROFILE_PREFIXES - {'global'}}}
-    return {m['prefix']: m['quota_keyword'] for m in mapping}
+        keywords = {'base': QUOTA_KEYWORD_ON_DEMAND, 'global': QUOTA_KEYWORD_GLOBAL,
+                    **{p: QUOTA_KEYWORD_CROSS_REGION for p in FALLBACK_PROFILE_PREFIXES - {'global'}}}
+    else:
+        keywords = {m['prefix']: m['quota_keyword'] for m in mapping}
+    keywords.setdefault(CUSTOM_ENDPOINT, QUOTA_KEYWORD_CUSTOM)  # built in, not in prefix-mapping.yml
+    return keywords
 
 
 def get_endpoint_descriptions() -> Dict[str, str]:
@@ -147,9 +156,12 @@ def get_endpoint_descriptions() -> Dict[str, str]:
         mapping = []
     if not mapping:
         # No prefix-mapping.yml at all: describe the prefixes this release knows
-        return {'base': 'on-demand', 'global': 'global inference profile',
-                **{p: 'cross-region inference profile' for p in FALLBACK_PROFILE_PREFIXES - {'global'}}}
-    return {m['prefix']: m.get('description') or m['prefix'] for m in mapping}
+        descriptions = {'base': 'on-demand', 'global': 'global inference profile',
+                        **{p: 'cross-region inference profile' for p in FALLBACK_PROFILE_PREFIXES - {'global'}}}
+    else:
+        descriptions = {m['prefix']: m.get('description') or m['prefix'] for m in mapping}
+    descriptions.setdefault(CUSTOM_ENDPOINT, 'on-demand custom model deployment')
+    return descriptions
 
 
 def get_regional_profile_prefixes() -> List[str]:
@@ -334,11 +346,15 @@ def fetch_foundation_models(region: str) -> Optional[List[Dict]]:
         
         models = []
         for model in response.get('modelSummaries', []):
-            models.append({
+            entry = {
                 'model_id': model['modelId'],
                 'provider': model['providerName'],
                 'inference_types': model.get('inferenceTypesSupported', [])
-            })
+            }
+            if model.get('customizationsSupported'):
+                # Custom models of it can be deployed on demand: their quotas are its 'custom' endpoint
+                entry['customizations'] = list(model['customizationsSupported'])
+            models.append(entry)
         
         return models
     

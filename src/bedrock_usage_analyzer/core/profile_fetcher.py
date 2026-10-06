@@ -10,6 +10,7 @@ from typing import Dict, FrozenSet, Iterable, List, Optional
 from bedrock_usage_analyzer.core.errors import is_access_denied
 from bedrock_usage_analyzer.utils.yaml_handler import endpoint_keys
 from bedrock_usage_analyzer.aws.bedrock import (
+    CUSTOM_ENDPOINT,
     endpoint_id,
     get_default_region_prefix_map,
     list_inference_profiles,
@@ -17,6 +18,7 @@ from bedrock_usage_analyzer.aws.bedrock import (
     region_from_arn,
     region_group,
 )
+from bedrock_usage_analyzer.aws.custom_models import deployment_short_id
 
 logger = logging.getLogger(__name__)
 
@@ -412,6 +414,20 @@ class InferenceProfileFetcher:
             self._tags_cache[profile_arn] = tags
         return self._tags_cache[profile_arn]
 
+    def _deployment_targets(self, deployment_arns):
+        """(ARNs, names, metadata) of custom model deployments, named by their deployment name."""
+        names: Dict[str, str] = {}
+        metadata: Dict[str, Dict] = {}
+        for arn in deployment_arns:
+            try:
+                deployment = self.bedrock_client.get_custom_model_deployment(customModelDeploymentIdentifier=arn)
+                names[arn] = deployment.get('modelDeploymentName') or deployment_short_id(arn)
+            except Exception as e:  # the name is cosmetic: the ARN still gives the metrics
+                logger.debug(f"Could not read custom model deployment {arn}: {e}")
+                names[arn] = deployment_short_id(arn)
+            metadata[arn] = {'id': deployment_short_id(arn), 'tags': {}}
+        return list(deployment_arns), names, metadata
+
     def find_profiles(self, model_id, profile_prefix, application_profile_ids=None):
         """Find the endpoints to analyze for a model.
 
@@ -423,6 +439,10 @@ class InferenceProfileFetcher:
             tuple: (profiles list, profile_names dict, profile_metadata dict)
                    profile_metadata contains 'id' and 'tags' for each profile
         """
+        if profile_prefix == CUSTOM_ENDPOINT:
+            # Custom model deployments: CloudWatch reports each one under its deployment ARN
+            # (no application profiles; the base model's 'custom' quotas apply)
+            return self._deployment_targets(application_profile_ids or [])
         logger.info("  Discovering inference profiles...")
         target_endpoint = endpoint_id(model_id, profile_prefix)
 

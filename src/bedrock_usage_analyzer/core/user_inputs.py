@@ -8,8 +8,9 @@ import sys
 import logging
 from typing import Dict, List, Optional, Sequence, Union
 
-from ..aws.bedrock import endpoint_id, region_from_arn, split_profile_id
+from ..aws.bedrock import CUSTOM_ENDPOINT, endpoint_id, region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
+from ..aws.custom_models import DEPLOYMENT_KIND, deployment_short_id, list_deployments, resolve_deployment
 from ..core.errors import troubleshooting_hint
 from ..core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
 from ..sync.regions import load_region_names
@@ -311,6 +312,8 @@ class UserInputs:
                 sys.exit(1)
             if kind == 'application-inference-profile':
                 return self._application_profile_config(value)
+            if kind == DEPLOYMENT_KIND and ident:
+                return self._custom_deployment_config(value)
             if kind in ('inference-profile', 'foundation-model') and ident:
                 value = ident
             else:
@@ -401,6 +404,32 @@ class UserInputs:
         fetcher = self.profile_fetcher
         return fetcher.failed_listing() if isinstance(fetcher, InferenceProfileFetcher) else 'application'
 
+    def _custom_deployment_config(self, deployment_arn, info=None):
+        """Analysis target for an on-demand custom model deployment.
+
+        Its usage is reported under the deployment ARN; its limits are the base model's
+        custom model deployment quotas (the fm-list's 'custom' endpoint of that model).
+        """
+        if info is None:
+            try:
+                info = resolve_deployment(create_client('bedrock', self.region), deployment_arn)
+            except Exception as e:
+                logger.error(f"Could not read custom model deployment {deployment_arn} in {self.region}: {e}")
+                hint = troubleshooting_hint(e, self.region)
+                if hint:
+                    logger.error(f"Hint: {hint}")
+                sys.exit(1)
+        base = info.get('base_model_id')
+        if not base:
+            # e.g. a model imported with Custom Model Import: no base model, so no mapped quotas
+            logger.warning(f"  WARNING: custom model deployment {info['name']} has no foundation base model; "
+                           f"the report shows its usage without limits")
+            base = deployment_short_id(info['arn'])
+        else:
+            logger.info(f"  Custom model deployment {info['name']} ({deployment_short_id(info['arn'])}) "
+                        f"is based on {base}")
+        return {'model_id': base, 'profile_prefix': CUSTOM_ENDPOINT, 'application_profile_ids': [info['arn']]}
+
     def _application_profile_config(self, identifier, profile=None):
         if profile is None:
             try:
@@ -435,19 +464,45 @@ class UserInputs:
             logger.info(f"  Could not list {self._failed_listing()} inference profiles: {e}")
             app_profiles = []
 
+        deployments = self._custom_deployments()
+        modes = ['A foundation model (includes the application inference profiles created from it)']
         if app_profiles:
-            mode = select_from_list(
-                "What do you want to analyze?",
-                ['A foundation model (includes the application inference profiles created from it)',
-                 f'Specific application inference profiles ({len(app_profiles)} in {region})'],
-                allow_cancel=False,
-                input_prompt="\nSelect (1-2): "
-            )
+            modes.append(f'Specific application inference profiles ({len(app_profiles)} in {region})')
+        if deployments:
+            modes.append(f'Custom model deployments ({len(deployments)} in {region})')
+        if len(modes) > 1:
+            mode = select_from_list("What do you want to analyze?", modes, allow_cancel=False,
+                                    input_prompt=f"\nSelect (1-{len(modes)}): ")
             if mode.startswith('Specific'):
                 return self._select_application_profiles(app_profiles)
+            if mode.startswith('Custom'):
+                return self._select_custom_deployments(deployments)
 
         config = self._select_model(region)
         return [config] if config else []
+
+    def _custom_deployments(self) -> List[Dict]:
+        """The region's custom model deployments ([] when there are none or they cannot be listed)."""
+        try:
+            return list_deployments(self._get_profile_fetcher().bedrock_client)
+        except Exception as e:
+            # Optional: a missing bedrock:ListCustomModelDeployments only hides this choice
+            logger.debug(f"Could not list custom model deployments: {e}")
+            return []
+
+    def _select_custom_deployments(self, deployments) -> List[Dict]:
+        """Pick one or more custom model deployments by number."""
+        print("\nCustom model deployments:")
+        for i, deployment in enumerate(deployments, 1):
+            print(f"  {i}. {deployment['name']} ({deployment_short_id(deployment['arn'])}) - {deployment['status']}")
+        while True:
+            try:
+                text = input("\nSelect deployments (e.g. 1,3-4 or all): ")
+                indices = parse_selection(text, len(deployments))
+                break
+            except ValueError as e:
+                print(f"Please enter valid numbers: {e}")
+        return [self._custom_deployment_config(deployments[i]['arn']) for i in indices]
 
     def _select_application_profiles(self, app_profiles) -> List[Dict]:
         """Pick one or more application inference profiles by number."""
@@ -510,7 +565,8 @@ class UserInputs:
 
         # Get endpoints for selected model
         # Endpoint keys, a legacy entry's 'base' included (as -m and the analyzer read it)
-        endpoints = endpoint_keys(selected_model)
+        # ('custom' holds custom model deployment quotas: deployments are picked on their own)
+        endpoints = endpoint_keys(selected_model) - {CUSTOM_ENDPOINT}
 
         # Derive inference profiles from endpoints (exclude 'base')
         inference_profiles = sorted(k for k in endpoints if k != 'base')

@@ -13,6 +13,8 @@ it lets the mapping through.
 import re
 from typing import Optional, Set
 
+from bedrock_usage_analyzer.aws.bedrock import CUSTOM_ENDPOINT
+
 _VERSION_TOKEN = re.compile(r'^\d{1,2}(?:\.\d{1,2})?$')
 _LETTERS_THEN_VERSION = re.compile(r'^([a-z]+)(\d{1,2}(?:\.\d{1,2})?)$')
 _API_VERSION_TOKEN = re.compile(r'^v\d+(?:\.\d+)?$')
@@ -85,6 +87,11 @@ def mapping_conflict(model_id: str, endpoint_type: str, quota_name: Optional[str
     # The shared tokens-per-day quota ('... (doubled for cross-region calls)') is also the
     # on-demand limit, so that note does not make it a cross-region quota
     name = quota_name.lower().replace('(doubled for cross-region calls)', '')
+    custom_quota = 'custom model' in name
+    if endpoint_type == CUSTOM_ENDPOINT and not custom_quota:
+        return "not a custom model deployment quota for a custom model endpoint"
+    if endpoint_type != CUSTOM_ENDPOINT and custom_quota:
+        return "custom model deployment quota for a foundation model endpoint"
     if endpoint_type in regional_prefixes and 'global' in name:
         return "global quota for a regional (geographic) cross-region endpoint"
     if endpoint_type == 'base' and 'cross-region' in name:

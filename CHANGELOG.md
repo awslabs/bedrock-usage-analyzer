@@ -2,6 +2,19 @@
 
 All notable changes to the Bedrock Usage Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Custom model deployments**: analyze on-demand custom model deployments, picked
+  interactively or passed with `-m <custom-model-deployment ARN>`. Usage comes from CloudWatch
+  under the deployment ARN; limits are the base model's "(Model customization) Sum of on demand
+  custom model deployment ..." quotas, mapped in the fm-list as the base model's `custom`
+  endpoint (added by `refresh fm-list` for models that support customization).
+
+### Changed
+- Refreshed bundled fm-lists and quota mappings (adds `amazon.nova-2-5-sonic` and new
+  inference profile endpoints).
+
 ## [0.6.0-beta] - 2026-09-30
 
 Combines the AWS GovCloud work from #5 and #6 into one partition layer and fixes #7.

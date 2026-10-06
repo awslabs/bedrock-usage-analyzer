@@ -70,7 +70,7 @@ def _claude_endpoints_in(region: str, limit: int = 12) -> list:
         model_id = model['model_id']
         if not model_id.startswith('anthropic.claude') or model_id.count(':') > 1:
             continue  # skip context-window variants such as ...-v1:0:200k
-        for prefix in sorted(endpoint_keys(model)):
+        for prefix in sorted(endpoint_keys(model) - {'custom'}):  # 'custom' is not invokable
             options.append(endpoint_id(model_id, prefix))
 
     def newest_first(option):

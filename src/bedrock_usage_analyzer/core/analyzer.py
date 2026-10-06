@@ -14,7 +14,9 @@ from bedrock_usage_analyzer.core.profile_fetcher import UNKNOWN_SOURCE, Inferenc
 from bedrock_usage_analyzer.sync.quota_rules import scrub_conflicting
 from bedrock_usage_analyzer.core.metrics_fetcher import CloudWatchMetricsFetcher
 from bedrock_usage_analyzer.core.output_generator import OutputGenerator
-from bedrock_usage_analyzer.aws.bedrock import endpoint_id, get_endpoint_quota_keywords, get_regional_profile_prefixes
+from bedrock_usage_analyzer.aws.bedrock import (
+    CUSTOM_ENDPOINT, endpoint_id, get_endpoint_quota_keywords, get_regional_profile_prefixes)
+from bedrock_usage_analyzer.aws.custom_models import deployment_short_id
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.servicequotas import (
     QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK, list_quota_codes, lookup_quota)
@@ -329,7 +331,7 @@ class BedrockAnalyzer:
 
             # Step 2: Fetch quotas
             quota_codes = self._load_quota_codes(model_id, profile_prefix)
-            retired = profile_prefix not in (None, UNKNOWN_SOURCE) and \
+            retired = profile_prefix not in (None, UNKNOWN_SOURCE, CUSTOM_ENDPOINT) and \
                 not self._system_profile_listed(endpoint_id(model_id, profile_prefix))
             if profile_prefix is None and app_ids:
                 # A base-model copy of a model the fm-list knows without an on-demand endpoint:
@@ -429,8 +431,16 @@ class BedrockAnalyzer:
             end_time_local = datetime.now(self.local_tz)
             if profile_prefix == UNKNOWN_SOURCE:
                 endpoint = f"{model_id} (source endpoint unknown)"
+            elif profile_prefix == CUSTOM_ENDPOINT:
+                endpoint = f"{model_id} (custom model deployment)"
             else:
                 endpoint = endpoint_id(model_id, profile_prefix)
+            if profile_prefix == CUSTOM_ENDPOINT:
+                # Deployment IDs, not their ARNs, in the file name
+                file_label = self._file_label(f"custom-deployment.{model_id}",
+                                              [deployment_short_id(a) for a in app_ids])
+            else:
+                file_label = self._file_label(endpoint, app_ids)
             scope = [profile_names.get(pid, pid) for pid in final_model_ids] if app_ids else []
 
             self.output_generator.generate({
@@ -447,7 +457,7 @@ class BedrockAnalyzer:
                     'region_info': region_info,
                     'endpoint': endpoint,
                     'application_profile_scope': scope,
-                    'file_label': self._file_label(endpoint, app_ids),
+                    'file_label': file_label,
                 }
             })
 

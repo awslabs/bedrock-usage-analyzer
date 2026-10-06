@@ -129,8 +129,9 @@ def endpoint_keys(model) -> set:
 
 
 def profile_endpoints(models, model_id):
-    """Inference profile prefixes (every endpoint but 'base') the fm-list has for ``model_id``."""
-    return sorted((fm_endpoints(models, model_id) or set()) - {'base'})
+    """Inference profile prefixes the fm-list has for ``model_id``: every endpoint but 'base'
+    and 'custom' (custom model deployment quotas, not a profile)."""
+    return sorted((fm_endpoints(models, model_id) or set()) - {'base', 'custom'})
 
 
 def has_endpoint(models, model_id, prefix):

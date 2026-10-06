@@ -9,6 +9,7 @@ from typing import List, Dict
 from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list, load_yaml, model_endpoints, save_yaml, valid_models
 from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.bedrock import (
+    CUSTOM_ENDPOINT,
     fetch_foundation_models,
     list_system_profiles,
     build_profile_map,
@@ -199,10 +200,16 @@ def refresh_region(region: str, update_bundle: bool = False):
             endpoints.pop('base', None)
         if profiles_listed:
             listed = set(profile_map.get(model_id, []))
-            for prefix in [p for p in endpoints if p != 'base' and p not in listed]:
+            for prefix in [p for p in endpoints if p not in ('base', CUSTOM_ENDPOINT) and p not in listed]:
                 del endpoints[prefix]
         if 'ON_DEMAND' in model.get('inference_types', []):
             endpoints.setdefault('base', _empty_endpoint())
+        # 'custom': quotas of the model's on-demand custom model deployments, while the region
+        # lets the model be customized
+        if model.get('customizations'):
+            endpoints.setdefault(CUSTOM_ENDPOINT, _empty_endpoint())
+        else:
+            endpoints.pop(CUSTOM_ENDPOINT, None)
         
         # Add inference profiles if available
         if model_id in profile_map:
