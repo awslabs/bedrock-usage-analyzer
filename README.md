@@ -311,7 +311,7 @@ bedrock-usage-analyzer analyze -r us-east-1 -y -g 5min -o ./results \
   -m arn:aws:bedrock:us-east-1:111122223333:custom-model-deployment/dep0example1
 ```
 
-The report shows the deployment's usage (CloudWatch records it under the deployment ARN) against the custom model deployment quotas of its base model, for example "(Model customization) Sum of on demand custom model deployment tokens per minute for Amazon Nova Lite". These quotas are mapped in the fm-list as the base model's `custom` endpoint. A model imported with Custom Model Import has no foundation base model, so its report shows usage without limits; so does a deployment whose details cannot be read (without the optional permissions above, a deployment ARN still gives its usage).
+The report shows the deployment's usage (CloudWatch records it under the deployment ARN) against the custom model deployment quotas of its base model, for example "(Model customization) Sum of on demand custom model deployment tokens per minute for Amazon Nova Lite". These quotas are mapped in the fm-list as the base model's `custom` endpoint. They are account-wide sums over every deployment of models customized from that base model, so select all of them (`all` in the list, or one `-m` per deployment) for one aggregated report; the tool names the ones left out. A model imported with Custom Model Import has no foundation base model, so its report shows usage without limits; so does a deployment whose details cannot be read (without the optional permissions above, a deployment ARN still gives its usage).
 
 ### Step 4b: Scripted/Non-Interactive Usage
 
