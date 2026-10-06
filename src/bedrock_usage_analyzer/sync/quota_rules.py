@@ -58,6 +58,25 @@ def model_version(model_id: str) -> Optional[str]:
     return '.'.join(run) if run else None
 
 
+def _version_inside_name(model_id: str) -> bool:
+    """True when the ID's version stands between name words, as in 'nova-2-5-sonic'.
+
+    Such a version is part of the model's name ('Nova 2 Sonic'), so a quota that names the
+    family without a version ('Amazon Nova Sonic') is another model's. A trailing version
+    ('pegasus-1-2-v1:0') or one glued to a word ('qwen3', 'kimi-k2.5') is often left out of
+    quota names, so it says nothing.
+    """
+    rest = model_id.split('.', 1)[1] if '.' in model_id else model_id
+    tokens = re.split(r'[-_]', rest.lower().split(':', 1)[0])
+    for i in range(1, len(tokens)):
+        if _VERSION_TOKEN.match(tokens[i]) and tokens[i - 1].isalpha():
+            j = i
+            while j < len(tokens) and _VERSION_TOKEN.match(tokens[j]):
+                j += 1
+            return j < len(tokens) and tokens[j].isalpha() and not _API_VERSION_TOKEN.match(tokens[j])
+    return False
+
+
 def _canonical(version: str) -> str:
     """'3.0' and '3' are the same generation."""
     return version[:-2] if version.endswith('.0') else version
@@ -111,6 +130,8 @@ def mapping_conflict(model_id: str, endpoint_type: str, quota_name: Optional[str
     versions = quota_versions(quota_name)
     if version and versions and version not in versions:
         return f"quota is for version {'/'.join(sorted(versions))}, model is {version}"
+    if version and not versions and _version_inside_name(model_id):
+        return f"quota names no version, model is {version}"
     return None
 
 

@@ -56,7 +56,7 @@ def _claude_endpoints_in(region: str, limit: int = 12) -> list:
     """Invokable Claude endpoint IDs listed in the region's fm-list (Haiku first, then newest)."""
     from bedrock_usage_analyzer.aws.bedrock import endpoint_id
     from bedrock_usage_analyzer.sync.quota_rules import model_version
-    from bedrock_usage_analyzer.utils.yaml_handler import endpoint_keys, load_fm_list
+    from bedrock_usage_analyzer.utils.yaml_handler import invokable_endpoint_keys, load_fm_list
     import yaml
     options = []
     try:
@@ -70,7 +70,7 @@ def _claude_endpoints_in(region: str, limit: int = 12) -> list:
         model_id = model['model_id']
         if not model_id.startswith('anthropic.claude') or model_id.count(':') > 1:
             continue  # skip context-window variants such as ...-v1:0:200k
-        for prefix in sorted(endpoint_keys(model) - {'custom'}):  # 'custom' is not invokable
+        for prefix in sorted(invokable_endpoint_keys(model)):
             options.append(endpoint_id(model_id, prefix))
 
     def newest_first(option):

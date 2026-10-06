@@ -2,9 +2,7 @@ models:
 - endpoints:
     base:
       quotas:
-        concurrent:
-          code: L-FC3AC7EE
-          name: On-demand InvokeModel concurrent requests for Amazon Nova Sonic
+        concurrent: null
         rpm: null
         tpd: null
         tpm: null

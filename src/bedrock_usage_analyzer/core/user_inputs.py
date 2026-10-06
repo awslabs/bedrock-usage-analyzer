@@ -10,11 +10,11 @@ from typing import Dict, List, Optional, Sequence, Union
 
 from ..aws.bedrock import CUSTOM_ENDPOINT, endpoint_id, region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
-from ..aws.custom_models import DEPLOYMENT_KIND, deployment_short_id, list_deployments, resolve_deployment
+from ..aws.custom_models import DEPLOYMENT_KIND, deployment_short_id
 from ..core.errors import troubleshooting_hint
 from ..core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
 from ..sync.regions import load_region_names
-from ..utils.yaml_handler import endpoint_keys, fm_endpoints, has_endpoint, load_fm_list, profile_endpoints
+from ..utils.yaml_handler import fm_endpoints, has_endpoint, invokable_endpoint_keys, load_fm_list, profile_endpoints
 from ..utils.ui import require_credentials_partition, select_from_list
 from ..utils.partition import (
     filter_regions_by_partition,
@@ -404,21 +404,21 @@ class UserInputs:
         fetcher = self.profile_fetcher
         return fetcher.failed_listing() if isinstance(fetcher, InferenceProfileFetcher) else 'application'
 
-    def _custom_deployment_config(self, deployment_arn, info=None):
+    def _custom_deployment_config(self, deployment_arn, summary=None):
         """Analysis target for an on-demand custom model deployment.
 
         Its usage is reported under the deployment ARN; its limits are the base model's
         custom model deployment quotas (the fm-list's 'custom' endpoint of that model).
+        Exits when the deployment cannot be read (SystemExit; interactive callers catch it).
         """
-        if info is None:
-            try:
-                info = resolve_deployment(create_client('bedrock', self.region), deployment_arn)
-            except Exception as e:
-                logger.error(f"Could not read custom model deployment {deployment_arn} in {self.region}: {e}")
-                hint = troubleshooting_hint(e, self.region)
-                if hint:
-                    logger.error(f"Hint: {hint}")
-                sys.exit(1)
+        try:
+            info = self._get_profile_fetcher().resolve_custom_deployment(deployment_arn, summary)
+        except Exception as e:
+            logger.error(f"Could not read custom model deployment {deployment_arn} in {self.region}: {e}")
+            hint = troubleshooting_hint(e, self.region)
+            if hint:
+                logger.error(f"Hint: {hint}")
+            sys.exit(1)
         base = info.get('base_model_id')
         if not base:
             # e.g. a model imported with Custom Model Import: no base model, so no mapped quotas
@@ -447,6 +447,10 @@ class UserInputs:
                 # It exists (e.g. a copy of a custom model): say why it cannot be analyzed
                 logger.error(f"Application inference profile {identifier} routes to no foundation model; "
                              f"this tool has no metrics or quotas for it")
+            elif self._find_custom_deployment(identifier):
+                # The short ID (or name) the deployment list shows
+                deployment = self._find_custom_deployment(identifier)
+                return self._custom_deployment_config(deployment['arn'], deployment)
             else:
                 logger.error(f"Application inference profile not found in {self.region}: {identifier}")
             sys.exit(1)
@@ -484,11 +488,16 @@ class UserInputs:
     def _custom_deployments(self) -> List[Dict]:
         """The region's custom model deployments ([] when there are none or they cannot be listed)."""
         try:
-            return list_deployments(self._get_profile_fetcher().bedrock_client)
+            return self._get_profile_fetcher().list_custom_deployments()
         except Exception as e:
             # Optional: a missing bedrock:ListCustomModelDeployments only hides this choice
             logger.debug(f"Could not list custom model deployments: {e}")
             return []
+
+    def _find_custom_deployment(self, identifier) -> Optional[Dict]:
+        """The region's custom model deployment with this ID or name, or None."""
+        return next((d for d in self._custom_deployments()
+                     if identifier in (deployment_short_id(d['arn']), d['name'])), None)
 
     def _select_custom_deployments(self, deployments) -> List[Dict]:
         """Pick one or more custom model deployments by number."""
@@ -502,7 +511,14 @@ class UserInputs:
                 break
             except ValueError as e:
                 print(f"Please enter valid numbers: {e}")
-        return [self._custom_deployment_config(deployments[i]['arn']) for i in indices]
+        configs = []
+        for i in indices:
+            try:
+                configs.append(self._custom_deployment_config(deployments[i]['arn'], deployments[i]))
+            except SystemExit:
+                # Logged above; keep the session and the targets picked so far
+                logger.warning(f"  Skipping custom model deployment {deployments[i]['name']}")
+        return configs
 
     def _select_application_profiles(self, app_profiles) -> List[Dict]:
         """Pick one or more application inference profiles by number."""
@@ -565,8 +581,8 @@ class UserInputs:
 
         # Get endpoints for selected model
         # Endpoint keys, a legacy entry's 'base' included (as -m and the analyzer read it)
-        # ('custom' holds custom model deployment quotas: deployments are picked on their own)
-        endpoints = endpoint_keys(selected_model) - {CUSTOM_ENDPOINT}
+        # (not 'custom', custom model deployment quotas: deployments are picked on their own)
+        endpoints = invokable_endpoint_keys(selected_model)
 
         # Derive inference profiles from endpoints (exclude 'base')
         inference_profiles = sorted(k for k in endpoints if k != 'base')

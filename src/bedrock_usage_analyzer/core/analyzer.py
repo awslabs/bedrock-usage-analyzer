@@ -344,6 +344,12 @@ class BedrockAnalyzer:
                     else "the report will show usage without limits"
                 logger.info(f"  {endpoint_id(model_id, profile_prefix)} is not offered in "
                             f"{self.region}; {ending}")
+            elif not any(quota_codes.values()) and profile_prefix == CUSTOM_ENDPOINT and \
+                    not self._endpoint_listed(model_id, profile_prefix):
+                # A deployment without a listed customizable base model (said when it was
+                # selected): no refresh can map limits for it
+                logger.info(f"  No custom model deployment quotas are known for {model_id} in "
+                            f"{self.region}; the report will show usage without limits")
             elif not any(quota_codes.values()) and profile_prefix != UNKNOWN_SOURCE:
                 profiles = profile_endpoints(self._fm_list(), model_id)
                 if (profile_prefix or 'base') not in get_endpoint_quota_keywords():

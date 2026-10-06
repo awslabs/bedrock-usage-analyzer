@@ -9,11 +9,17 @@ All notable changes to the Bedrock Usage Analyzer will be documented in this fil
   interactively or passed with `-m <custom-model-deployment ARN>`. Usage comes from CloudWatch
   under the deployment ARN; limits are the base model's "(Model customization) Sum of on demand
   custom model deployment ..." quotas, mapped in the fm-list as the base model's `custom`
-  endpoint (added by `refresh fm-list` for models that support customization).
+  endpoint (added by `refresh fm-list` for models that support customization). A deployment
+  can also be passed by its ID or name.
+
+### Fixed
+- Quota mapping no longer gives an on-demand endpoint the latency-optimized quotas, or a model
+  whose version is part of its name (Nova 2.5 Sonic) the quota of the unversioned family.
 
 ### Changed
 - Refreshed bundled fm-lists and quota mappings (adds `amazon.nova-2-5-sonic` and new
   inference profile endpoints).
+- Requires boto3 1.39.7 or later (custom model deployment APIs).
 
 ## [0.6.0-beta] - 2026-09-30
 

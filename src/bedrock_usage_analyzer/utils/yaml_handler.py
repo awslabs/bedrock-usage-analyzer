@@ -5,6 +5,11 @@
 
 import yaml
 
+# The fm-list endpoint holding a base model's on-demand custom model deployment quotas
+# ("(Model customization) Sum of on demand custom model deployment tokens per minute for
+# Amazon Nova Lite"). Not an inference profile prefix: 'custom.<model>' is never invoked.
+CUSTOM_ENDPOINT = 'custom'
+
 
 class MetadataReadError(yaml.YAMLError):
     """A metadata file that exists but cannot be read (permissions, not UTF-8).
@@ -128,10 +133,16 @@ def endpoint_keys(model) -> set:
     return keys
 
 
+def invokable_endpoint_keys(model) -> set:
+    """Endpoint keys of a model that are invoked as '<prefix>.<model>' (or 'base'): all but
+    the custom model deployment quotas."""
+    return endpoint_keys(model) - {CUSTOM_ENDPOINT}
+
+
 def profile_endpoints(models, model_id):
     """Inference profile prefixes the fm-list has for ``model_id``: every endpoint but 'base'
-    and 'custom' (custom model deployment quotas, not a profile)."""
-    return sorted((fm_endpoints(models, model_id) or set()) - {'base', 'custom'})
+    and CUSTOM_ENDPOINT (custom model deployment quotas, not a profile)."""
+    return sorted((fm_endpoints(models, model_id) or set()) - {'base', CUSTOM_ENDPOINT})
 
 
 def has_endpoint(models, model_id, prefix):

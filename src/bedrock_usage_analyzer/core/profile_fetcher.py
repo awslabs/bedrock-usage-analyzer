@@ -18,7 +18,7 @@ from bedrock_usage_analyzer.aws.bedrock import (
     region_from_arn,
     region_group,
 )
-from bedrock_usage_analyzer.aws.custom_models import deployment_short_id
+from bedrock_usage_analyzer.aws.custom_models import deployment_short_id, list_deployments, resolve_deployment
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +95,22 @@ class InferenceProfileFetcher:
         self._by_model: Dict[str, List] = {}   # model ID -> [(routing set, profile IDs)]
         self._parts: Dict[str, tuple] = {}     # listed system profile ID -> (prefix, model ID)
         self._tags_cache: Dict[str, Dict[str, str]] = {}
+        self._deployments: Optional[List[Dict]] = None
+        self._deployment_names: Dict[str, str] = {}  # deployment ARN -> name (resolved ones)
+
+    # ------------------------------------------------------------------ custom models
+
+    def list_custom_deployments(self) -> List[Dict]:
+        """The region's custom model deployments, listed once per run (raises on errors)."""
+        if self._deployments is None:
+            self._deployments = list_deployments(self.bedrock_client)
+        return self._deployments
+
+    def resolve_custom_deployment(self, identifier: str, summary: Optional[Dict] = None) -> Dict:
+        """A deployment's ARN, name and base model ID (see custom_models.resolve_deployment)."""
+        info = resolve_deployment(self.bedrock_client, identifier, summary)
+        self._deployment_names[info['arn']] = info['name']
+        return info
 
     # ------------------------------------------------------------------ listing
 
@@ -419,12 +435,14 @@ class InferenceProfileFetcher:
         names: Dict[str, str] = {}
         metadata: Dict[str, Dict] = {}
         for arn in deployment_arns:
-            try:
-                deployment = self.bedrock_client.get_custom_model_deployment(customModelDeploymentIdentifier=arn)
-                names[arn] = deployment.get('modelDeploymentName') or deployment_short_id(arn)
-            except Exception as e:  # the name is cosmetic: the ARN still gives the metrics
-                logger.debug(f"Could not read custom model deployment {arn}: {e}")
-                names[arn] = deployment_short_id(arn)
+            name = self._deployment_names.get(arn)  # resolved when it was selected
+            if name is None:
+                try:
+                    deployment = self.bedrock_client.get_custom_model_deployment(customModelDeploymentIdentifier=arn)
+                    name = deployment.get('modelDeploymentName')
+                except Exception as e:  # the name is cosmetic: the ARN still gives the metrics
+                    logger.debug(f"Could not read custom model deployment {arn}: {e}")
+            names[arn] = name or deployment_short_id(arn)
             metadata[arn] = {'id': deployment_short_id(arn), 'tags': {}}
         return list(deployment_arns), names, metadata
 

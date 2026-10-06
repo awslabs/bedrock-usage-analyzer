@@ -248,11 +248,36 @@ def test_mapper_drops_conflicts_even_without_common_name(monkeypatch, tmp_path):
     assert load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]['endpoints']['us']['quotas']['tpm'] is None
 
 
+def test_mapper_skips_custom_endpoints_where_the_region_has_no_custom_quotas(monkeypatch, tmp_path):
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['us-east-1']})
+    save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [
+        {'model_id': 'amazon.nova-lite-v1:0:300k', 'provider': 'Amazon', 'endpoints': {'custom': {'quotas': {}}}}]})
+    monkeypatch.setattr(qm, 'list_quota_codes', lambda region: {'L-1': {
+        'QuotaCode': 'L-1', 'QuotaName': 'On-demand model inference tokens per minute for Amazon Nova Lite'}})
+    asked = []
+    monkeypatch.setattr(qm, 'extract_common_name', lambda *a: asked.append(a))
+    monkeypatch.setattr('bedrock_usage_analyzer.sync.regions.detect_partition', lambda _=None: ('aws', None))
+    qm.QuotaMapper('us-east-1', 'model', 'us-east-1').run()
+    assert asked == []
+
+
 def test_long_context_variant_quota_is_rejected():
     name = 'Model invocation max tokens per day for Anthropic Claude Sonnet 4.5 V1 1M Context Length (doubled for cross-region calls)'
     assert mapping_conflict('anthropic.claude-sonnet-4-5-20250929-v1:0', 'us', name, REGIONAL) == 'long-context variant quota'
     std = 'Model invocation max tokens per day for Anthropic Claude Sonnet 4.5 V1 (doubled for cross-region calls)'
     assert mapping_conflict('anthropic.claude-sonnet-4-5-20250929-v1:0', 'us', std, REGIONAL) is None
+
+
+def test_a_version_inside_the_name_needs_it_in_the_quota():
+    v1 = 'On-demand InvokeModel concurrent requests for Amazon Nova Sonic'
+    assert mapping_conflict('amazon.nova-2-5-sonic', 'base', v1, REGIONAL) == 'quota names no version, model is 2.5'
+    assert mapping_conflict('amazon.nova-sonic-v1:0', 'base', v1, REGIONAL) is None
+    # A trailing or glued version is often left out of quota names
+    assert mapping_conflict('twelvelabs.pegasus-1-2-v1:0', 'base',
+                            'On-demand model inference requests per minute for Twelve Labs Pegasus', REGIONAL) is None
+    assert mapping_conflict('qwen.qwen3-32b-v1:0', 'base',
+                            'On-demand model inference tokens per minute for Qwen3 32B V1', REGIONAL) is None
 
 
 def test_latency_optimized_quota_is_rejected():

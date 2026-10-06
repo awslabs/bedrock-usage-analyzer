@@ -12,6 +12,8 @@ import yaml
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.core.errors import is_access_denied
 from bedrock_usage_analyzer.utils.partition import build_arn, partition_region_prefix
+# The fm-list endpoint of custom model deployment quotas, defined with the fm-list readers
+from bedrock_usage_analyzer.utils.yaml_handler import CUSTOM_ENDPOINT  # noqa: F401 (re-exported)
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +23,6 @@ QUOTA_KEYWORD_ON_DEMAND = 'on-demand'
 QUOTA_KEYWORD_CROSS_REGION = 'cross-region'
 QUOTA_KEYWORD_GLOBAL = 'global'
 QUOTA_KEYWORD_CUSTOM = 'custom model deployment'
-
-# The fm-list endpoint holding a base model's on-demand custom model deployment quotas
-# ("(Model customization) Sum of on demand custom model deployment tokens per minute for
-# Amazon Nova Lite"). Not an inference profile prefix: 'custom.<model>' is never invoked.
-CUSTOM_ENDPOINT = 'custom'
 
 # Used only when no prefix-mapping.yml can be read at all (the bundled file is the source
 # of truth and normally always present)

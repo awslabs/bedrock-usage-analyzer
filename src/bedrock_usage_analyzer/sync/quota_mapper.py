@@ -17,7 +17,8 @@ from bedrock_usage_analyzer.utils.yaml_handler import (
 from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, is_missing, list_quota_codes
 from bedrock_usage_analyzer.aws.bedrock_llm import extract_common_name, extract_quota_codes
-from bedrock_usage_analyzer.aws.bedrock import get_endpoint_quota_keywords, get_regional_profile_prefixes
+from bedrock_usage_analyzer.aws.bedrock import (
+    CUSTOM_ENDPOINT, QUOTA_KEYWORD_CUSTOM, get_endpoint_quota_keywords, get_regional_profile_prefixes)
 from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict, measures_metric, scrub_conflicting
 
 logger = logging.getLogger(__name__)
@@ -124,11 +125,15 @@ class QuotaMapper:
         unlisted = {(code, region) for _, _, _, code in quota_slots(fm_list) if code not in listed_codes}
         if listed_codes:
             confirm_statuses(unlisted, self._quota_checks)
+        # Most regions have no custom model deployment quotas: their 'custom' endpoints are
+        # skipped there, so a customizable-only model costs no LLM call
+        custom_quotas = any(QUOTA_KEYWORD_CUSTOM in (q.get('QuotaName') or '').lower() for q in quotas)
         for i, fm in enumerate(fm_list, 1):
             model_id = fm['model_id']
             logger.info(f"    [{i}/{len(fm_list)}] {model_id}... ", extra={'end': ''})
 
-            endpoints_to_process = self._get_endpoints_to_process(fm)
+            endpoints_to_process = [e for e in self._get_endpoints_to_process(fm)
+                                    if custom_quotas or e != CUSTOM_ENDPOINT]
             # The region's quotas were just listed: a saved code not in the list is gone
             self._drop_unlisted_saved_codes(fm, listed_codes, region, self._quota_checks)
 

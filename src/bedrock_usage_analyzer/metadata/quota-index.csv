@@ -3,7 +3,6 @@ ai21.jamba-1-5-large-v1:0,base,rpm,L-F4CAA0FD,On-demand model inference requests
 ai21.jamba-1-5-large-v1:0,base,tpm,L-CFAB19FF,On-demand model inference tokens per minute for AI21 Labs Jamba 1.5 Large,aws
 ai21.jamba-1-5-mini-v1:0,base,rpm,L-0449ADC5,On-demand model inference requests per minute for AI21 Labs Jamba 1.5 Mini,aws
 ai21.jamba-1-5-mini-v1:0,base,tpm,L-5A778346,On-demand model inference tokens per minute for AI21 Labs Jamba 1.5 Mini,aws
-amazon.nova-2-5-sonic,base,concurrent,L-FC3AC7EE,On-demand InvokeModel concurrent requests for Amazon Nova Sonic,aws
 amazon.nova-2-lite-v1:0,global,rpm,L-D5F39C2F,Global cross-region model inference requests per minute for Amazon Nova 2 Lite,aws
 amazon.nova-2-lite-v1:0,global,tpd,L-AD940EDE,Global cross-region model inference tokens per day for Amazon Nova 2 Lite,aws
 amazon.nova-2-lite-v1:0,global,tpm,L-71C69B70,Global cross-region model inference tokens per minute for Amazon Nova 2 Lite,aws
