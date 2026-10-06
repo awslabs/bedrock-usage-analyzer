@@ -13,6 +13,9 @@ from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
+# Length of each report period, in days
+PERIOD_DAYS = {'1hour': 1 / 24, '1day': 1, '7days': 7, '14days': 14, '30days': 30}
+
 class CloudWatchMetricsFetcher:
     """Handles CloudWatch metrics retrieval"""
     
@@ -248,8 +251,7 @@ class CloudWatchMetricsFetcher:
         end_time = self._align_to_period_boundary(end_time, 60)
         
         # Build fetch configs for token metrics (always 1-min) and other metrics (configured)
-        max_days = max({'1hour': 1/24, '1day': 1, '7days': 7, '14days': 14, '30days': 30}[tp] 
-                       for tp in granularity_config.keys())
+        max_days = max(PERIOD_DAYS[tp] for tp in granularity_config.keys())
         target_start = end_time - timedelta(days=max_days)
         
         # Config 1: Token metrics at 1-min (for TPM/RPM peak detection)
@@ -266,7 +268,7 @@ class CloudWatchMetricsFetcher:
         for time_period, period in granularity_config.items():
             if period not in period_ranges:
                 period_ranges[period] = []
-            days = {'1hour': 1/24, '1day': 1, '7days': 7, '14days': 14, '30days': 30}[time_period]
+            days = PERIOD_DAYS[time_period]
             period_ranges[period].append(days)
         
         for period, day_list in period_ranges.items():

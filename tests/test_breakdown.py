@@ -109,13 +109,15 @@ def row(at, principal, i=100, o=50, n=1, model=US_HAIKU, **extra):
 @pytest.mark.parametrize('value,kind,key', [
     ('principal', 'principal', None), ('session', 'session', None), ('PRINCIPAL', 'principal', None),
     ('tag:team', 'tag', 'team'), ('metadata:cost-center', 'metadata', 'cost-center'),
+    ('tag:Cost Center', 'tag', 'Cost Center'),
 ])
 def test_breakdown_parsing(value, kind, key):
     parsed = Breakdown.parse(value)
     assert (parsed.kind, parsed.key) == (kind, key)
 
 
-@pytest.mark.parametrize('value', ['owner', 'tag', 'tag:', 'tag:a"b', 'metadata:x y|z', 'principal:x', 'session:y'])
+@pytest.mark.parametrize('value', ['owner', 'tag', 'tag:', 'tag:a"b', 'tag:   ', 'metadata:x y', 'metadata:x|z',
+                                   'principal:x', 'session:y'])
 def test_invalid_breakdowns_are_refused(value):
     with pytest.raises(BreakdownError):
         Breakdown.parse(value)
@@ -141,10 +143,13 @@ def test_labels():
     (ROLE_ARN, 'role/OrdersService'),
     (f"arn:aws-us-gov:sts::{ACCOUNT}:assumed-role/Gov/s", 'role/Gov'),
     (USER_ARN, 'user/ops/alice'),
-    (f"arn:aws:iam::{ACCOUNT}:role/service/Direct", 'role/service/Direct'),
+    # A role's path is not in its assumed-role ARNs, so it is dropped
+    (f"arn:aws:iam::{ACCOUNT}:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_Admin_ab", 'role/AWSReservedSSO_Admin_ab'),
+    (f"arn:aws:iam::{ACCOUNT}:role/Direct", 'role/Direct'),
     (f"arn:aws:iam::{ACCOUNT}:root", f"arn:aws:iam::{ACCOUNT}:root"),
     (f"arn:aws:sts::{ACCOUNT}:federated-user/bob", f"arn:aws:sts::{ACCOUNT}:federated-user/bob"),
-    ('role/Already', 'role/Already'), ('', ''),
+    ('role/Already', 'role/Already'), ('role/service-role/X', 'role/X'), ('user/ops/bob', 'user/ops/bob'),
+    ('assumed-role/A/s', 'role/A'), ('arn:bad', 'arn:bad'), ('', ''),
 ])
 def test_principal_normalization(arn, expected):
     assert normalize_principal(arn) == expected
@@ -182,8 +187,25 @@ def test_query_per_kind():
     assert f'filter modelId in ["{US_HAIKU}"]' in principal and 'by bin(1m) as minute, modelId, principal' in principal
     assert 'inputBodyJson' not in principal and 'outputBodyJson' not in principal  # metadata fields only
     assert 'identity.arn as session' in build_query([US_HAIKU], Breakdown.parse('session'))
-    assert 'requestMetadata.team as meta' in build_query([US_HAIKU], Breakdown.parse('metadata:team'))
+    assert '`requestMetadata.team` as meta' in build_query([US_HAIKU], Breakdown.parse('metadata:team'))
+    # Keys with '-' (or : / = + @) are read as one field name
+    assert '`requestMetadata.cost-center` as meta' in build_query([US_HAIKU], Breakdown.parse('metadata:cost-center'))
     assert ', principal\n' in build_query([US_HAIKU], Breakdown.parse('tag:team')) + '\n'
+
+
+def test_long_model_id_lists_are_split_across_queries(monkeypatch):
+    monkeypatch.setattr(il, 'MAX_QUERY_LENGTH', 700)
+    ids = [f"us.vendor.model-{n:03d}-v1:0" for n in range(40)]
+    queries = il.query_batches(ids, Breakdown())
+    assert len(queries) > 1 and all(len(q) <= 700 for q in queries)
+    # Every spelling is in exactly one query
+    assert sorted(i for i in ids for q in queries if f'"{i}"' in q) == sorted(ids)
+    assert il.query_batches([US_HAIKU], Breakdown()) == [build_query([US_HAIKU], Breakdown())]
+
+    logs = FakeLogs([row(END - timedelta(minutes=5), 'assumed-role/A', model=ids[0]),
+                     row(END - timedelta(minutes=5), 'assumed-role/A', model=ids[-1])])
+    rows = fetcher_for(logs).fetch({i: i for i in ids}, Breakdown(), END - timedelta(hours=1), END)
+    assert len(logs.queries) == len(queries) and {r['cw_id'] for r in rows} == {ids[0], ids[-1]}
 
 
 # ------------------------------------------------------------------ fetcher
@@ -245,6 +267,48 @@ def test_a_stop_failure_does_not_hide_the_query_error():
             raise aws_error('AccessDeniedException', 'StopQuery')
     with pytest.raises(LogsQueryError):
         fetcher_for(NoStop(statuses=['Failed'])).fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(hours=1), END)
+
+
+def test_one_failed_query_stops_the_others():
+    class OneFails(FakeLogs):
+        def get_query_results(self, queryId):
+            return {'status': 'Failed' if queryId == 'q0' else 'Running'}
+    logs = OneFails()
+    fetcher = fetcher_for(logs, max_concurrent=2)
+    with pytest.raises(LogsQueryError):
+        fetcher.fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(days=2), END)
+    # The query still running was stopped instead of polled until its timeout
+    assert sorted(logs.stopped) == sorted(q['id'] for q in logs.queries)
+    # A window not started yet once the fetch is cancelled never starts a query
+    started = len(logs.queries)
+    with pytest.raises(LogsQueryError, match='cancelled'):
+        fetcher._run_window('q', END - timedelta(hours=1), END)
+    assert len(logs.queries) == started
+
+
+def test_a_running_query_stops_at_its_next_poll_once_cancelled():
+    class CancelWhilePolling(FakeLogs):
+        def get_query_results(self, queryId):
+            fetcher._cancel.set()  # e.g. Ctrl-C in the main thread
+            return {'status': 'Running'}
+    logs = CancelWhilePolling()
+    fetcher = fetcher_for(logs)
+    with pytest.raises(LogsQueryError, match='cancelled'):
+        fetcher._run_query('q', END - timedelta(hours=1), END)
+    assert logs.stopped == ['q0']
+
+
+def test_unexpected_query_responses_are_query_errors():
+    class NoId(FakeLogs):
+        def start_query(self, **kwargs):
+            return {}
+
+    class BadMinute(FakeLogs):
+        def get_query_results(self, queryId):
+            return {'status': 'Complete', 'results': [[{'field': 'minute', 'value': 'not a time'}]]}
+    for logs, match in ((NoId(), 'no query ID'), (BadMinute(), 'unexpected minute')):
+        with pytest.raises(LogsQueryError, match=match):
+            fetcher_for(logs).fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(hours=1), END)
 
 
 def test_no_forms_means_no_query():
@@ -377,6 +441,66 @@ def test_a_principal_filter_shows_the_others_as_one_row():
     assert section['principal_filter'] == ['role/OrdersService']
 
 
+def test_tags_are_read_only_for_the_selected_principals():
+    logs = FakeLogs([row(T1, 'assumed-role/OrdersService'), row(T1, 'assumed-role/Billing')])
+    iam = FakeIam()
+    builder_for(Breakdown.parse('principal', ['role/OrdersService']), logs, iam).prepare([US_HAIKU], END, 1)
+    assert iam.calls == [('role', 'OrdersService')]
+
+
+def test_many_groups_are_folded_into_one_row(monkeypatch):
+    from bedrock_usage_analyzer.core import breakdown as breakdown_module
+    monkeypatch.setattr(breakdown_module, 'MAX_GROUPS', 3)
+    logs = FakeLogs([row(T1, f"assumed-role/R{n}", i=100 * (n + 1), o=0) for n in range(5)])
+    builder = builder_for(Breakdown(), logs)
+    builder.prepare([US_HAIKU], END, 1)
+    section = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({T1: (1500, 0, 5)})}, GRANULARITY, ['1hour'])
+    rows = section['periods']['1hour']['rows']
+    assert [(r['name'], r['tokens']) for r in rows] == [('role/R4', 500), ('role/R3', 400), ('(3 smaller groups)', 600)]
+    assert rows[-1]['principals'] == [] and set(section['time_series']['1hour']) == {r['name'] for r in rows}
+    # Under the cap nothing is folded
+    monkeypatch.setattr(breakdown_module, 'MAX_GROUPS', 5)
+    builder = builder_for(Breakdown(), logs)
+    builder.prepare([US_HAIKU], END, 1)
+    section = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({T1: (1500, 0, 5)})}, GRANULARITY, ['1hour'])
+    assert len(section['periods']['1hour']['rows']) == 5
+
+
+def test_cloudwatch_minutes_after_the_logs_were_read_are_not_unattributed():
+    # The logs were read up to END - 5 min; CloudWatch, read later, also has END - 2 min
+    logs = FakeLogs([row(T1, 'assumed-role/A', i=100, o=0, n=1)])
+    builder = builder_for(Breakdown(), logs)
+    builder.prepare([US_HAIKU], END - timedelta(minutes=5), 1)
+    late = END - timedelta(minutes=2)
+    section = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({T1: (100, 0, 1), late: (900, 0, 3)})},
+                              GRANULARITY, ['1hour'])
+    hour = section['periods']['1hour']
+    assert [r['name'] for r in hour['rows']] == ['role/A'] and hour['total_tokens'] == 100
+    # The section says where the breakdown stops
+    assert section['coverage']['end'] == (END - timedelta(minutes=5)).isoformat()
+
+
+def test_each_period_keeps_its_own_largest_callers(monkeypatch):
+    from bedrock_usage_analyzer.core import breakdown as breakdown_module
+    monkeypatch.setattr(breakdown_module, 'MAX_GROUPS', 2)
+    logs = FakeLogs([row(END - timedelta(days=2), 'assumed-role/Old', i=1000, o=0),
+                     row(T1, 'assumed-role/New', i=10, o=0), row(T1, 'assumed-role/Newer', i=5, o=0)])
+    builder = builder_for(Breakdown(), logs)
+    builder.prepare([US_HAIKU], END, 7)
+    section = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({})}, GRANULARITY, ['1hour', '7days'])
+    assert [r['name'] for r in section['periods']['7days']['rows']] == ['role/Old', '(2 smaller groups)']
+    assert [r['name'] for r in section['periods']['1hour']['rows']] == ['role/New', 'role/Newer']
+
+
+def test_a_section_that_cannot_be_built_keeps_the_report(caplog):
+    caplog.set_level('INFO')
+    builder = builder_for(Breakdown(), FakeLogs([row(T1, 'assumed-role/A')]))
+    builder.prepare([US_HAIKU], END, 1)
+    section = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({})}, GRANULARITY, ['2hours'])
+    assert 'could not be built' in section['unavailable'] and section['periods'] == {}
+    assert section['label'] == 'IAM principal' and 'unavailable for this report' in caplog.text
+
+
 def test_rows_of_other_reports_and_old_minutes_are_left_out():
     deployment = f"arn:aws:bedrock:{REGION}:{ACCOUNT}:custom-model-deployment/dep0000001"
     logs = FakeLogs([row(T1, 'assumed-role/A', model=deployment), row(T1, 'assumed-role/B'),
@@ -484,7 +608,7 @@ def analyzer(sydney_bedrock, monkeypatch):
     (['--principal', 'role/A'], ('principal', None, ('role/A',))),
     (['--log-group', '/g'], ('principal', None, ())),
 ])
-def test_cli_options_become_a_breakdown(monkeypatch, argv, expected):
+def test_cli_options_become_a_breakdown(monkeypatch, tmp_path, argv, expected):
     from bedrock_usage_analyzer import __main__ as cli
     from bedrock_usage_analyzer.core import user_inputs, analyzer
     seen = {}
@@ -503,7 +627,7 @@ def test_cli_options_become_a_breakdown(monkeypatch, argv, expected):
         def analyze(self, models, output_dir):
             seen['ran'] = True
     monkeypatch.setattr(analyzer, 'BedrockAnalyzer', FakeAnalyzer)
-    monkeypatch.setattr('sys.argv', ['bua', 'analyze', '-r', REGION, '-m', HAIKU, '-y', '-o', '/tmp/x', *argv])
+    monkeypatch.setattr('sys.argv', ['bua', 'analyze', '-r', REGION, '-m', HAIKU, '-y', '-o', str(tmp_path), *argv])
     cli.main()
     b = seen['breakdown']
     assert (b.kind, b.key, b.principals) == expected

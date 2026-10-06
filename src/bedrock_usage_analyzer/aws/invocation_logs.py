@@ -15,6 +15,7 @@ Only metadata fields are queried: prompts and completions are never read.
 
 import logging
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -44,10 +45,14 @@ MAX_CONCURRENT_QUERIES = 4
 QUERY_TIMEOUT_SECONDS = 900
 # A query window is never split below this, even if it returns MAX_ROWS rows
 MIN_WINDOW = timedelta(minutes=10)
+# StartQuery accepts query strings of up to 10,000 characters
+MAX_QUERY_LENGTH = 10000
 
-# Tag and requestMetadata keys are interpolated into the query, so only plain key
-# characters are accepted (IAM tag keys: letters, digits, spaces and _.:/=+-@)
+# requestMetadata keys are interpolated into the query, so only plain key characters are
+# accepted; IAM tag keys (only looked up in ListRoleTags/ListUserTags results) may also
+# hold spaces
 _KEY_PATTERN = re.compile(r'^[A-Za-z0-9_.:/=+@-]{1,128}$')
+_TAG_KEY_PATTERN = re.compile(r'^[A-Za-z0-9 _.:/=+@-]{1,128}$')
 # modelId values in a query string literal: model, profile and deployment IDs and ARNs
 _MODEL_ID_PATTERN = re.compile(r'^[A-Za-z0-9_.:/-]{1,2048}$')
 # An IAM principal given with --principal: 'role/<name>', 'user/<path/name>' or an ARN
@@ -76,9 +81,12 @@ class Breakdown:
         kind = kind.lower()
         if kind not in KINDS:
             raise BreakdownError(f"unknown breakdown '{value}': use principal, session, tag:<key> or metadata:<key>")
-        if kind in (TAG, METADATA):
+        if kind == TAG:
+            if not _TAG_KEY_PATTERN.match(key) or not key.strip():
+                raise BreakdownError(f"'{value}' needs a key of letters, digits, spaces and _.:/=+@- (e.g. tag:team)")
+        elif kind == METADATA:
             if not _KEY_PATTERN.match(key):
-                raise BreakdownError(f"'{value}' needs a key of letters, digits and _.:/=+@- (e.g. {kind}:team)")
+                raise BreakdownError(f"'{value}' needs a key of letters, digits and _.:/=+@- (e.g. metadata:team)")
         elif key:
             raise BreakdownError(f"'{kind}' takes no key: '{value}'")
         names = tuple(normalize_principal(p.strip()) for p in principals if p and p.strip())
@@ -101,16 +109,18 @@ def normalize_principal(arn: str) -> str:
 
     'arn:aws:sts::111122223333:assumed-role/Billing/session-1' -> 'role/Billing' (every
     session of a role is that role), 'arn:aws:iam::111122223333:user/ops/alice' ->
-    'user/ops/alice'. Other callers (root, federated users) keep their ARN. Values
-    already in the short form are returned unchanged.
+    'user/ops/alice'. A role's path is dropped ('role/service-role/X' -> 'role/X'), as
+    assumed-role ARNs do not carry it. Other callers (root, federated users) keep their ARN.
     """
     value = (arn or '').strip()
-    if value.startswith(('role/', 'user/')):
-        return value
-    resource = value.split(':', 5)[5] if value.startswith('arn:') and value.count(':') >= 5 else ''
+    resource = value
+    if value.startswith('arn:'):
+        resource = value.split(':', 5)[5] if value.count(':') >= 5 else ''
     if resource.startswith('assumed-role/'):
         return 'role/' + resource.split('/')[1]
-    if resource.startswith(('role/', 'user/')):
+    if resource.startswith('role/'):
+        return 'role/' + resource.rsplit('/', 1)[1]
+    if resource.startswith('user/'):
         return resource
     return value
 
@@ -178,7 +188,8 @@ def build_query(forms: Iterable[str], breakdown: Breakdown) -> str:
     if breakdown.kind == SESSION:
         keys.append('identity.arn as session')
     elif breakdown.kind == METADATA:
-        keys.append(f'requestMetadata.{breakdown.key} as meta')
+        # Backticks: keys may hold characters (- : / = + @) that are not field-name characters
+        keys.append(f'`requestMetadata.{breakdown.key}` as meta')
     return '\n'.join([
         'fields @timestamp',
         f'| filter modelId in [{in_list}]',
@@ -197,7 +208,25 @@ class LogsQueryError(RuntimeError):
 
 def _parse_minute(value: str) -> datetime:
     """Logs Insights bin(1m) value ('2026-10-06 10:26:00.000', UTC) as an aware datetime."""
-    return datetime.strptime(value[:19], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
+    try:
+        return datetime.strptime(value[:19], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise LogsQueryError(f"unexpected minute value in the query results: {value!r}") from None
+
+
+def query_batches(forms: Iterable[str], breakdown: Breakdown) -> List[str]:
+    """The breakdown queries for these modelId spellings: one, or several when one query
+    string would pass the StartQuery limit of MAX_QUERY_LENGTH characters."""
+    queries: List[str] = []
+    batch: List[str] = []
+    for value in sorted(set(forms)):
+        if batch and len(build_query(batch + [value], breakdown)) > MAX_QUERY_LENGTH:
+            queries.append(build_query(batch, breakdown))
+            batch = []
+        batch.append(value)
+    if batch:
+        queries.append(build_query(batch, breakdown))
+    return queries
 
 
 def _number(value) -> float:
@@ -220,6 +249,7 @@ class InvocationLogFetcher:
         self._max_concurrent = max_concurrent
         self.bytes_scanned = 0.0
         self.queries_run = 0
+        self._cancel = threading.Event()
 
     def coverage_start(self, start: datetime, end: datetime) -> Optional[datetime]:
         """The earliest time of [start, end] the log group can hold (its creation time and
@@ -242,19 +272,31 @@ class InvocationLogFetcher:
         'requests'}, 'key' being the session ARN or metadata value (None otherwise)."""
         if not forms:
             return []
-        query = build_query(forms, breakdown)
         windows = []
         cursor = start
         while cursor < end:
             windows.append((cursor, min(cursor + timedelta(days=1), end)))
             cursor = windows[-1][1]
+        # Each modelId spelling is in exactly one query, so the results simply add up
+        jobs = [(query, w_start, w_end) for query in query_batches(forms, breakdown) for w_start, w_end in windows]
         rows: List[Dict] = []
-        with ThreadPoolExecutor(max_workers=max(1, min(self._max_concurrent, len(windows)))) as pool:
-            for result in pool.map(lambda w: self._run_window(query, w[0], w[1]), windows):
+        self._cancel.clear()
+        pool = ThreadPoolExecutor(max_workers=max(1, min(self._max_concurrent, len(jobs))))
+        try:
+            for result in pool.map(lambda job: self._run_window(*job), jobs):
                 rows.extend(result)
+        except BaseException:
+            # A failed query, or Ctrl-C: the queries still running stop at their next poll
+            # (and are stopped in the account) instead of running to completion
+            self._cancel.set()
+            raise
+        finally:
+            pool.shutdown(wait=True, cancel_futures=True)
         return [self._row(raw, forms, breakdown) for raw in rows]
 
     def _run_window(self, query: str, start: datetime, end: datetime) -> List[Dict]:
+        if self._cancel.is_set():
+            raise LogsQueryError("cancelled")
         results = self._run_query(query, start, end)
         if len(results) < MAX_ROWS or end - start <= MIN_WINDOW:
             if len(results) >= MAX_ROWS:
@@ -270,11 +312,15 @@ class InvocationLogFetcher:
         response = self.logs_client.start_query(
             logGroupName=self.log_group, queryString=query,
             startTime=int(start.timestamp()), endTime=int(end.timestamp()) - 1, limit=MAX_ROWS)
-        query_id = response['queryId']
+        query_id = response.get('queryId')
+        if not query_id:
+            raise LogsQueryError("StartQuery returned no query ID")
         self.queries_run += 1
         waited = 0.0
         try:
             while True:
+                if self._cancel.is_set():
+                    raise LogsQueryError("cancelled")
                 result = self.logs_client.get_query_results(queryId=query_id)
                 status = result.get('status')
                 if status == 'Complete':

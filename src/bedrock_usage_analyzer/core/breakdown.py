@@ -20,10 +20,13 @@ from bedrock_usage_analyzer.aws.invocation_logs import (
     AWS_ERRORS, METADATA, PRINCIPAL, SESSION, TAG, UNATTRIBUTED, Breakdown, InvocationLogFetcher, LogsQueryError,
     logging_destination, model_id_forms, principal_tags)
 from bedrock_usage_analyzer.core.errors import troubleshooting_hint
+from bedrock_usage_analyzer.core.metrics_fetcher import PERIOD_DAYS
 
 logger = logging.getLogger(__name__)
 
-PERIOD_DAYS = {'1hour': 1 / 24, '1day': 1, '7days': 7, '14days': 14, '30days': 30}
+# Groups shown as their own rows (and chart lines); smaller ones are summed into one row
+MAX_GROUPS = 30
+OTHER_PRINCIPALS = '(other principals)'
 ENABLE_HINT = ("To attribute usage to callers, enable model invocation logging to CloudWatch Logs in this "
                "region (Bedrock console > Settings, or PutModelInvocationLoggingConfiguration); turning "
                "off text, image, embedding and video delivery keeps only metadata.")
@@ -51,6 +54,7 @@ class BreakdownBuilder:
         self._logs_client = logs_client
         self._iam_client = iam_client
         self._rows: Optional[List[Dict]] = None
+        self._rows_by_id: Dict[str, List[Dict]] = {}  # the same rows, by CloudWatch ModelId
         self._unavailable: Optional[str] = None
         self.log_group: Optional[str] = breakdown.log_group
         self.coverage: Optional[Tuple[datetime, datetime]] = None
@@ -81,6 +85,8 @@ class BreakdownBuilder:
             logger.info(f"  Reading model invocation logs from {self.log_group} "
                         f"({covered_from:%Y-%m-%d %H:%M} to {end:%Y-%m-%d %H:%M} UTC)...")
             self._rows = fetcher.fetch(forms, self.breakdown, covered_from, end)
+            for row in self._rows:
+                self._rows_by_id.setdefault(row['cw_id'], []).append(row)
             logger.info(f"  Invocation logs: {len(self._rows)} per-minute rows from {fetcher.queries_run} "
                         f"Logs Insights quer{'y' if fetcher.queries_run == 1 else 'ies'}, "
                         f"{fetcher.bytes_scanned / 1e9:.2f} GB scanned")
@@ -88,7 +94,8 @@ class BreakdownBuilder:
             hint = troubleshooting_hint(e, self.region)
             return self._give_up(f"could not read the model invocation logs: {e}" + (f" ({hint})" if hint else ""))
         if self.breakdown.kind == TAG or self.breakdown.kind == PRINCIPAL:
-            self._read_tags({r['principal'] for r in self._rows})
+            # Only the principals that get their own rows (--principal limits them)
+            self._read_tags({r['principal'] for r in self._rows if self._selected(r)})
         return None
 
     def _give_up(self, reason: str) -> str:
@@ -102,7 +109,7 @@ class BreakdownBuilder:
         if self._tag_error is not None:
             message = f"some IAM principal tags could not be read ({self._tag_error})"
             if self.breakdown.kind == TAG:
-                message += f"; principals without readable tags are grouped under '(tags not readable)'"
+                message += "; principals without readable tags are grouped under '(tags not readable)'"
             self.notes.append(message)
             logger.info(f"  Note: {message}")
 
@@ -124,70 +131,72 @@ class BreakdownBuilder:
 
     def _selected(self, row) -> bool:
         wanted = self.breakdown.principals
-        return not wanted or row['principal'] in wanted or (row['key'] or '') in wanted
+        return not wanted or row['principal'] in wanted
 
     # ------------------------------------------------------------------ per report
 
     def section(self, final_model_ids, profile_names, fetched_cw: Dict, granularity_config: Dict,
                 time_periods: Iterable[str]) -> Optional[Dict]:
-        """The breakdown section of one report, or None when no breakdown was asked for."""
+        """The breakdown section of one report. A section that cannot be built says why
+        instead of failing the report."""
         base = {'kind': self.breakdown.kind, 'key': self.breakdown.key, 'label': self.breakdown.label,
                 'source': 'model invocation logs', 'log_group': self.log_group,
                 'principal_filter': list(self.breakdown.principals), 'notes': list(self.notes)}
         if self._unavailable is not None or self._rows is None or self.coverage is None:
             return {**base, 'unavailable': self._unavailable or 'not fetched', 'periods': {}, 'time_series': {}}
-        ids = set(final_model_ids)
+        try:
+            return {**base, **self._build(final_model_ids, profile_names, fetched_cw, granularity_config, time_periods)}
+        except Exception as e:  # never lose the CloudWatch report to the breakdown
+            logger.debug("Breakdown section failed", exc_info=True)
+            logger.info(f"  Breakdown by {self.breakdown.label} unavailable for this report: {e}")
+            return {**base, 'unavailable': f"the breakdown could not be built: {e}", 'periods': {}, 'time_series': {}}
+
+    def _build(self, final_model_ids, profile_names, fetched_cw: Dict, granularity_config: Dict,
+               time_periods: Iterable[str]) -> Dict:
         end = next((d['end_time'] for d in fetched_cw.values() if d.get('end_time')), self.coverage[1])
-        covered_from = self.coverage[0]
+        covered_from, logs_end = self.coverage
+        # CloudWatch is read after the logs, so its last minutes are not in the logs' window:
+        # the breakdown (and its totals) stops where the logs were read
+        logs_end = min(logs_end, end)
 
         groups: Dict[str, Dict] = {}
         logged_all = defaultdict(_empty_minute)  # every logged caller, before the principal filter
-        for row in self._rows:
-            if row['cw_id'] not in ids:
-                continue
+        others = defaultdict(_empty_minute)  # callers left out by --principal
+        for row in (r for cw_id in dict.fromkeys(final_model_ids) for r in self._rows_by_id.get(cw_id, ())):
             minute = row['minute']
-            totals = logged_all[minute]
-            totals[0] += row['input']; totals[1] += row['output']; totals[2] += row['requests']
+            _add(logged_all[minute], row)
             if not self._selected(row):
+                _add(others[minute], row)
                 continue
             name = self._group_of(row)
             group = groups.setdefault(name, {'minutes': defaultdict(_empty_minute), 'principals': set(), 'via': set()})
-            values = group['minutes'][minute]
-            values[0] += row['input']; values[1] += row['output']; values[2] += row['requests']
+            _add(group['minutes'][minute], row)
             group['principals'].add(row['principal'])
             group['via'].add(profile_names.get(row['cw_id'], row['cw_id']))
 
-        cw_minutes = self._cloudwatch_minutes(fetched_cw, final_model_ids, covered_from)
+        cw_minutes = self._cloudwatch_minutes(fetched_cw, final_model_ids, covered_from, logs_end)
         remainder = {}
-        others = {}
         for minute, (inp, out, req) in cw_minutes.items():
             logged = logged_all.get(minute, (0.0, 0.0, 0.0))
             gap = (max(inp - logged[0], 0.0), max(out - logged[1], 0.0), max(req - logged[2], 0.0))
             if any(gap):
                 remainder[minute] = list(gap)
-        if self.breakdown.principals:
-            selected = defaultdict(_empty_minute)
-            for group in groups.values():
-                for minute, values in group['minutes'].items():
-                    for i in range(3):
-                        selected[minute][i] += values[i]
-            for minute, values in logged_all.items():
-                rest = [max(values[i] - selected.get(minute, (0, 0, 0))[i], 0.0) for i in range(3)]
-                if any(rest):
-                    others[minute] = rest
 
-        series = {name: (g['minutes'], sorted(g['principals']), sorted(g['via'])) for name, g in groups.items()}
-        if others:
-            series['(other principals)'] = (others, [], [])
-        if remainder:
-            series[UNATTRIBUTED] = (remainder, [], [])
+        group_series = {name: (g['minutes'], sorted(g['principals']), sorted(g['via'])) for name, g in groups.items()}
 
         periods, time_series = {}, {}
         for period in time_periods:
             period_start = end - timedelta(days=PERIOD_DAYS[period])
             window_start = max(period_start, covered_from)
-            total = _window_sum(cw_minutes, window_start, end)
-            logged = _window_sum(logged_all, window_start, end)
+            total = _window_sum(cw_minutes, window_start, logs_end)
+            logged = _window_sum(logged_all, window_start, logs_end)
+            # The period's own largest callers keep their rows (a caller that started today
+            # leads the last hour even if it is small over 30 days)
+            series, folded_name = _fold_small_groups(group_series, window_start, logs_end)
+            if others:
+                series[OTHER_PRINCIPALS] = (others, [], [])
+            if remainder:
+                series[UNATTRIBUTED] = (remainder, [], [])
             rows, period_series = [], {}
             for name, (minutes, principals, via) in series.items():
                 ts_data = self.metrics_fetcher.slice_and_process_data(
@@ -205,12 +214,13 @@ class BreakdownBuilder:
                     continue
                 rows.append(self._row(name, principals, via, stats, tokens, requests, total, period))
                 period_series[name] = {k: ts_data[k] for k in ('TPM', 'RPM') if k in ts_data}
-            rows.sort(key=lambda r: (r['name'] == UNATTRIBUTED, r['name'] == '(other principals)', -r['tokens']))
+            rows.sort(key=lambda r: (r['name'] == UNATTRIBUTED, r['name'] == OTHER_PRINCIPALS,
+                                     r['name'] == folded_name, -r['tokens']))
             periods[period] = {'rows': rows, 'total_tokens': total[0] + total[1], 'total_requests': total[2],
                                'covered_from': window_start.isoformat(),
                                'partial': window_start > period_start}
             time_series[period] = period_series
-        return {**base, 'coverage': {'start': covered_from.isoformat(), 'end': end.isoformat()},
+        return {'coverage': {'start': covered_from.isoformat(), 'end': logs_end.isoformat()},
                 'periods': periods, 'time_series': time_series}
 
     def _row(self, name, principals, via, stats, tokens, requests, total, period) -> Dict:
@@ -245,14 +255,15 @@ class BreakdownBuilder:
             'period': 60}}
 
     @staticmethod
-    def _cloudwatch_minutes(fetched_cw: Dict, final_model_ids, covered_from: datetime) -> Dict[datetime, List[float]]:
-        """CloudWatch's per-minute totals of the report's ModelIds, from the covered time on."""
+    def _cloudwatch_minutes(fetched_cw: Dict, final_model_ids, covered_from: datetime,
+                            covered_to: datetime) -> Dict[datetime, List[float]]:
+        """CloudWatch's per-minute totals of the report's ModelIds over the logs' window."""
         minutes = defaultdict(_empty_minute)
         for cw_id in final_model_ids:
             token = (fetched_cw.get(cw_id) or {}).get('60_token') or {}
             data = token.get('data') or {}
             for i, stamp in enumerate(token.get('timestamps') or []):
-                if stamp < covered_from:
+                if stamp < covered_from or stamp >= covered_to:
                     continue
                 values = minutes[stamp]
                 for j, key in enumerate(('input_tokens', 'output_tokens', 'invocations')):
@@ -260,6 +271,38 @@ class BreakdownBuilder:
                     if i < len(column) and column[i] is not None:
                         values[j] += column[i]
         return minutes
+
+
+def _fold_small_groups(series: Dict, start: datetime, end: datetime) -> Tuple[Dict, Optional[str]]:
+    """The groups used in [start, end], the MAX_GROUPS largest (tokens, then requests) as they
+    are and the rest summed into one row, so that thousands of sessions stay a readable report.
+    Returns (series, the summed row's name or None)."""
+    sizes = {}
+    for name, (minutes, _, _) in series.items():
+        used = _window_sum(minutes, start, end)
+        if any(used):
+            sizes[name] = (used[0] + used[1], used[2], name)
+    if len(sizes) <= MAX_GROUPS:
+        return {name: series[name] for name in sizes}, None
+    ranked = sorted(sizes, key=sizes.get, reverse=True)
+    kept = {name: series[name] for name in ranked[:MAX_GROUPS - 1]}
+    rest = ranked[MAX_GROUPS - 1:]
+    folded = defaultdict(_empty_minute)
+    principals, via = set(), set()
+    for name in rest:
+        minutes, names, routes = series[name]
+        for minute, values in minutes.items():
+            for i in range(3):
+                folded[minute][i] += values[i]
+        principals.update(names)
+        via.update(routes)
+    folded_name = f"({len(rest)} smaller groups)"
+    kept[folded_name] = (folded, sorted(principals), sorted(via))
+    return kept, folded_name
+
+
+def _add(values: List[float], row: Dict) -> None:
+    values[0] += row['input']; values[1] += row['output']; values[2] += row['requests']
 
 
 def _window_sum(minutes: Dict[datetime, List[float]], start: datetime, end: datetime) -> List[float]:
