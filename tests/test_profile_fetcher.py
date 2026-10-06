@@ -710,6 +710,14 @@ def test_endpoint_keywords_fall_back_without_a_prefix_mapping(monkeypatch):
     assert set(descriptions) == set(keywords) and descriptions['base'] == 'on-demand'
 
 
+def test_null_model_arn_in_an_application_profile_does_not_break_the_listing():
+    apps = [{'inferenceProfileId': 'nullarn0001', 'inferenceProfileName': 'n', 'models': [{'modelArn': None}]},
+            app_profile('good0000001', 'g', AU_ARNS)]
+    sydney = [system_profile(f"au.{HAIKU}", AU_ARNS)]
+    ids = [a['id'] for a in InferenceProfileFetcher(FakeBedrock(system=sydney, application=apps)).list_application_profiles()]
+    assert ids == ['good0000001']
+
+
 def test_copy_of_a_custom_model_is_named_as_such():
     apps = [app_profile('custom00001', 'mine', ['arn:aws:bedrock:us-east-1:1:custom-model/x'])]
     fetcher = InferenceProfileFetcher(FakeBedrock(application=apps))

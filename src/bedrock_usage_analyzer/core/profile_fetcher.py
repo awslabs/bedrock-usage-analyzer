@@ -192,7 +192,9 @@ class InferenceProfileFetcher:
             for profile in raw:
                 if not profile.get('inferenceProfileId'):
                     continue  # malformed summary: skip it, keep the others
-                arns = [m.get('modelArn', '') for m in profile.get('models') or []]
+                # Empty or null ARNs dropped here, as for the system profiles
+                arns = [m.get('modelArn') for m in profile.get('models') or []
+                        if isinstance(m, dict) and m.get('modelArn')]
                 endpoints = self.resolve_endpoints(arns)
                 sources = [endpoint_id(m, p) for p, m in endpoints]
                 if endpoints:
