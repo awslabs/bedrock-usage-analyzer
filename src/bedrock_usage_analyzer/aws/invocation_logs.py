@@ -105,7 +105,7 @@ class Breakdown:
         names = tuple(normalize_principal(p.strip()) for p in principals)
         for name in names:
             if not _PRINCIPAL_PATTERN.match(name) or not name.startswith(('role/', 'user/', 'arn:')) \
-                    or name in ('role/', 'user/'):
+                    or name in ('role/', 'user/') or (name.startswith('arn:') and not _arn_names_principal(name)):
                 raise BreakdownError(f"invalid principal '{name}': use role/<name>, user/<name> or an IAM ARN")
         if log_group is not None and not re.match(r'^[A-Za-z0-9_./#-]{1,512}\Z', log_group):
             raise BreakdownError(f"invalid log group name '{log_group}'")
@@ -136,6 +136,16 @@ def normalize_principal(arn: str) -> str:
         kind, _, rest = resource.partition('/')
         return f"{kind}/{rest.rsplit('/', 1)[-1]}"
     return value
+
+
+def _arn_names_principal(arn: str) -> bool:
+    """Whether an ARN left as it is by normalize_principal (roles and users are not) names a
+    caller of the logs: the root user or a federated user. Not 'arn:', a role without a
+    name, or an IAM group, a policy or a model, which never call."""
+    service = arn.split(':')[2] if arn.count(':') >= 5 else ''
+    resource = arn_resource(arn)
+    return (service in ('iam', 'sts')
+            and (resource == 'root' or bool(re.match(r'^federated-user/[^/]+\Z', resource))))
 
 
 def logging_destination(bedrock_client) -> Tuple[Optional[str], str]:
@@ -285,6 +295,9 @@ class InvocationLogFetcher:
         self._max_concurrent = max_concurrent
         self.bytes_scanned = 0.0
         self.queries_run = 0
+        # Windows cut at the row limit: (start, end, the report ModelIds of their query)
+        self.truncated: List[Tuple[datetime, datetime, frozenset]] = []
+        self._batch_ids: Dict[str, frozenset] = {}
         self._cancel = threading.Event()
         self._count_lock = threading.Lock()
         # Waits (backoff, polling) end at once when the run is cancelled
@@ -331,7 +344,11 @@ class InvocationLogFetcher:
             windows.append((cursor, min(cursor + timedelta(days=1), end)))
             cursor = windows[-1][1]
         # Each modelId spelling is in exactly one query, so the results simply add up
-        jobs = [(query, w_start, w_end) for query in query_batches(forms, breakdown) for w_start, w_end in windows]
+        batches = query_batches(forms, breakdown)
+        # The report ModelIds each query covers (its spellings are quoted in its modelId list)
+        self._batch_ids = {query: frozenset(cw for form, cw in forms.items() if f'"{form}"' in query)
+                           for query in batches}
+        jobs = [(query, w_start, w_end) for query in batches for w_start, w_end in windows]
         rows: List[Dict] = []
         self._cancel.clear()
         pool = ThreadPoolExecutor(max_workers=max(1, min(self._max_concurrent, len(jobs))))
@@ -354,8 +371,10 @@ class InvocationLogFetcher:
         results = self._run_query(query, start, end)
         if len(results) < MAX_ROWS or end - start <= MIN_WINDOW:
             if len(results) >= MAX_ROWS:
-                logger.info(f"  Warning: the invocation-log query for {start:%Y-%m-%d %H:%M} returned the "
-                            f"{MAX_ROWS}-row limit; some callers of that window may be missing")
+                # Summed up once by the caller and in the reports it affects, not per window
+                logger.debug(f"Invocation-log query for {start:%Y-%m-%d %H:%M} returned the {MAX_ROWS}-row limit")
+                with self._count_lock:
+                    self.truncated.append((start, end, self._batch_ids.get(query, frozenset())))
             return results
         # Four parts, not two: each split scans the window's bytes again, and a busy window
         # (many sessions per minute) then reaches a size that fits in fewer rounds

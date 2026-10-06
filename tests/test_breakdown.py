@@ -155,6 +155,14 @@ def test_principals_and_log_group_are_validated():
         Breakdown.parse('principal', ['OrdersService'])  # a bare name would match nothing
     with pytest.raises(BreakdownError):
         Breakdown.parse('principal', ['role/'])  # no name
+    # An ARN must name a caller too
+    for arn in ('arn:', 'arn:foo', f'arn:aws:iam::{ACCOUNT}:role', f'arn:aws:iam::{ACCOUNT}:role/',
+                f'arn:aws:iam::{ACCOUNT}:group/Developers', f'arn:aws:iam::{ACCOUNT}:policy/P',
+                'arn:aws:bedrock:us-east-1::foundation-model/x', f'arn:aws:sts::{ACCOUNT}:federated-user/'):
+        with pytest.raises(BreakdownError, match='invalid principal'):
+            Breakdown.parse('principal', [arn])
+    for arn in (f'arn:aws:iam::{ACCOUNT}:root', f'arn:aws:sts::{ACCOUNT}:federated-user/bob'):
+        assert Breakdown.parse('principal', [arn]).principals == (arn,)
     # A user's IAM path is dropped, as in the logged principals
     assert Breakdown.parse('principal', ['user/ops/alice']).principals == ('user/alice',)
     with pytest.raises(BreakdownError):
@@ -330,11 +338,33 @@ def test_a_full_window_is_run_again_in_quarters():
 
 
 def test_a_window_at_the_minimum_keeps_its_rows_and_warns(monkeypatch, caplog):
-    caplog.set_level('INFO')
+    caplog.set_level('DEBUG')
     monkeypatch.setattr(il, 'MAX_ROWS', 2)
     logs = FakeLogs([row(END - timedelta(minutes=m), 'assumed-role/A') for m in range(1, 5)])
-    rows = fetcher_for(logs).fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(minutes=5), END)
+    fetcher = fetcher_for(logs)
+    rows = fetcher.fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(minutes=5), END)
     assert len(rows) == 2 and 'row limit' in caplog.text
+    # With the report ModelIds of its query, so only the reports it affects say so
+    assert fetcher.truncated == [(END - timedelta(minutes=5), END, frozenset({US_HAIKU}))]
+
+
+def test_the_report_says_when_the_tool_cut_a_window_at_the_row_limit(monkeypatch):
+    # Otherwise the left-out callers' usage would read as usage the logs do not hold
+    monkeypatch.setattr(il, 'MAX_ROWS', 1)
+    logs = FakeLogs([row(T1, 'assumed-role/A'), row(T2, 'assumed-role/B')])
+    builder = builder_for(Breakdown(), logs)
+    builder.prepare([US_HAIKU], END, 1 / 24)
+    section = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({T1: (150, 0, 1), T2: (150, 0, 1)})},
+                              GRANULARITY, ['1hour'])
+    assert any('returned the Logs Insights limit' in n and '(not in the invocation logs)' in n
+               for n in section['notes'])
+    # Only for the reports whose ModelIds and window a cut window touches
+    builder._truncated = [(T1, T2, frozenset({'other-model'}))]
+    assert not builder._notes(set(), END - timedelta(hours=1), [], [US_HAIKU])
+    builder._truncated = [(END - timedelta(days=2), END - timedelta(days=2) + timedelta(minutes=6),
+                           frozenset({US_HAIKU}))]
+    assert not builder._notes(set(), END - timedelta(hours=1), [], [US_HAIKU])
+    assert 'split down to 6 minutes' in builder._notes(set(), END - timedelta(days=3), [], [US_HAIKU])[0]
 
 
 @pytest.mark.parametrize('status', ['Failed', 'Cancelled', 'Timeout'])
@@ -619,6 +649,19 @@ def test_tag_breakdown_groups_principals_and_marks_unreadable_tags():
     assert rows['(no team tag)']['principals'] == [f"arn:aws:iam::{ACCOUNT}:root", 'role/Untagged']
     assert any('could not be read' in n for n in section['notes'])
     assert rows['shop']['share_tokens'] is None  # CloudWatch had no data for the window
+
+
+def test_a_tag_breakdown_keeps_the_logged_rows_when_iam_fails():
+    # The logs were read (and paid for): the callers go to '(tags not readable)'
+    class Broken(FakeIam):
+        def list_role_tags(self, RoleName):
+            raise RuntimeError('no iam')
+    logs = FakeLogs([row(T1, 'assumed-role/A')])
+    builder = builder_for(Breakdown.parse('tag:team'), logs, iam=Broken())
+    assert builder.prepare([US_HAIKU], END, 1) is None
+    section = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({})}, GRANULARITY, ['1hour'])
+    assert [r['name'] for r in section['periods']['1hour']['rows']] == ['(tags not readable)']
+    assert any('(no iam)' in n for n in section['notes'])
 
 
 def test_metadata_and_session_breakdowns():

@@ -18,8 +18,8 @@ from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.sts import get_account_id
 from bedrock_usage_analyzer.aws.invocation_logs import (
-    METADATA, PRINCIPAL, SESSION, TAG, UNATTRIBUTED, Breakdown, InvocationLogFetcher, LogsQueryError,
-    logging_destination, main_error, model_id_forms, principal_tags)
+    MAX_ROWS, METADATA, PRINCIPAL, SESSION, TAG, UNATTRIBUTED, Breakdown, InvocationLogFetcher,
+    LogsQueryError, logging_destination, main_error, model_id_forms, principal_tags)
 from bedrock_usage_analyzer.core.errors import AWS_ERRORS, troubleshooting_hint
 from bedrock_usage_analyzer.core.metrics_fetcher import PERIOD_DAYS
 
@@ -65,6 +65,7 @@ class BreakdownBuilder:
         # The logged per-minute rows by CloudWatch ModelId; None until they are read
         self._rows_by_id: Optional[Dict[str, List[Dict]]] = None
         self._unavailable: Optional[str] = None
+        self._truncated: List[Tuple[datetime, datetime, frozenset]] = []  # query windows cut at the row limit
         self.log_group: Optional[str] = breakdown.log_group
         self.coverage: Optional[Tuple[datetime, datetime]] = None
         self._tags: Optional[Dict[str, Dict[str, str]]] = None
@@ -125,13 +126,21 @@ class BreakdownBuilder:
             hint = troubleshooting_hint(e, self.region)
             return self._give_up(f"could not read the model invocation logs: {e}" + (f" ({hint})" if hint else ""))
         self.coverage = (covered_from, end)
+        self._truncated = sorted(fetcher.truncated, key=lambda w: (w[0], w[1]))
+        if self._truncated:
+            logger.info(f"  Warning: {len(self._truncated)} invocation-log query window(s) returned the "
+                        f"{MAX_ROWS}-row limit at the smallest split; some callers there are missing")
         self._rows_by_id = {}
         for row in rows:
             self._rows_by_id.setdefault(row['cw_id'], []).append(row)
         if self.breakdown.kind == TAG:
             # Grouping needs every selected principal's tags (--principal limits them); a
             # principal breakdown reads only its rows' tags, when the sections are built
-            self._read_tags({r['principal'] for r in rows if self._selected(r)})
+            wanted = {r['principal'] for r in rows if self._selected(r)}
+            try:
+                self._read_tags(wanted)
+            except Exception as e:  # the logs were read: group these as '(tags not readable)'
+                self._tag_errors.update({p: e for p in wanted if p.startswith(('role/', 'user/'))})
         return None
 
     def _give_up(self, reason: str) -> str:
@@ -150,11 +159,20 @@ class BreakdownBuilder:
         # Reported in each report's notes, with the error of that report's principals
         self._tag_errors.update(errors)
 
-    def _notes(self, principals: Set[str], start: datetime, no_cloudwatch: List[str]) -> List[str]:
-        """This report's notes: ModelIds left out for want of CloudWatch data, principals
-        whose tags could not be read, and the --principal values none of its logged calls
-        (from start on) came from."""
+    def _notes(self, principals: Set[str], start: datetime, no_cloudwatch: List[str],
+               cw_ids: Iterable[str] = ()) -> List[str]:
+        """This report's notes: query windows of its ModelIds cut at the row limit, ModelIds
+        left out for want of CloudWatch data, principals whose tags could not be read, and
+        the --principal values none of its logged calls (from start on) came from."""
         notes = []
+        cut = [(a, b) for a, b, ids in self._truncated if b > start and ids & set(cw_ids)]
+        if cut:
+            # The tool cut these, not the logs: say so, or the remainder row would blame logging
+            shortest = min(b - a for a, b in cut)
+            notes.append(f"{len(cut)} invocation-log query window(s) between {cut[0][0]:%Y-%m-%d %H:%M} and "
+                         f"{cut[-1][1]:%Y-%m-%d %H:%M} UTC returned the Logs Insights limit of {MAX_ROWS} rows "
+                         f"even when split down to {int(shortest.total_seconds() // 60)} minutes; the usage "
+                         f"of callers left out there is counted in '{UNATTRIBUTED}'")
         if no_cloudwatch:
             notes.append(f"CloudWatch's 1-minute data could not be fetched for {', '.join(no_cloudwatch)}, "
                          f"so their logged calls are left out of the breakdown; run again to include them")
@@ -315,7 +333,7 @@ class BreakdownBuilder:
         if self.breakdown.kind == PRINCIPAL:
             self._add_tags(periods)
         return {'coverage': {'start': covered_from.isoformat(), 'end': end.isoformat()},
-                'notes': self._notes(report_principals, covered_from, no_cloudwatch),
+                'notes': self._notes(report_principals, covered_from, no_cloudwatch, final_model_ids),
                 'periods': periods, 'time_series': time_series}
 
     def _add_tags(self, periods: Dict) -> None:
