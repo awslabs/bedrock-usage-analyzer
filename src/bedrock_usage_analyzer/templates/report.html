@@ -57,7 +57,7 @@
     <h1>Bedrock Model Usage Statistics</h1>
     <h2>Model: {{ model_id }}</h2>
     {% if endpoint and endpoint != model_id %}<p><strong>Endpoint:</strong> {{ endpoint }}</p>{% endif %}
-    {% if application_profile_scope %}<p><strong>Application inference profiles analyzed:</strong> {{ application_profile_scope | join(', ') }}</p>{% endif %}
+    {% if application_profile_scope %}<p><strong>{{ scope_label }}:</strong> {{ application_profile_scope | join(', ') }}</p>{% endif %}
     <p><strong>Region:</strong> {{ region }}{% if region_info and region_info.display_name and region_info.display_name != region %} ({{ region_info.display_name }}){% endif %}
         {% if region_info and region_info.partition and region_info.partition != 'aws' %}<span style="color: #666; font-size: 0.9em;"> &middot; {{ region_info.partition_name }}</span>{% endif %}
     </p>

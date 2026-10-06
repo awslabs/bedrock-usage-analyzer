@@ -96,6 +96,22 @@ def test_application_profile_scope_only(analyzer, tmp_path):
     assert 'Application inference profiles analyzed:</strong> team-a-au-haiku' in html
 
 
+def test_a_custom_model_deployment_report(analyzer, tmp_path, caplog):
+    deployment = 'arn:aws:bedrock:ap-southeast-2:111122223333:custom-model-deployment/dep0000001'
+    analyzer.cw.per_model[deployment] = (3, 30, 15)
+    caplog.set_level('INFO')
+    out = tmp_path / 'results'
+    # No base model: the deployment ID stands in for it, and no refresh can map limits
+    analyzer.analyze([{'model_id': 'dep0000001', 'profile_prefix': 'custom', 'application_profile_ids': [deployment]}],
+                     output_dir=str(out))
+    files = reports(out)
+    assert set(analyzer.cw.dimensions) == {deployment}
+    html = (out / files[0]).read_text()
+    assert 'Custom model deployments analyzed:</strong> dep0000001' in html
+    assert 'No custom model deployment quotas are known for dep0000001' in caplog.text
+    assert 'To map them' not in caplog.text
+
+
 def test_two_endpoints_of_one_model_do_not_overwrite(analyzer, tmp_path):
     out = tmp_path / 'results'
     analyzer.analyze([{'model_id': HAIKU, 'profile_prefix': 'au'},

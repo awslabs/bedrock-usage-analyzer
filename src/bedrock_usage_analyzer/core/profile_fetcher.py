@@ -8,9 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, FrozenSet, Iterable, List, Optional
 
 from bedrock_usage_analyzer.core.errors import is_access_denied
-from bedrock_usage_analyzer.utils.yaml_handler import endpoint_keys
+from bedrock_usage_analyzer.utils.yaml_handler import CUSTOM_ENDPOINT, endpoint_keys
 from bedrock_usage_analyzer.aws.bedrock import (
-    CUSTOM_ENDPOINT,
     endpoint_id,
     get_default_region_prefix_map,
     list_inference_profiles,
@@ -18,7 +17,8 @@ from bedrock_usage_analyzer.aws.bedrock import (
     region_from_arn,
     region_group,
 )
-from bedrock_usage_analyzer.aws.custom_models import deployment_short_id, list_deployments, resolve_deployment
+from bedrock_usage_analyzer.aws.custom_models import (
+    base_model_id, deployment_short_id, list_deployments, read_deployment)
 
 logger = logging.getLogger(__name__)
 
@@ -96,21 +96,39 @@ class InferenceProfileFetcher:
         self._parts: Dict[str, tuple] = {}     # listed system profile ID -> (prefix, model ID)
         self._tags_cache: Dict[str, Dict[str, str]] = {}
         self._deployments: Optional[List[Dict]] = None
-        self._deployment_names: Dict[str, str] = {}  # deployment ARN -> name (resolved ones)
+        self._deployments_error: Optional[Exception] = None
+        self._deployment_names: Dict[str, str] = {}  # deployment ARN -> name (selected ones)
+        self._base_models: Dict[str, Optional[str]] = {}  # deployed model ARN -> base model ID
 
     # ------------------------------------------------------------------ custom models
 
     def list_custom_deployments(self) -> List[Dict]:
-        """The region's custom model deployments, listed once per run (raises on errors)."""
+        """The region's custom model deployments, listed once per run: a failure is raised
+        again on later calls without another request."""
+        if self._deployments_error is not None:
+            raise self._deployments_error
         if self._deployments is None:
-            self._deployments = list_deployments(self.bedrock_client)
+            try:
+                self._deployments = list_deployments(self.bedrock_client)
+            except Exception as e:
+                self._deployments_error = e
+                raise
         return self._deployments
 
-    def resolve_custom_deployment(self, identifier: str, summary: Optional[Dict] = None) -> Dict:
-        """A deployment's ARN, name and base model ID (see custom_models.resolve_deployment)."""
-        info = resolve_deployment(self.bedrock_client, identifier, summary)
-        self._deployment_names[info['arn']] = info['name']
-        return info
+    def read_custom_deployment(self, identifier: str) -> Dict:
+        """A deployment's summary (arn, name, model_arn), read by its ID or ARN (raises)."""
+        return read_deployment(self.bedrock_client, identifier)
+
+    def note_deployment_name(self, arn: str, name: str):
+        """Remember a selected deployment's name, so find_profiles need not read it again."""
+        self._deployment_names[arn] = name
+
+    def deployment_base_model(self, model_arn: Optional[str]) -> Optional[str]:
+        """Base foundation model of a deployed model, once per model (raises API errors)."""
+        key = model_arn or ''
+        if key not in self._base_models:
+            self._base_models[key] = base_model_id(self.bedrock_client, model_arn)
+        return self._base_models[key]
 
     # ------------------------------------------------------------------ listing
 

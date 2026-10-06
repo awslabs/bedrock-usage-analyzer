@@ -12,13 +12,13 @@ from typing import Dict, List, Optional
 import yaml
 
 from bedrock_usage_analyzer.utils.yaml_handler import (
-    endpoint_keys, endpoint_quotas, fm_file_data, load_data_file, load_yaml, quota_slots, save_yaml,
+    CUSTOM_ENDPOINT, endpoint_keys, endpoint_quotas, fm_file_data, load_data_file, load_yaml, quota_slots, save_yaml,
     valid_models)
 from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.servicequotas import confirm_statuses, is_missing, list_quota_codes
 from bedrock_usage_analyzer.aws.bedrock_llm import extract_common_name, extract_quota_codes
 from bedrock_usage_analyzer.aws.bedrock import (
-    CUSTOM_ENDPOINT, QUOTA_KEYWORD_CUSTOM, get_endpoint_quota_keywords, get_regional_profile_prefixes)
+    QUOTA_KEYWORD_CUSTOM, get_endpoint_quota_keywords, get_regional_profile_prefixes)
 from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict, measures_metric, scrub_conflicting
 
 logger = logging.getLogger(__name__)

@@ -13,7 +13,7 @@ it lets the mapping through.
 import re
 from typing import Optional, Set
 
-from bedrock_usage_analyzer.aws.bedrock import CUSTOM_ENDPOINT
+from bedrock_usage_analyzer.utils.yaml_handler import CUSTOM_ENDPOINT
 
 _VERSION_TOKEN = re.compile(r'^\d{1,2}(?:\.\d{1,2})?$')
 _LETTERS_THEN_VERSION = re.compile(r'^([a-z]+)(\d{1,2}(?:\.\d{1,2})?)$')

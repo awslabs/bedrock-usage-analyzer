@@ -12,8 +12,7 @@ import yaml
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.core.errors import is_access_denied
 from bedrock_usage_analyzer.utils.partition import build_arn, partition_region_prefix
-# The fm-list endpoint of custom model deployment quotas, defined with the fm-list readers
-from bedrock_usage_analyzer.utils.yaml_handler import CUSTOM_ENDPOINT  # noqa: F401 (re-exported)
+from bedrock_usage_analyzer.utils.yaml_handler import CUSTOM_ENDPOINT
 
 logger = logging.getLogger(__name__)
 

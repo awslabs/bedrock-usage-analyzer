@@ -23,33 +23,30 @@ def deployment_short_id(arn: str) -> str:
     return arn.rsplit('/', 1)[-1]
 
 
-def _base_model_id(bedrock_client, model_arn: str) -> Optional[str]:
-    """The foundation model a custom model was trained from, following custom-model bases."""
+def _foundation_model_id(arn: str) -> Optional[str]:
+    return arn.split('foundation-model/', 1)[1] if 'foundation-model/' in arn else None
+
+
+def base_model_id(bedrock_client, model_arn: Optional[str]) -> Optional[str]:
+    """The foundation model a deployed model was trained from, following custom-model bases.
+
+    None for a model without one (an imported model). Raises the API error of GetCustomModel.
+    """
+    model_arn = model_arn or ''
     for _ in range(_MAX_BASE_CHAIN):
-        base_arn = bedrock_client.get_custom_model(modelIdentifier=model_arn).get('baseModelArn') or ''
-        if 'foundation-model/' in base_arn:
-            return base_arn.split('foundation-model/', 1)[1]
-        if '/' not in base_arn:
-            return None  # e.g. an imported model: no base model
-        model_arn = base_arn
+        if _foundation_model_id(model_arn) or '/' not in model_arn:
+            return _foundation_model_id(model_arn)
+        model_arn = bedrock_client.get_custom_model(modelIdentifier=model_arn).get('baseModelArn') or ''
     return None
 
 
-def resolve_deployment(bedrock_client, deployment_arn: str, summary: Optional[Dict] = None) -> Dict:
-    """The deployment's ARN, name and base model ID.
-
-    ``summary`` (from list_deployments) saves reading the deployment again. Raises the API
-    error (a missing deployment, a missing permission): the caller says which deployment
-    could not be resolved.
-    """
-    if summary is None:
-        deployment = bedrock_client.get_custom_model_deployment(customModelDeploymentIdentifier=deployment_arn)
-        summary = {'arn': deployment.get('customModelDeploymentArn') or deployment_arn,
-                   'name': deployment.get('modelDeploymentName') or deployment_short_id(deployment_arn),
-                   'model_arn': deployment.get('modelArn')}
-    model_arn = summary.get('model_arn')
-    return {'arn': summary['arn'], 'name': summary['name'],
-            'base_model_id': _base_model_id(bedrock_client, model_arn) if model_arn else None}
+def read_deployment(bedrock_client, deployment_arn: str) -> Dict:
+    """A deployment as list_deployments summarizes it (arn, name, model_arn). Raises the API
+    error (a missing deployment, a missing permission)."""
+    deployment = bedrock_client.get_custom_model_deployment(customModelDeploymentIdentifier=deployment_arn)
+    return {'arn': deployment.get('customModelDeploymentArn') or deployment_arn,
+            'name': deployment.get('modelDeploymentName') or deployment_short_id(deployment_arn),
+            'model_arn': deployment.get('modelArn')}
 
 
 def list_deployments(bedrock_client) -> List[Dict]:

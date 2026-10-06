@@ -6,7 +6,7 @@
 import pytest
 
 from bedrock_usage_analyzer.aws import bedrock
-from bedrock_usage_analyzer.aws.custom_models import deployment_short_id, list_deployments, resolve_deployment
+from bedrock_usage_analyzer.aws.custom_models import base_model_id, deployment_short_id, list_deployments, read_deployment
 from bedrock_usage_analyzer.core.profile_fetcher import InferenceProfileFetcher
 from bedrock_usage_analyzer.sync.quota_rules import mapping_conflict
 from bedrock_usage_analyzer.utils.yaml_handler import invokable_endpoint_keys, load_yaml, profile_endpoints, save_yaml
@@ -49,28 +49,30 @@ def test_deployment_short_id():
     assert deployment_short_id(DEPLOYMENT) == 'dep0000001'
 
 
-def test_a_deployment_resolves_to_its_base_model():
-    info = resolve_deployment(FakeCustom(), DEPLOYMENT)
-    assert (info['arn'], info['name'], info['base_model_id']) == (DEPLOYMENT, 'my-lite', BASE)
+def test_a_deployment_is_read_like_a_listed_one():
+    assert read_deployment(FakeCustom(), DEPLOYMENT) == {'arn': DEPLOYMENT, 'name': 'my-lite', 'model_arn': CUSTOM_MODEL}
+    assert list_deployments(FakeCustom([SUMMARY]))[0]['model_arn'] == CUSTOM_MODEL
+
+
+def test_a_custom_model_resolves_to_its_base_model():
+    assert base_model_id(FakeCustom(), CUSTOM_MODEL) == BASE
 
 
 def test_a_model_fine_tuned_from_a_custom_model_resolves_to_the_foundation_model():
     parent = 'arn:aws:bedrock:us-east-1:111122223333:custom-model/amazon.nova-lite-v1:0:300k/cm00000'
     client = FakeCustom(bases={CUSTOM_MODEL: parent,
                                parent: f"arn:aws:bedrock:us-east-1::foundation-model/{BASE}"})
-    assert resolve_deployment(client, DEPLOYMENT)['base_model_id'] == BASE
+    assert base_model_id(client, CUSTOM_MODEL) == BASE
+
+
+def test_a_deployed_foundation_model_needs_no_lookup():
+    client = FakeCustom()
+    assert base_model_id(client, f"arn:aws:bedrock:us-east-1::foundation-model/{BASE}") == BASE
+    assert client.calls == []
 
 
 def test_an_imported_model_has_no_base_model():
-    assert resolve_deployment(FakeCustom(bases={CUSTOM_MODEL: None}), DEPLOYMENT)['base_model_id'] is None
-
-
-def test_a_listed_summary_saves_reading_the_deployment():
-    client = FakeCustom()
-    summary = list_deployments(FakeCustom([SUMMARY]))[0]
-    assert summary['model_arn'] == CUSTOM_MODEL
-    assert resolve_deployment(client, DEPLOYMENT, summary)['base_model_id'] == BASE
-    assert client.calls == ['GetCustomModel']
+    assert base_model_id(FakeCustom(bases={CUSTOM_MODEL: None}), CUSTOM_MODEL) is None
 
 
 def test_deployments_are_listed():
@@ -166,9 +168,10 @@ def test_a_bare_deployment_id_with_m_is_found_in_the_listing(monkeypatch):
         'model_id': BASE, 'profile_prefix': 'custom', 'application_profile_ids': [DEPLOYMENT]}
 
 
-def test_interactive_selection_skips_an_unreadable_deployment(monkeypatch, caplog):
-    other = dict(SUMMARY, customModelDeploymentArn=DEPLOYMENT.replace('dep0000001', 'dep0000002'),
-                 customModelDeploymentName='gone', modelArn=CUSTOM_MODEL + 'x')
+def test_an_unreadable_base_model_leaves_out_only_the_limits(monkeypatch, caplog):
+    second = DEPLOYMENT.replace('dep0000001', 'dep0000002')
+    other = dict(SUMMARY, customModelDeploymentArn=second, customModelDeploymentName='gone',
+                 modelArn=CUSTOM_MODEL + 'x')
 
     class Partial(FakeCustom):
         def get_custom_model(self, modelIdentifier):
@@ -178,8 +181,30 @@ def test_interactive_selection_skips_an_unreadable_deployment(monkeypatch, caplo
     inputs = _inputs(monkeypatch, Partial([SUMMARY, other]))
     monkeypatch.setattr('builtins.input', lambda prompt='': 'all')
     configs = inputs._select_custom_deployments(inputs._custom_deployments())
-    assert [c['application_profile_ids'] for c in configs] == [[DEPLOYMENT]]
-    assert 'Skipping custom model deployment gone' in caplog.text
+    assert [(c['model_id'], c['application_profile_ids']) for c in configs] == [
+        (BASE, [DEPLOYMENT]), ('dep0000002', [second])]
+    assert 'gone has a custom model that could not be read' in caplog.text
+
+
+def test_a_deployment_id_resolves_when_profiles_cannot_be_listed(monkeypatch):
+    class NoProfiles(FakeCustom):
+        def list_inference_profiles(self, **kwargs):
+            raise RuntimeError('AccessDeniedException: not authorized to ListInferenceProfiles')
+    inputs = _inputs(monkeypatch, NoProfiles([SUMMARY]))
+    assert inputs._parse_model_id('my-lite')['application_profile_ids'] == [DEPLOYMENT]
+
+
+def test_a_failed_deployment_listing_is_requested_once_and_reported(monkeypatch, caplog):
+    class NoListing(FakeCustom):
+        def list_custom_model_deployments(self, **kwargs):
+            self.calls.append('ListCustomModelDeployments')
+            raise RuntimeError('AccessDeniedException: not authorized to ListCustomModelDeployments')
+    client = NoListing()
+    inputs = _inputs(monkeypatch, client)
+    with pytest.raises(SystemExit):
+        inputs._parse_model_id('zzzzzzzzzzzz')
+    assert client.calls.count('ListCustomModelDeployments') == 1
+    assert 'Custom model deployments could not be listed either' in caplog.text
 
 
 def test_deployments_are_listed_once_and_selected_names_are_reused(monkeypatch):

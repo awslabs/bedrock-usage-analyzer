@@ -6,10 +6,10 @@
 import logging
 from typing import List, Dict
 
-from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list, load_yaml, model_endpoints, save_yaml, valid_models
+from bedrock_usage_analyzer.utils.yaml_handler import (
+    CUSTOM_ENDPOINT, load_fm_list, load_yaml, model_endpoints, save_yaml, valid_models)
 from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.bedrock import (
-    CUSTOM_ENDPOINT,
     fetch_foundation_models,
     list_system_profiles,
     build_profile_map,

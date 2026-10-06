@@ -15,13 +15,13 @@ from bedrock_usage_analyzer.sync.quota_rules import scrub_conflicting
 from bedrock_usage_analyzer.core.metrics_fetcher import CloudWatchMetricsFetcher
 from bedrock_usage_analyzer.core.output_generator import OutputGenerator
 from bedrock_usage_analyzer.aws.bedrock import (
-    CUSTOM_ENDPOINT, endpoint_id, get_endpoint_quota_keywords, get_regional_profile_prefixes)
+    endpoint_id, get_endpoint_quota_keywords, get_regional_profile_prefixes)
 from bedrock_usage_analyzer.aws.custom_models import deployment_short_id
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.servicequotas import (
     QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK, list_quota_codes, lookup_quota)
 from bedrock_usage_analyzer.utils.yaml_handler import (
-    endpoint_quotas, fm_endpoints, has_endpoint, load_fm_list, profile_endpoints)
+    CUSTOM_ENDPOINT, endpoint_quotas, fm_endpoints, has_endpoint, load_fm_list, profile_endpoints)
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
 
 logger = logging.getLogger(__name__)
@@ -344,12 +344,16 @@ class BedrockAnalyzer:
                     else "the report will show usage without limits"
                 logger.info(f"  {endpoint_id(model_id, profile_prefix)} is not offered in "
                             f"{self.region}; {ending}")
-            elif not any(quota_codes.values()) and profile_prefix == CUSTOM_ENDPOINT and \
-                    not self._endpoint_listed(model_id, profile_prefix):
-                # A deployment without a listed customizable base model (said when it was
-                # selected): no refresh can map limits for it
+            elif not any(quota_codes.values()) and profile_prefix == CUSTOM_ENDPOINT:
+                if '.' in model_id and not self._endpoint_listed(model_id, profile_prefix):
+                    # A model list from before custom model deployments were mapped
+                    fix = f" To map them: bua refresh fm-list {self.region}, then bua refresh fm-quotas {self.region}"
+                else:
+                    # No base model (model_id is the deployment ID, said when it was selected),
+                    # or Service Quotas has no custom deployment quotas for it: no refresh helps
+                    fix = ""
                 logger.info(f"  No custom model deployment quotas are known for {model_id} in "
-                            f"{self.region}; the report will show usage without limits")
+                            f"{self.region}; the report will show usage without limits.{fix}")
             elif not any(quota_codes.values()) and profile_prefix != UNKNOWN_SOURCE:
                 profiles = profile_endpoints(self._fm_list(), model_id)
                 if (profile_prefix or 'base') not in get_endpoint_quota_keywords():
@@ -463,6 +467,8 @@ class BedrockAnalyzer:
                     'region_info': region_info,
                     'endpoint': endpoint,
                     'application_profile_scope': scope,
+                    'scope_label': 'Custom model deployments analyzed' if profile_prefix == CUSTOM_ENDPOINT
+                    else 'Application inference profiles analyzed',
                     'file_label': file_label,
                 }
             })
