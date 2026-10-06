@@ -102,6 +102,10 @@ def mapping_conflict(model_id: str, endpoint_type: str, quota_name: Optional[str
         # e.g. '... Claude Sonnet 4.5 V1 1M Context Length': a separate limit for long-context
         # requests on the same model ID; the standard quota is the one usage is measured against
         return "long-context variant quota"
+    if 'latency-optimized' in name:
+        # e.g. 'On-Demand, latency-optimized model inference tokens per minute for Amazon Nova
+        # Pro V1': a separate limit for requests made with performanceConfig latency=optimized
+        return "latency-optimized inference quota"
     version = model_version(model_id)
     version = _canonical(version) if version else None
     versions = quota_versions(quota_name)

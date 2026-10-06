@@ -510,9 +510,22 @@ models:
         concurrent: null
         rpm: null
         tpd: null
-        tpm: null
+        tpm:
+          code: L-31AB82D0
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Sonnet 5.5
+    us:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm:
+          code: L-94A31E46
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            Sonnet 5.5
   inference_profiles:
   - global
+  - us
   inference_types:
   - INFERENCE_PROFILE
   model_id: anthropic.claude-sonnet-5-5
@@ -1284,14 +1297,24 @@ models:
       quotas:
         concurrent: null
         rpm: null
-        tpd: null
-        tpm: null
+        tpd:
+          code: L-5ABF5878
+          name: Global cross-region model inference tokens per day for GPT-6.1 Sol
+        tpm:
+          code: L-B5C023CA
+          name: Global cross-region model inference tokens per minute for GPT-6.1
+            Sol
     us:
       quotas:
         concurrent: null
         rpm: null
-        tpd: null
-        tpm: null
+        tpd:
+          code: L-02B3D3B6
+          name: Model invocation max tokens per day for GPT-6.1 Sol (doubled for cross-region
+            calls)
+        tpm:
+          code: L-8C5F762B
+          name: Cross-region model inference tokens per minute for GPT-6.1 Sol
   inference_profiles:
   - global
   - us
@@ -1814,13 +1837,17 @@ models:
         concurrent: null
         rpm: null
         tpd: null
-        tpm: null
+        tpm:
+          code: L-A4F73742
+          name: Global cross-region model inference tokens per minute for Grok 4.7
     us:
       quotas:
         concurrent: null
         rpm: null
         tpd: null
-        tpm: null
+        tpm:
+          code: L-5DAEA81C
+          name: Cross-region model inference tokens per minute for Grok 4.7
   inference_profiles:
   - global
   - us

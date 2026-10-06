@@ -255,6 +255,13 @@ def test_long_context_variant_quota_is_rejected():
     assert mapping_conflict('anthropic.claude-sonnet-4-5-20250929-v1:0', 'us', std, REGIONAL) is None
 
 
+def test_latency_optimized_quota_is_rejected():
+    name = 'On-Demand, latency-optimized model inference tokens per minute for Amazon Nova Pro V1'
+    assert mapping_conflict('amazon.nova-pro-v1:0', 'base', name, REGIONAL) == 'latency-optimized inference quota'
+    std = 'On-demand model inference tokens per minute for Amazon Nova Pro'
+    assert mapping_conflict('amazon.nova-pro-v1:0', 'base', std, REGIONAL) is None
+
+
 def test_quota_index_keeps_other_partitions_rows(monkeypatch, tmp_path, no_bundle):
     """A GovCloud run must not drop the commercial rows from quota-index.csv."""
     (tmp_path / 'data').mkdir()
