@@ -123,6 +123,11 @@ class InferenceProfileFetcher:
                 logger.debug(f"Listing custom model deployments failed, retrying: {e}")
         return self._deployments
 
+    @property
+    def custom_deployments_error(self) -> Optional[Exception]:
+        """The error the deployment listing gave up on, or None."""
+        return self._deployments_error
+
     def read_custom_deployment(self, identifier: str) -> Dict:
         """A deployment's summary (arn, name, model_arn), read by its ID or ARN (raises)."""
         return read_deployment(self.bedrock_client, identifier)
@@ -466,18 +471,23 @@ class InferenceProfileFetcher:
     def _deployment_targets(self, deployment_arns):
         """(ARNs, names, metadata) of custom model deployments, named by their deployment name
         and with their tags, as application profiles are."""
-        names: Dict[str, str] = {}
-        metadata: Dict[str, Dict] = {}
-        for arn in deployment_arns:
+        def target(arn):
             name = self._deployment_names.get(arn)  # resolved when it was selected
             if name is None:
                 try:
                     name = self.read_custom_deployment(arn)['name']
                 except Exception as e:  # the name is cosmetic: the ARN still gives the metrics
                     logger.debug(f"Could not read custom model deployment {arn}: {e}")
-            names[arn] = name or deployment_short_id(arn)
-            metadata[arn] = {'id': deployment_short_id(arn), 'tags': self._get_tags(arn, names[arn])}
-        return list(deployment_arns), names, metadata
+            name = name or deployment_short_id(arn)
+            return name, {'id': deployment_short_id(arn), 'tags': self._get_tags(arn, name)}
+
+        arns = list(deployment_arns)
+        # A name and tags lookup per deployment: in parallel, as for application profiles
+        with ThreadPoolExecutor(max_workers=max(1, min(TAG_WORKERS, len(arns)))) as pool:
+            results = list(pool.map(target, arns))
+        names = {arn: name for arn, (name, _) in zip(arns, results)}
+        metadata = {arn: meta for arn, (_, meta) in zip(arns, results)}
+        return arns, names, metadata
 
     def find_profiles(self, model_id, profile_prefix, application_profile_ids=None):
         """Find the endpoints to analyze for a model.

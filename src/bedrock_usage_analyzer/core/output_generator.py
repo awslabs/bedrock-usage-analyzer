@@ -14,6 +14,10 @@ from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_
 
 logger = logging.getLogger(__name__)
 
+# What the names in a report's application_profile_scope are
+APPLICATION_PROFILE_SCOPE = 'Application inference profiles analyzed'
+DEPLOYMENT_SCOPE = 'Custom model deployments analyzed'
+
 
 def safe_filename(label: str) -> str:
     """Turn a model/profile label into a file name (no path separators or odd characters)."""
@@ -115,7 +119,7 @@ class OutputGenerator:
             'endpoint': data.get('endpoint', model_id),
             'application_profile_scope': data.get('application_profile_scope', []),
             # What the scope names are: application inference profiles or custom model deployments
-            'scope_label': data.get('scope_label') or 'Application inference profiles analyzed',
+            'scope_label': data.get('scope_label') or APPLICATION_PROFILE_SCOPE,
             'region': data.get('region', 'N/A'),
             'region_info': self._region_info(data),
             'generated_at': formatted_timestamp,
@@ -233,7 +237,7 @@ class OutputGenerator:
                 model_id=model_id,
                 endpoint=data.get('endpoint', model_id),
                 application_profile_scope=data.get('application_profile_scope', []),
-                scope_label=data.get('scope_label') or 'Application inference profiles analyzed',
+                scope_label=data.get('scope_label') or APPLICATION_PROFILE_SCOPE,
                 timestamp=formatted_timestamp,
                 region=region_name,
                 region_info=self._region_info(data),

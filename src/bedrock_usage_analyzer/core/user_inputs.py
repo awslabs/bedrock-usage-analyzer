@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Sequence, Union
 
 from ..aws.bedrock import endpoint_id, region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
-from ..aws.custom_models import DEPLOYMENT_KIND, deployment_short_id
+from ..aws.custom_models import DEPLOYMENT_KIND, base_model_id_in_arn, deployment_short_id
 from ..core.errors import is_access_denied, troubleshooting_hint
 from ..core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
 from ..sync.regions import load_region_names
@@ -290,6 +290,7 @@ class UserInputs:
           or its ARN
         - Application inference profile: its ID (e.g. 'tqab5jqtywp7') or ARN; only
           that profile is analyzed
+        - On-demand custom model deployment: its ARN, ID or name
 
         The prefix (us, eu, apac, global, etc.) indicates cross-region inference profile.
         Provider names (amazon, anthropic, meta, etc.) are NOT prefixes.
@@ -345,6 +346,13 @@ class UserInputs:
             options = ', '.join(endpoint_id(base_model_id, p) for p in profile_only)
             logger.warning(f"  WARNING: {value} has no on-demand endpoint in {self.region}; its "
                            f"usage is under its inference profiles: {options}")
+        elif not known_model and not prefix and \
+                CUSTOM_ENDPOINT in (fm_endpoints(self._load_fm_list(self.region), base_model_id) or set()):
+            # Listed only to be customized: its usage is under its custom model deployments
+            logger.error(f"{value} is offered in {self.region} only for customization; analyze its custom "
+                         f"model deployments instead (pass a deployment ARN, ID or name with -m, or choose "
+                         f"'Custom model deployments' interactively)")
+            sys.exit(1)
         elif not known_model and self.region and prefix and self._is_system_profile(value):
             # Listed by Bedrock, only the model list is older: no reason to doubt the ID
             logger.info(f"  Note: {value} is listed in {self.region} but not in its model list; "
@@ -410,9 +418,10 @@ class UserInputs:
         Its usage is reported under the deployment ARN; its limits are the base model's
         custom model deployment quotas (the fm-list's 'custom' endpoint of that model).
         ``summary`` is its list_deployments entry; without it the deployment is read. When it
-        cannot be read for lack of permission, its ARN still gives the metrics, so it is
-        analyzed without limits; any other error (no such deployment) ends the run. Its base
-        model only gives the limits: when that cannot be read, they are left out.
+        cannot be read for lack of permission, the listing may still have it, and otherwise
+        its ARN still gives the metrics, so it is analyzed without limits; any other error
+        (no such deployment) ends the run. Its base model only gives the limits: when that
+        cannot be read, the base model ID in the custom model ARN is used, or none.
         """
         fetcher = self._get_profile_fetcher()
         base, reason = None, None
@@ -426,8 +435,10 @@ class UserInputs:
                     if hint:
                         logger.error(f"Hint: {hint}")
                     sys.exit(1)
-                summary = {'arn': deployment_arn, 'name': deployment_short_id(deployment_arn), 'model_arn': None}
-                reason = f"could not be read ({e})"
+                summary = self._find_custom_deployment(deployment_short_id(deployment_arn))
+                if summary is None:
+                    summary = {'arn': deployment_arn, 'name': deployment_short_id(deployment_arn), 'model_arn': None}
+                    reason = f"could not be read ({e})"
         arn, name = summary['arn'], summary['name']
         fetcher.note_deployment_name(arn, name)
         if reason is None:
@@ -435,7 +446,11 @@ class UserInputs:
                 base = fetcher.deployment_base_model(summary.get('model_arn'))
                 reason = "has no foundation base model"  # e.g. a model imported with Custom Model Import
             except Exception as e:
+                base = base_model_id_in_arn(summary.get('model_arn'))
                 reason = f"has a custom model that could not be read ({e})"
+                if base:
+                    logger.info(f"  Could not read the custom model of deployment {name} ({e}); "
+                                f"using the base model its ARN names")
         if base:
             logger.info(f"  Custom model deployment {name} ({deployment_short_id(arn)}) is based on {base}")
         else:
@@ -521,12 +536,8 @@ class UserInputs:
             return []
 
     def _deployment_listing_error(self) -> Optional[Exception]:
-        """Why the custom model deployments could not be listed, or None."""
-        try:
-            self._get_profile_fetcher().list_custom_deployments()
-            return None
-        except Exception as e:  # cached by the fetcher: no new request
-            return e
+        """Why the custom model deployments could not be listed (after a listing), or None."""
+        return self._get_profile_fetcher().custom_deployments_error
 
     def _find_custom_deployment(self, identifier) -> Optional[Dict]:
         """The region's custom model deployment with this ID or name, or None."""

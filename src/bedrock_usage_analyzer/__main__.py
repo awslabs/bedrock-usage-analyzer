@@ -282,9 +282,11 @@ def main():
     p_analyze.add_argument('-r', '--region',
                           help='AWS region (e.g., us-west-2)')
     p_analyze.add_argument('-m', '--model-id', action='append',
-                          help='Model ID, system inference profile ID, or application inference profile '
-                               'ID/ARN (e.g., amazon.nova-premier-v1:0, us.amazon.nova-premier-v1:0, '
-                               'or arn:aws:bedrock:us-west-2:111122223333:application-inference-profile/abc123). '
+                          help='Model ID, system inference profile ID, application inference profile '
+                               'ID/ARN, or on-demand custom model deployment ARN/ID/name (e.g., '
+                               'amazon.nova-premier-v1:0, us.amazon.nova-premier-v1:0, '
+                               'arn:aws:bedrock:us-west-2:111122223333:application-inference-profile/abc123, or '
+                               'arn:aws:bedrock:us-east-1:111122223333:custom-model-deployment/abc123). '
                                'Repeat to analyze several.')
     p_analyze.add_argument('-g', '--granularity',
                           help='Aggregation granularity: single value (1min, 5min, 1hour) for all periods, '

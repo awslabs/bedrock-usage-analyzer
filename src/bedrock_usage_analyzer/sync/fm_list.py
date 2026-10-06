@@ -227,7 +227,16 @@ def refresh_region(region: str, update_bundle: bool = False):
                 endpoints.setdefault(prefix, _empty_endpoint())
         
         updated_models.append(model)
-    
+
+    # A base model no longer listed keeps its mapped custom deployment quotas: deployments of
+    # models fine-tuned from it keep running against them
+    listed_ids = {m['model_id'] for m in updated_models}
+    for model_id, saved in existing_models.items():
+        custom = model_endpoints(saved).get(CUSTOM_ENDPOINT)
+        if model_id not in listed_ids and _has_mapped_quota(custom):
+            updated_models.append({'model_id': model_id, 'provider': saved.get('provider', ''),
+                                   'inference_types': [], 'endpoints': {CUSTOM_ENDPOINT: custom}})
+
     # Save updated models
     models_data = {'models': sorted(updated_models, key=lambda x: (x['provider'], x['model_id']))}
     if checkout_file:

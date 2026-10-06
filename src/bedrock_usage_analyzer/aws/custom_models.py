@@ -25,6 +25,16 @@ def deployment_short_id(arn: str) -> str:
     return arn.rsplit('/', 1)[-1]
 
 
+def base_model_id_in_arn(model_arn: Optional[str]) -> Optional[str]:
+    """The base model ID a custom model ARN names ('.../custom-model/<base model ID>/<id>'),
+    or None (another ARN form). GetCustomModel is authoritative; this is the fallback."""
+    resource = (model_arn or '').split(':custom-model/', 1)
+    if len(resource) != 2 or resource[1].count('/') != 1:
+        return None
+    base = resource[1].split('/', 1)[0]
+    return base if '.' in base else None
+
+
 def base_model_id(bedrock_client, model_arn: Optional[str]) -> Optional[str]:
     """The foundation model a deployed model was trained from, following custom-model bases.
 
@@ -50,7 +60,7 @@ def read_deployment(bedrock_client, deployment_arn: str) -> Dict:
 def list_deployments(bedrock_client) -> List[Dict]:
     """The region's custom model deployments (summaries: arn, name, status, model_arn)."""
     deployments: List[Dict] = []
-    kwargs: Dict = {}
+    kwargs: Dict = {'maxResults': 1000}
     while True:
         response = bedrock_client.list_custom_model_deployments(**kwargs)
         for summary in response.get('modelDeploymentSummaries') or []:

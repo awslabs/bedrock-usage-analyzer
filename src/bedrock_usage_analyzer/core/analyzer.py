@@ -13,7 +13,7 @@ from datetime import datetime
 from bedrock_usage_analyzer.core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
 from bedrock_usage_analyzer.sync.quota_rules import scrub_conflicting
 from bedrock_usage_analyzer.core.metrics_fetcher import CloudWatchMetricsFetcher
-from bedrock_usage_analyzer.core.output_generator import OutputGenerator
+from bedrock_usage_analyzer.core.output_generator import APPLICATION_PROFILE_SCOPE, DEPLOYMENT_SCOPE, OutputGenerator
 from bedrock_usage_analyzer.aws.bedrock import (
     endpoint_id, get_endpoint_quota_keywords, get_regional_profile_prefixes)
 from bedrock_usage_analyzer.aws.custom_models import deployment_short_id
@@ -350,8 +350,9 @@ class BedrockAnalyzer:
                     # selected), so no refresh can map limits
                     fix = ""
                 elif self._endpoint_listed(model_id, profile_prefix):
-                    # Mapped by fm-quotas where Service Quotas has custom deployment quotas
-                    fix = f" To map them: bua refresh fm-quotas {self.region}"
+                    # fm-quotas maps them only where Service Quotas lists custom deployment quotas
+                    fix = (f" If Service Quotas lists custom model deployment quotas for it in {self.region}, "
+                           f"bua refresh fm-quotas {self.region} maps them")
                 else:
                     # A model list from before custom model deployments were mapped
                     fix = f" To map them: bua refresh fm-list {self.region}, then bua refresh fm-quotas {self.region}"
@@ -470,8 +471,7 @@ class BedrockAnalyzer:
                     'region_info': region_info,
                     'endpoint': endpoint,
                     'application_profile_scope': scope,
-                    'scope_label': 'Custom model deployments analyzed' if profile_prefix == CUSTOM_ENDPOINT
-                    else 'Application inference profiles analyzed',
+                    'scope_label': DEPLOYMENT_SCOPE if profile_prefix == CUSTOM_ENDPOINT else APPLICATION_PROFILE_SCOPE,
                     'file_label': file_label,
                 }
             })
