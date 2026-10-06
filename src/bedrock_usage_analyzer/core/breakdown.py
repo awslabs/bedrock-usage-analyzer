@@ -32,6 +32,8 @@ OTHER_PRINCIPALS = '(other principals)'
 # the breakdown ends this long before the run started; its periods end there too, a window
 # CloudWatch's data of every report covers
 LOG_DELIVERY_DELAY = timedelta(minutes=5)
+# CloudWatch keeps 1-minute metric data for 15 days
+CLOUDWATCH_MINUTE_DAYS = 15
 ENABLE_HINT = ("To attribute usage to callers, enable model invocation logging to CloudWatch Logs in this "
                "region (Bedrock console > Settings, or PutModelInvocationLoggingConfiguration); turning "
                "off text, image, embedding and video delivery keeps only metadata.")
@@ -47,9 +49,10 @@ class BreakdownBuilder:
 
     def __init__(self, breakdown: Breakdown, region: str, bedrock_client, metrics_fetcher, stats_fn: Callable,
                  local_tz, account: Optional[str], parallel: Callable = None,
-                 logs_client=None, iam_client=None):
+                 logs_client=None, iam_client=None, known_models: Iterable[str] = ()):
         self.breakdown = breakdown
         self.region = region
+        self.known_models = set(known_models)  # the region's foundation model IDs
         self.bedrock_client = bedrock_client
         self.metrics_fetcher = metrics_fetcher
         self._stats = stats_fn
@@ -91,12 +94,15 @@ class BreakdownBuilder:
                                 f"is shown as '{UNATTRIBUTED}'")
             logs = self._logs_client or create_client('logs', self.region)
             fetcher = InvocationLogFetcher(logs, self.log_group)
-            start = end - timedelta(days=days)
+            # No further back than CloudWatch keeps 1-minute data (counted from now), which the
+            # shares and the not-logged row are compared with; longer periods are marked partly
+            # covered
+            start = now - timedelta(days=min(days, CLOUDWATCH_MINUTE_DAYS))
             covered_from = fetcher.coverage_start(start, end)
             if covered_from is None:
                 return self._give_up(f"log group {self.log_group} does not exist in {self.region}. {ENABLE_HINT}")
             self.coverage = (covered_from, end)
-            forms = model_id_forms(cw_ids, self.region, self.account)
+            forms = model_id_forms(cw_ids, self.region, self.account, self.known_models)
             logger.info(f"  Reading model invocation logs from {self.log_group} "
                         f"({covered_from:%Y-%m-%d %H:%M} to {end:%Y-%m-%d %H:%M} UTC)...")
             self._rows = fetcher.fetch(forms, self.breakdown, covered_from, end)
@@ -144,12 +150,12 @@ class BreakdownBuilder:
         if kind == SESSION:
             return row['key'] or row['principal']
         if kind == METADATA:
-            return row['key'] if row['key'] not in (None, '') else f"(no {self.breakdown.key})"
+            return _caller_value(row['key']) if row['key'] not in (None, '') else f"(no {self.breakdown.key})"
         tags = (self._tags or {}).get(row['principal'])
         if tags is None and row['principal'].startswith(('role/', 'user/')) and self._tag_error is not None:
             return '(tags not readable)'
         value = (tags or {}).get(self.breakdown.key)
-        return value if value not in (None, '') else f"(no {self.breakdown.key} tag)"
+        return _caller_value(value) if value not in (None, '') else f"(no {self.breakdown.key} tag)"
 
     def _selected(self, row) -> bool:
         wanted = self.breakdown.principals
@@ -179,14 +185,21 @@ class BreakdownBuilder:
                time_periods: Iterable[str]) -> Dict:
         # Every period of the breakdown ends where the logs were read up to (CloudWatch,
         # read later for each report, covers that window too), and so do its totals
-        covered_from, logs_end = self.coverage
+        logs_from, logs_end = self.coverage
         end = logs_end
+        # This report's CloudWatch 1-minute data starts 15 days before it was fetched (after
+        # the logs were read): the breakdown starts where both sources have data
+        cw_end = max((d['end_time'] for d in fetched_cw.values() if d.get('end_time')), default=logs_end)
+        cw_from = _next_minute(cw_end - timedelta(days=CLOUDWATCH_MINUTE_DAYS))
+        covered_from = max(logs_from, cw_from)
 
         groups: Dict[str, Dict] = {}
         logged_all = defaultdict(_empty_minute)  # every logged caller, before the principal filter
         others = defaultdict(_empty_minute)  # callers left out by --principal
         for row in (r for cw_id in dict.fromkeys(final_model_ids) for r in self._rows_by_id.get(cw_id, ())):
             minute = row['minute']
+            if minute < covered_from:
+                continue
             _add(logged_all[minute], row)
             if not self._selected(row):
                 _add(others[minute], row)
@@ -239,10 +252,14 @@ class BreakdownBuilder:
                 period_series[name] = {k: ts_data[k] for k in ('TPM', 'RPM') if k in ts_data}
             rows.sort(key=lambda r: (r['name'] == UNATTRIBUTED, r['name'] == OTHER_PRINCIPALS,
                                      r['name'] == folded_name, -r['tokens']))
-            # Partly covered: the logs start after the period does (retention, a newer log group)
+            # Partly covered: the period starts before CloudWatch's 1-minute data, or before
+            # the logs (retention, a newer log group); the report says which
+            partial = window_start > period_start
             periods[period] = {'rows': rows, 'total_tokens': total[0] + total[1], 'total_requests': total[2],
                                'covered_from': window_start.isoformat(), 'covered_to': logs_end.isoformat(),
-                               'partial': window_start > period_start}
+                               'partial': partial,
+                               'partial_reason': (None if not partial else
+                                                  'cloudwatch' if cw_from >= logs_from else 'logs')}
             time_series[period] = period_series
         if self.breakdown.kind == PRINCIPAL:
             self._add_tags(periods)
@@ -331,6 +348,18 @@ def _fold_small_groups(series: Dict, start: datetime, end: datetime) -> Tuple[Di
     folded_name = f"({len(rest)} smaller groups)"
     kept[folded_name] = (folded, sorted(principals), sorted(via))
     return kept, folded_name
+
+
+def _next_minute(moment: datetime) -> datetime:
+    """The first whole minute at or after moment."""
+    floor = moment.replace(second=0, microsecond=0)
+    return floor if floor == moment else floor + timedelta(minutes=1)
+
+
+def _caller_value(value: str) -> str:
+    """A metadata or tag value as a row name. The tool's own rows are named '(...)', so a
+    value of that form is quoted and can never take one of their places."""
+    return f'"{value}"' if value.startswith('(') and value.endswith(')') else value
 
 
 def _add(values: List[float], row: Dict) -> None:

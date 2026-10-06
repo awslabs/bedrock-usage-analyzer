@@ -78,14 +78,14 @@ class Breakdown:
     def parse(cls, value: str, principals: Iterable[str] = (), log_group: Optional[str] = None) -> 'Breakdown':
         """'principal', 'session', 'tag:<key>' or 'metadata:<key>' (raises BreakdownError)."""
         kind, _, key = (value or '').strip().partition(':')
-        kind = kind.lower()
+        kind, key = kind.strip().lower(), key.strip()  # spaces around the separator
         if kind not in KINDS:
             raise BreakdownError(f"unknown breakdown '{value}': use principal, session, tag:<key> or metadata:<key>")
         if kind == TAG:
-            if not _TAG_KEY_PATTERN.match(key) or not key.strip():
+            if not _TAG_KEY_PATTERN.match(key):
                 raise BreakdownError(f"'{value}' needs a key of letters, digits, spaces and _.:/=+@- (e.g. tag:team)")
         elif kind == METADATA:
-            if not _KEY_PATTERN.match(key) or not key.strip():
+            if not _KEY_PATTERN.match(key):
                 raise BreakdownError(f"'{value}' needs a key of letters, digits, spaces and :_@$#=/+,-. "
                                      f"(e.g. metadata:team)")
         elif key:
@@ -125,14 +125,6 @@ def normalize_principal(arn: str) -> str:
     return value
 
 
-def _from_query_principal(value: str) -> str:
-    """The query's principal column ('assumed-role/<name>', 'user/...', or an ARN) in the
-    normalize_principal form."""
-    if value.startswith('assumed-role/'):
-        return 'role/' + value.split('/', 2)[1]
-    return normalize_principal(value)
-
-
 def logging_destination(bedrock_client) -> Tuple[Optional[str], str]:
     """The region's invocation log group, and why there is none.
 
@@ -149,14 +141,17 @@ def logging_destination(bedrock_client) -> Tuple[Optional[str], str]:
     return None, "model invocation logging is not enabled in this region"
 
 
-def model_id_forms(cw_ids: Iterable[str], region: str, account: Optional[str]) -> Dict[str, str]:
+def model_id_forms(cw_ids: Iterable[str], region: str, account: Optional[str],
+                   known_models: Iterable[str] = ()) -> Dict[str, str]:
     """Every spelling of each CloudWatch ModelId value that invocation logs may record.
 
     The log's modelId is what the caller passed: a model ID or its ARN, an inference profile
     ID or ARN, an application profile ARN, or a deployment ARN. CloudWatch reports all of them
     under one ModelId value (the profile or model ID, the application profile ID, the
-    deployment ARN). Returns {log spelling: CloudWatch ModelId value}.
+    deployment ARN). known_models are the region's foundation model IDs. Returns {log
+    spelling: CloudWatch ModelId value}.
     """
+    known_models = set(known_models)
     forms: Dict[str, str] = {}
     for cw_id in cw_ids:
         forms[cw_id] = cw_id
@@ -167,11 +162,15 @@ def model_id_forms(cw_ids: Iterable[str], region: str, account: Optional[str]) -
             # An application inference profile ID
             if account:
                 forms[build_arn('bedrock', region, account, f"application-inference-profile/{cw_id}")] = cw_id
-        elif prefix:
-            if account:
-                forms[build_arn('bedrock', region, account, f"inference-profile/{endpoint_id(model_id, prefix)}")] = cw_id
         else:
-            forms[build_arn('bedrock', region, '', f"foundation-model/{model_id}")] = cw_id
+            # A profile ID, or a model ID. A profile whose prefix the bundled mapping does not
+            # have yet ('kr.anthropic.x') looks like a model ID: an ID that is not one of the
+            # region's foundation models gets both ARN spellings
+            if account and (prefix or cw_id not in known_models):
+                profile_id = endpoint_id(model_id, prefix) if prefix else cw_id
+                forms[build_arn('bedrock', region, account, f"inference-profile/{profile_id}")] = cw_id
+            if not prefix:
+                forms[build_arn('bedrock', region, '', f"foundation-model/{model_id}")] = cw_id
     return {form: cw_id for form, cw_id in forms.items() if _MODEL_ID_PATTERN.match(form)}
 
 
@@ -251,6 +250,7 @@ class InvocationLogFetcher:
         self.bytes_scanned = 0.0
         self.queries_run = 0
         self._cancel = threading.Event()
+        self._count_lock = threading.Lock()
 
     def coverage_start(self, start: datetime, end: datetime) -> Optional[datetime]:
         """The earliest time of [start, end] the log group can hold (its creation time and
@@ -322,7 +322,8 @@ class InvocationLogFetcher:
         query_id = response.get('queryId')
         if not query_id:
             raise LogsQueryError("StartQuery returned no query ID")
-        self.queries_run += 1
+        with self._count_lock:  # queries run in several threads
+            self.queries_run += 1
         waited = 0.0
         try:
             while True:
@@ -331,7 +332,8 @@ class InvocationLogFetcher:
                 result = self.logs_client.get_query_results(queryId=query_id)
                 status = result.get('status')
                 if status == 'Complete':
-                    self.bytes_scanned += _number((result.get('statistics') or {}).get('bytesScanned'))
+                    with self._count_lock:
+                        self.bytes_scanned += _number((result.get('statistics') or {}).get('bytesScanned'))
                     return [{field['field']: field.get('value') for field in row}
                             for row in result.get('results') or []]
                 if status in ('Failed', 'Cancelled', 'Timeout', 'Unknown'):
@@ -350,7 +352,7 @@ class InvocationLogFetcher:
 
     @staticmethod
     def _row(raw: Dict, forms: Dict[str, str], breakdown: Breakdown) -> Dict:
-        principal = _from_query_principal(raw.get('principal') or '')
+        principal = normalize_principal(raw.get('principal') or '')  # 'assumed-role/<name>', 'user/...' or an ARN
         if breakdown.kind == SESSION:
             key = raw.get('session') or principal
         elif breakdown.kind == METADATA:

@@ -113,7 +113,7 @@ def row(at, principal, i=100, o=50, n=1, model=US_HAIKU, **extra):
 @pytest.mark.parametrize('value,kind,key', [
     ('principal', 'principal', None), ('session', 'session', None), ('PRINCIPAL', 'principal', None),
     ('tag:team', 'tag', 'team'), ('metadata:cost-center', 'metadata', 'cost-center'),
-    ('tag:Cost Center', 'tag', 'Cost Center'),
+    ('tag:Cost Center', 'tag', 'Cost Center'), ('tag: team ', 'tag', 'team'), (' metadata : app', 'metadata', 'app'),
     # requestMetadata keys may hold what Bedrock allows: spaces, $ # , and up to 256 characters
     ('metadata:cost center', 'metadata', 'cost center'), ('metadata:app#$,x', 'metadata', 'app#$,x'),
     ('metadata:' + 'k' * 256, 'metadata', 'k' * 256),
@@ -181,6 +181,13 @@ def test_every_model_id_spelling_maps_to_its_cloudwatch_value():
     assert forms[f"arn:aws:bedrock:{REGION}:{ACCOUNT}:inference-profile/{US_HAIKU}"] == US_HAIKU
     # Inference profile ARNs always carry the account
     assert f"arn:aws:bedrock:{REGION}::inference-profile/{US_HAIKU}" not in forms
+    # A prefix the bundled mapping does not know yet: both ARN spellings
+    # A known foundation model gets no inference-profile spelling (no caller can use one)
+    known = model_id_forms([HAIKU], REGION, ACCOUNT, known_models=[HAIKU])
+    assert set(known) == {HAIKU, f"arn:aws:bedrock:{REGION}::foundation-model/{HAIKU}"}
+    unknown = model_id_forms(['kr.anthropic.x-v1:0'], REGION, ACCOUNT, known_models=[HAIKU])
+    assert unknown[f"arn:aws:bedrock:{REGION}:{ACCOUNT}:inference-profile/kr.anthropic.x-v1:0"] == 'kr.anthropic.x-v1:0'
+    assert unknown[f"arn:aws:bedrock:{REGION}::foundation-model/kr.anthropic.x-v1:0"] == 'kr.anthropic.x-v1:0'
     assert forms[HAIKU] == HAIKU and forms[f"arn:aws:bedrock:{REGION}::foundation-model/{HAIKU}"] == HAIKU
     assert forms[f"arn:aws:bedrock:{REGION}:{ACCOUNT}:application-inference-profile/app0000001"] == 'app0000001'
     assert forms[deployment] == deployment
@@ -587,8 +594,45 @@ def test_a_partly_covered_period_is_marked():
     section = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({before: (999, 0, 9), T1: (100, 50, 1)})},
                               GRANULARITY, ['7days', '30days'])
     assert section['periods']['30days']['partial'] and section['periods']['7days']['partial']
+    assert section['periods']['7days']['partial_reason'] == 'logs'
     # CloudWatch usage from before the logs start is not counted as unattributed
     assert section['periods']['30days']['total_tokens'] == 150
+
+
+def test_the_logs_are_read_no_further_back_than_cloudwatch_keeps_minutes():
+    # CloudWatch keeps 1-minute data for 15 days: a 30-day period is compared over those only
+    logs = FakeLogs([row(END - timedelta(days=20), 'assumed-role/Old'), row(T1, 'assumed-role/A')])
+    builder = builder_for(Breakdown(), logs)
+    builder.prepare([US_HAIKU], END, 30)
+    assert builder.coverage[0] == END - timedelta(days=15)  # counted from now, as CloudWatch's
+    section = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({T1: (100, 50, 1)})}, GRANULARITY,
+                              ['14days', '30days'])
+    assert section['periods']['30days']['partial'] and not section['periods']['14days']['partial']
+    assert section['periods']['30days']['partial_reason'] == 'cloudwatch'
+    assert section['periods']['14days']['partial_reason'] is None
+    assert [r['name'] for r in section['periods']['30days']['rows']] == ['role/A']
+
+
+def test_minutes_logged_before_this_reports_cloudwatch_data_starts_are_left_out():
+    # The report's CloudWatch data was fetched 10 minutes after the logs were read: its
+    # 1-minute data starts 10 minutes later too, and so does the breakdown
+    first = END - timedelta(days=15) + timedelta(minutes=2)
+    logs = FakeLogs([row(first, 'assumed-role/Early'), row(T1, 'assumed-role/A')])
+    builder = builder_for(Breakdown(), logs)
+    builder.prepare([US_HAIKU], END, 30)
+    data = cloudwatch({T1: (150, 0, 1)})
+    data['end_time'] = END + timedelta(minutes=10, seconds=30)
+    section = builder.section([US_HAIKU], {}, {US_HAIKU: data}, GRANULARITY, ['30days'])
+    assert section['coverage']['start'] == (END - timedelta(days=15) + timedelta(minutes=11)).isoformat()
+    assert [r['name'] for r in section['periods']['30days']['rows']] == ['role/A']
+
+
+def test_caller_values_never_take_the_place_of_the_tools_own_rows():
+    logs = FakeLogs([row(T1, 'assumed-role/A', meta='(other principals)'), row(T1, 'assumed-role/B', meta='x')])
+    builder = builder_for(Breakdown.parse('metadata:app', ['role/A']), logs)
+    builder.prepare([US_HAIKU], END, 1)
+    rows = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({})}, GRANULARITY, ['1hour'])['periods']['1hour']['rows']
+    assert [r['name'] for r in rows] == ['"(other principals)"', '(other principals)']
 
 
 @pytest.mark.parametrize('bedrock,logs,expected', [

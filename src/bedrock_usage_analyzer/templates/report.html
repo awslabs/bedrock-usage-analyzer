@@ -224,7 +224,7 @@
         {% for period in period_ms %}
         {% set section = breakdown.periods.get(period) %}
         {% if section and section.rows %}
-        <button class="collapsible">{{ period_names.get(period, period) }}{% if section.partial %} (logs cover {{ section.covered_from }} to {{ section.covered_to }}){% endif %}</button>
+        <button class="collapsible">{{ period_names.get(period, period) }}{% if section.partial %} (covers {{ section.covered_from }} to {{ section.covered_to }}: {% if section.partial_reason == 'cloudwatch' %}CloudWatch keeps 1-minute data for 15 days{% else %}the invocation logs start later{% endif %}){% endif %}</button>
         <div class="collapsible-content">
             <div class="contribution-table">
                 <table>

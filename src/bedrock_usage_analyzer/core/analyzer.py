@@ -342,7 +342,8 @@ class BedrockAnalyzer:
             # scanned once, whatever the number of reports
             builder = BreakdownBuilder(self.breakdown, self.region, self.bedrock_client, self.metrics_fetcher,
                                        self._calculate_stats_from_time_series, self.local_tz, self.account,
-                                       parallel=in_parallel)
+                                       parallel=in_parallel,
+                                       known_models=[m.get('model_id') for m in self._fm_list()])
             run_ids = sorted({cw_id for ids, _, _ in all_profiles_map.values() for cw_id in ids})
             end = datetime.now(timezone.utc).replace(second=0, microsecond=0)
             builder.prepare(run_ids, end, max(PERIOD_DAYS[p] for p in self.granularity_config))

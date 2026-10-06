@@ -621,18 +621,9 @@ class CloudWatchMetricsFetcher:
         end_time = fetched_data['end_time']
         period = granularity_config[time_period]
         
-        if time_period == '1hour':
-            start_time = end_time - timedelta(hours=1)
-        elif time_period == '1day':
-            start_time = end_time - timedelta(days=1)
-        elif time_period == '7days':
-            start_time = end_time - timedelta(days=7)
-        elif time_period == '14days':
-            start_time = end_time - timedelta(days=14)
-        elif time_period == '30days':
-            start_time = end_time - timedelta(days=30)
-        else:
+        if time_period not in PERIOD_DAYS:
             return self._empty_time_series(time_period)
+        start_time = end_time - timedelta(days=PERIOD_DAYS[time_period])
         
         # Get token metrics from 1-min data
         if '60_token' not in fetched_data:
