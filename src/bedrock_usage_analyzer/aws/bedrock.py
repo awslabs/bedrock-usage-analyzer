@@ -141,7 +141,14 @@ def get_endpoint_descriptions() -> Dict[str, str]:
     Returns:
         Dict mapping prefix to description (e.g., {'base': 'on-demand', 'us': 'cross-region inference profile'})
     """
-    mapping = _load_prefix_mapping()
+    try:
+        mapping = _load_prefix_mapping()
+    except FileNotFoundError:
+        mapping = []
+    if not mapping:
+        # No prefix-mapping.yml at all: describe the prefixes this release knows
+        return {'base': 'on-demand', 'global': 'global inference profile',
+                **{p: 'cross-region inference profile' for p in FALLBACK_PROFILE_PREFIXES - {'global'}}}
     return {m['prefix']: m.get('description') or m['prefix'] for m in mapping}
 
 

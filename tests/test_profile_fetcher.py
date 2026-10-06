@@ -706,6 +706,8 @@ def test_endpoint_keywords_fall_back_without_a_prefix_mapping(monkeypatch):
     monkeypatch.setattr(bedrock, '_load_prefix_mapping', missing)
     keywords = bedrock.get_endpoint_quota_keywords()
     assert keywords['base'] == 'on-demand' and keywords['global'] == 'global' and keywords['au'] == 'cross-region'
+    descriptions = bedrock.get_endpoint_descriptions()     # used by the fm-quotas LLM prompt
+    assert set(descriptions) == set(keywords) and descriptions['base'] == 'on-demand'
 
 
 def test_copy_of_a_custom_model_is_named_as_such():
