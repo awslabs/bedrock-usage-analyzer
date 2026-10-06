@@ -203,7 +203,12 @@ class UserInputs:
         try:
             group, reason = logging_destination(self._get_profile_fetcher().bedrock_client)
         except AWS_ERRORS as e:
-            group, reason = None, f"the logging configuration could not be read ({e})"
+            # Logging may well be on: the fix is the permission, or naming the group
+            logger.info(f"\nUsage by caller (IAM principal) is not offered: the model invocation logging "
+                        f"configuration could not be read ({e}). Allow "
+                        f"bedrock:GetModelInvocationLoggingConfiguration, or pass --breakdown with "
+                        f"--log-group <invocation log group>.")
+            return None
         if not group:
             logger.info(f"\nUsage by caller (IAM principal) is not available: {reason}. {ENABLE_HINT}")
             return None

@@ -70,16 +70,23 @@ class BreakdownBuilder:
         self._tags: Optional[Dict[str, Dict[str, str]]] = None
         self._tag_error: Optional[Exception] = None
         self._tags_read: Set[str] = set()
-        self.notes: List[str] = []
+        self._tag_failed: Set[str] = set()  # principals whose tags could not be read
 
     # ------------------------------------------------------------------ fetching
 
     def prepare(self, cw_ids: Iterable[str], now: datetime, days: float) -> Optional[str]:
         """Query the logs for every ModelId of the run, once, up to LOG_DELIVERY_DELAY before
         now (records reach the log group seconds to minutes after the call). Returns why the
-        breakdown is unavailable, or None."""
+        breakdown is unavailable, or None. Never raises: the CloudWatch reports go on."""
         if self._rows_by_id is not None or self._unavailable is not None:
             return self._unavailable
+        try:
+            return self._prepare(cw_ids, now, days)
+        except Exception as e:  # an unexpected error must not end the run
+            logger.debug("Reading the invocation logs failed", exc_info=True)
+            return self._give_up(f"could not read the model invocation logs: {e}")
+
+    def _prepare(self, cw_ids: Iterable[str], now: datetime, days: float) -> Optional[str]:
         end = now - LOG_DELIVERY_DELAY
         try:
             if not self.log_group:
@@ -94,7 +101,8 @@ class BreakdownBuilder:
                     logger.info(f"  Note: account ID unavailable ({e}); usage logged under profile ARNs "
                                 f"is shown as '{UNATTRIBUTED}'")
             logs = self._logs_client or create_client('logs', self.region)
-            fetcher = InvocationLogFetcher(logs, self.log_group)
+            starter = self._logs_client or create_client('logs', self.region, single_attempt=True)
+            fetcher = InvocationLogFetcher(logs, self.log_group, start_client=starter)
             # No further back than CloudWatch keeps 1-minute data (counted from now), which the
             # shares and the not-logged row are compared with; longer periods are marked partly
             # covered
@@ -116,16 +124,6 @@ class BreakdownBuilder:
         self._rows_by_id = {}
         for row in rows:
             self._rows_by_id.setdefault(row['cw_id'], []).append(row)
-        if self._wanted:
-            # A --principal that no logged caller matches (a typo, or no calls) would show
-            # only '(other principals)': say so
-            seen = {r['principal'].lower() for r in rows}
-            missing = [p for p in self.breakdown.principals if p.lower() not in seen]
-            if missing:
-                message = (f"no logged call from {', '.join(missing)} in "
-                           f"{covered_from:%Y-%m-%d %H:%M} to {end:%Y-%m-%d %H:%M} UTC")
-                self.notes.append(message)
-                logger.info(f"  Note: {message}")
         if self.breakdown.kind == TAG:
             # Grouping needs every selected principal's tags (--principal limits them); a
             # principal breakdown reads only its rows' tags, when the sections are built
@@ -145,13 +143,36 @@ class BreakdownBuilder:
         iam = self._iam_client or create_client('iam', self.region)
         tags, error = principal_tags(iam, principals, self._parallel)
         self._tags = {**(self._tags or {}), **tags}
-        if error is not None and self._tag_error is None:
-            self._tag_error = error
-            message = f"some IAM principal tags could not be read ({error})"
+        failed = principals - set(tags)
+        if failed:
+            self._tag_failed |= failed
+            if self._tag_error is None:
+                self._tag_error = error
+            logger.info(f"  Note: IAM tags of {len(failed)} principal(s) could not be read ({error})")
+
+    def _notes(self, principals: Set[str], start: datetime, no_cloudwatch: List[str]) -> List[str]:
+        """This report's notes: ModelIds left out for want of CloudWatch data, principals
+        whose tags could not be read, and the --principal values none of its logged calls
+        (from start on) came from."""
+        notes = []
+        if no_cloudwatch:
+            notes.append(f"CloudWatch returned no 1-minute data for {', '.join(no_cloudwatch)}; "
+                         f"their logged calls are left out of the breakdown")
+        if principals & self._tag_failed:
+            message = f"some IAM principal tags could not be read ({self._tag_error})"
             if self.breakdown.kind == TAG:
                 message += "; principals without readable tags are grouped under '(tags not readable)'"
-            self.notes.append(message)
-            logger.info(f"  Note: {message}")
+            notes.append(message)
+        if self._wanted:
+            # A --principal that no logged caller matches (a typo, or no calls) shows only
+            # '(other principals)': say so
+            seen = {p.lower() for p in principals}
+            missing = [p for p in self.breakdown.principals if p.lower() not in seen]
+            if missing:
+                end = self.coverage[1]
+                notes.append(f"no logged call from {', '.join(missing)} in "
+                             f"{start:%Y-%m-%d %H:%M} to {end:%Y-%m-%d %H:%M} UTC")
+        return notes
 
     # ------------------------------------------------------------------ grouping
 
@@ -163,9 +184,9 @@ class BreakdownBuilder:
             return row['key'] or row['principal']
         if kind == METADATA:
             return _caller_value(row['key']) if row['key'] not in (None, '') else f"(no {self.breakdown.key})"
-        tags = (self._tags or {}).get(row['principal'])
-        if tags is None and row['principal'].startswith(('role/', 'user/')) and self._tag_error is not None:
+        if row['principal'] in self._tag_failed:
             return '(tags not readable)'
+        tags = (self._tags or {}).get(row['principal'])
         # IAM tag keys are case-insensitive (a principal cannot have both Team and team)
         wanted = self.breakdown.key.lower()
         value = next((v for k, v in (tags or {}).items() if k.lower() == wanted), None)
@@ -181,19 +202,21 @@ class BreakdownBuilder:
                 time_periods: Iterable[str]) -> Optional[Dict]:
         """The breakdown section of one report. A section that cannot be built says why
         instead of failing the report."""
+        empty = {'notes': [], 'periods': {}, 'time_series': {}}
         if self._unavailable is not None or self._rows_by_id is None:
-            built = {'unavailable': self._unavailable or 'not fetched', 'periods': {}, 'time_series': {}}
+            built = {**empty, 'unavailable': self._unavailable or 'not fetched'}
         else:
             try:
                 built = self._build(final_model_ids, profile_names, fetched_cw, granularity_config, time_periods)
             except Exception as e:  # never lose the CloudWatch report to the breakdown
                 logger.debug("Breakdown section failed", exc_info=True)
                 logger.info(f"  Breakdown by {self.breakdown.label} unavailable for this report: {e}")
-                built = {'unavailable': f"the breakdown could not be built: {e}", 'periods': {}, 'time_series': {}}
-        # Notes after building: reading the rows' tags may add one
+                built = {**empty, 'unavailable': f"the breakdown could not be built: {e}"}
+        for note in built['notes']:
+            logger.info(f"  Note: {note}")
         return {'kind': self.breakdown.kind, 'key': self.breakdown.key, 'label': self.breakdown.label,
                 'source': 'model invocation logs', 'log_group': self.log_group,
-                'principal_filter': list(self.breakdown.principals), 'notes': list(self.notes), **built}
+                'principal_filter': list(self.breakdown.principals), **built}
 
     def _build(self, final_model_ids, profile_names, fetched_cw: Dict, granularity_config: Dict,
                time_periods: Iterable[str]) -> Dict:
@@ -209,7 +232,13 @@ class BreakdownBuilder:
         groups: Dict[str, Dict] = {}
         logged_all = defaultdict(_empty_minute)  # every logged caller, before the principal filter
         others = defaultdict(_empty_minute)  # callers left out by --principal
-        for row in (r for cw_id in dict.fromkeys(final_model_ids) for r in self._rows_by_id.get(cw_id, ())):
+        report_principals: Set[str] = set()
+        # A ModelId whose CloudWatch 1-minute fetch failed has no total to compare its logged
+        # calls with (they would push the shares past 100%): its rows are left out, with a note
+        no_cloudwatch = [cw_id for cw_id in dict.fromkeys(final_model_ids) if self._rows_by_id.get(cw_id)
+                         and ((fetched_cw.get(cw_id) or {}).get('60_token') or {}).get('fetch_failed')]
+        used_ids = [cw_id for cw_id in dict.fromkeys(final_model_ids) if cw_id not in no_cloudwatch]
+        for row in (r for cw_id in used_ids for r in self._rows_by_id.get(cw_id, ())):
             minute = row['minute']
             if minute < covered_from:
                 continue
@@ -217,11 +246,14 @@ class BreakdownBuilder:
             if not self._selected(row):
                 _add(others[minute], row)
                 continue
+            report_principals.add(row['principal'])
             name = self._group_of(row)
-            group = groups.setdefault(name, {'minutes': defaultdict(_empty_minute), 'principals': set(), 'via': set()})
+            group = groups.setdefault(name, {'minutes': defaultdict(_empty_minute), 'principals': {}, 'via': {}})
             _add(group['minutes'][minute], row)
-            group['principals'].add(row['principal'])
-            group['via'].add(profile_names.get(row['cw_id'], row['cw_id']))
+            # The last minute of each principal and profile, so that each period lists only
+            # those it has calls from (every period ends at the same time)
+            _latest(group['principals'], row['principal'], minute)
+            _latest(group['via'], profile_names.get(row['cw_id'], row['cw_id']), minute)
 
         cw_minutes = self._cloudwatch_minutes(fetched_cw, final_model_ids, covered_from, end)
         remainder = {}
@@ -231,7 +263,11 @@ class BreakdownBuilder:
             if any(gap):
                 remainder[minute] = list(gap)
 
-        group_series = {name: (g['minutes'], sorted(g['principals']), sorted(g['via'])) for name, g in groups.items()}
+        group_series = {name: (g['minutes'], g['principals'], g['via']) for name, g in groups.items()}
+        # Each series' minutes in the fetcher's shape, built once for all periods
+        datasets = {name: self._dataset(minutes, end) for name, (minutes, _, _) in group_series.items()}
+        datasets[OTHER_PRINCIPALS] = self._dataset(others, end)
+        datasets[UNATTRIBUTED] = self._dataset(remainder, end)
 
         periods, time_series = {}, {}
         for period in time_periods:
@@ -243,13 +279,14 @@ class BreakdownBuilder:
             # leads the last hour even if it is small over 30 days)
             series, folded_name = _fold_small_groups(group_series, window_start, end)
             if others:
-                series[OTHER_PRINCIPALS] = (others, [], [])
+                series[OTHER_PRINCIPALS] = (others, {}, {})
             if remainder:
-                series[UNATTRIBUTED] = (remainder, [], [])
+                series[UNATTRIBUTED] = (remainder, {}, {})
             rows, period_series = [], {}
-            for name, (minutes, principals, via) in series.items():
-                ts_data = self.metrics_fetcher.slice_and_process_data(
-                    self._dataset(minutes, end), period, granularity_config)
+            for name, (minutes, principal_last, via_last) in series.items():
+                dataset = datasets[name] if name != folded_name else self._dataset(minutes, end)
+                ts_data = self.metrics_fetcher.slice_and_process_data(dataset, period, granularity_config)
+                principals, via = _active(principal_last, window_start), _active(via_last, window_start)
                 stats = self._stats(ts_data, period)
                 if name == UNATTRIBUTED:
                     # Over the whole window, not minute by minute: a record logged in the minute
@@ -277,6 +314,7 @@ class BreakdownBuilder:
         if self.breakdown.kind == PRINCIPAL:
             self._add_tags(periods)
         return {'coverage': {'start': covered_from.isoformat(), 'end': end.isoformat()},
+                'notes': self._notes(report_principals, covered_from, no_cloudwatch),
                 'periods': periods, 'time_series': time_series}
 
     def _add_tags(self, periods: Dict) -> None:
@@ -350,17 +388,30 @@ def _fold_small_groups(series: Dict, start: datetime, end: datetime) -> Tuple[Di
     kept = {name: series[name] for name in ranked[:MAX_GROUPS - 1]}
     rest = ranked[MAX_GROUPS - 1:]
     folded = defaultdict(_empty_minute)
-    principals, via = set(), set()
+    principals: Dict[str, datetime] = {}
+    via: Dict[str, datetime] = {}
     for name in rest:
         minutes, names, routes = series[name]
         for minute, values in minutes.items():
             for i in range(3):
                 folded[minute][i] += values[i]
-        principals.update(names)
-        via.update(routes)
+        for target, source in ((principals, names), (via, routes)):
+            for item, last in source.items():
+                _latest(target, item, last)
     folded_name = f"({len(rest)} smaller groups)"
-    kept[folded_name] = (folded, sorted(principals), sorted(via))
+    kept[folded_name] = (folded, principals, via)
     return kept, folded_name
+
+
+def _latest(last_seen: Dict[str, datetime], item: str, minute: datetime) -> None:
+    """Keep the latest minute item was seen at."""
+    if item not in last_seen or minute > last_seen[item]:
+        last_seen[item] = minute
+
+
+def _active(last_seen: Dict[str, datetime], start: datetime) -> List[str]:
+    """The items seen at or after start (every period ends at the breakdown's end)."""
+    return sorted(item for item, last in last_seen.items() if last >= start)
 
 
 def _next_minute(moment: datetime) -> datetime:

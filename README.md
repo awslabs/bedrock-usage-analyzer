@@ -134,9 +134,21 @@ Note: You need to replace some part with your own account ID and the region used
         "bedrock:ListTagsForResource",
         "cloudwatch:GetMetricData",
         "servicequotas:GetServiceQuota",
-        "servicequotas:GetAWSDefaultServiceQuota"
+        "servicequotas:GetAWSDefaultServiceQuota",
+        "bedrock:GetModelInvocationLoggingConfiguration",
+        "logs:DescribeLogGroups",
+        "logs:GetQueryResults",
+        "logs:StopQuery",
+        "iam:ListRoleTags",
+        "iam:ListUserTags"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "QueryInvocationLogs",
+      "Effect": "Allow",
+      "Action": "logs:StartQuery",
+      "Resource": "arn:aws:logs:<region>:<account-id>:log-group:<invocation-log-group>:*"
     },
     {
       "Sid": "MetadataManagement",

@@ -308,6 +308,39 @@ def test_a_query_that_never_finishes_times_out(monkeypatch):
     assert logs.stopped == ['q0']
 
 
+def test_start_query_retries_only_refusals_that_started_nothing():
+    class Throttled(FakeLogs):
+        def __init__(self, refusals, code):
+            super().__init__()
+            self.refusals, self.code, self.calls = refusals, code, 0
+
+        def start_query(self, **kwargs):
+            self.calls += 1
+            if self.calls <= self.refusals:
+                raise aws_error(self.code)
+            return super().start_query(**kwargs)
+    # StartQuery goes to its own client (one that never retries it); the rest to the other
+    assert InvocationLogFetcher(FakeLogs(), '/g', start_client='starter').start_client == 'starter'
+    starter = Throttled(2, 'ThrottlingException')
+    starter.rows = [row(END - timedelta(minutes=5), 'assumed-role/A')]
+    fetcher = InvocationLogFetcher(starter, '/bedrock/logs', sleep=lambda s: None, start_client=starter)
+    # Throttling is retried here, with backoff
+    assert len(fetcher.fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(hours=1), END)) == 1
+    assert starter.calls == 3 and len(starter.queries) == 1
+    # Anything else (e.g. a validation error) is not retried
+    starter = Throttled(1, 'InvalidParameterException')
+    fetcher = InvocationLogFetcher(FakeLogs(), '/bedrock/logs', sleep=lambda s: None, start_client=starter)
+    with pytest.raises(ClientError):
+        fetcher.fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(hours=1), END)
+    assert starter.calls == 1
+    # Throttled every time: gives up after START_ATTEMPTS
+    starter = Throttled(99, 'LimitExceededException')
+    fetcher = InvocationLogFetcher(FakeLogs(), '/bedrock/logs', sleep=lambda s: None, start_client=starter)
+    with pytest.raises(ClientError):
+        fetcher.fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(hours=1), END)
+    assert starter.calls == il.START_ATTEMPTS
+
+
 def test_a_stop_failure_does_not_hide_the_query_error():
     class NoStop(FakeLogs):
         def stop_query(self, queryId):
@@ -669,6 +702,58 @@ def test_caller_values_never_take_the_place_of_the_tools_own_rows():
     assert sorted(r['name'] for r in rows) == ['""(batch)""', '"(batch)"']
 
 
+def test_each_period_lists_only_its_own_principals_and_profiles():
+    logs = FakeLogs([row(END - timedelta(days=2), 'assumed-role/A', model='app0000001'),
+                     row(T1, 'assumed-role/B', model='app0000002')])
+    iam = FakeIam(role_tags={'A': {'team': 'x'}, 'B': {'team': 'x'}})
+    builder = builder_for(Breakdown.parse('tag:team'), logs, iam)
+    builder.prepare(['app0000001', 'app0000002'], END, 7)
+    names = {'app0000001': 'P1', 'app0000002': 'P2'}
+    section = builder.section(['app0000001', 'app0000002'], names, {'app0000001': cloudwatch({})}, GRANULARITY,
+                              ['1hour', '7days'])
+    hour, week = section['periods']['1hour']['rows'][0], section['periods']['7days']['rows'][0]
+    assert (hour['principals'], hour['via']) == (['role/B'], ['P2'])
+    assert (week['principals'], week['via']) == (['role/A', 'role/B'], ['P1', 'P2'])
+
+
+def test_a_model_id_whose_cloudwatch_fetch_failed_is_left_out():
+    logs = FakeLogs([row(T1, 'assumed-role/A', i=100, o=0, model='app0000001'),
+                     row(T1, 'assumed-role/B', i=900, o=0, model='app0000002')])
+    builder = builder_for(Breakdown(), logs)
+    builder.prepare(['app0000001', 'app0000002'], END, 1)
+    failed = cloudwatch({})
+    failed['60_token']['fetch_failed'] = True
+    section = builder.section(['app0000001', 'app0000002'], {},
+                              {'app0000001': cloudwatch({T1: (100, 0, 1)}), 'app0000002': failed},
+                              GRANULARITY, ['1hour'])
+    rows = section['periods']['1hour']['rows']
+    assert [(r['name'], r['share_tokens']) for r in rows] == [('role/A', 1.0)]
+    assert any('no 1-minute data for app0000002' in n for n in section['notes'])
+
+
+def test_notes_belong_to_the_report_they_are_about():
+    # Report 1's principal has unreadable tags; report 2's principal is fine
+    logs = FakeLogs([row(T1, 'assumed-role/Deleted', model='app0000001'),
+                     row(T1, 'assumed-role/Other', model='app0000002')])
+    iam = FakeIam(deny={'Deleted'})
+    builder = builder_for(Breakdown(), logs, iam)
+    builder.prepare(['app0000001', 'app0000002'], END, 1)
+    first = builder.section(['app0000001'], {}, {'app0000001': cloudwatch({})}, GRANULARITY, ['1hour'])
+    second = builder.section(['app0000002'], {}, {'app0000002': cloudwatch({})}, GRANULARITY, ['1hour'])
+    assert any('could not be read' in n for n in first['notes']) and second['notes'] == []
+
+
+def test_an_unexpected_error_while_reading_the_logs_keeps_the_reports(monkeypatch):
+    from bedrock_usage_analyzer.core import breakdown as breakdown_module
+
+    def broken(*args, **kwargs):
+        raise TypeError('unexpected value')
+    monkeypatch.setattr(breakdown_module, 'model_id_forms', broken)
+    builder = builder_for(Breakdown(), FakeLogs())
+    assert 'unexpected value' in builder.prepare([US_HAIKU], END, 1)
+    assert 'unexpected value' in builder.section([US_HAIKU], {}, {}, GRANULARITY, ['1hour'])['unavailable']
+
+
 def test_a_principal_filter_that_matches_no_logged_caller_is_noted():
     logs = FakeLogs([row(T1, 'assumed-role/Orders')])
     builder = builder_for(Breakdown.parse('principal', ['role/Orders', 'role/Typo']), logs)
@@ -843,4 +928,7 @@ def test_interactive_breakdown_is_not_offered_without_logging(monkeypatch, caplo
         def get_model_invocation_logging_configuration(self):
             raise aws_error('AccessDeniedException', 'GetModelInvocationLoggingConfiguration')
     inputs = inputs_with(monkeypatch, Denied(), [])
+    caplog.clear()
     assert inputs._select_breakdown() is None and 'could not be read' in caplog.text
+    # The advice is the missing permission (logging may well be on), not to enable logging
+    assert 'bedrock:GetModelInvocationLoggingConfiguration' in caplog.text and 'enable model' not in caplog.text

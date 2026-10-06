@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
+from botocore.exceptions import ClientError
+
 from bedrock_usage_analyzer.aws.bedrock import endpoint_id, split_profile_id
 from bedrock_usage_analyzer.core.errors import AWS_ERRORS, is_access_denied
 from bedrock_usage_analyzer.utils.partition import build_arn
@@ -44,6 +46,9 @@ QUERY_TIMEOUT_SECONDS = 900
 MIN_WINDOW = timedelta(minutes=10)
 # A window that returns MAX_ROWS rows is run again as this many parts
 SPLIT_PARTS = 4
+# StartQuery refusals that started no query, retried with backoff (1, 2, 4, 8 s)
+START_RETRY_CODES = ('ThrottlingException', 'LimitExceededException', 'TooManyRequestsException')
+START_ATTEMPTS = 5
 # StartQuery accepts query strings of up to 10,000 characters; each window adds its end
 # filter (QUERY_END_FILTER_LENGTH characters at most) to the query
 MAX_QUERY_LENGTH = 10000
@@ -249,11 +254,15 @@ def _number(value) -> float:
 
 class InvocationLogFetcher:
     """Runs the breakdown query over a time window, split into day-long queries that run a
-    few at a time; a window that returns the row limit is split in half and run again."""
+    few at a time; a window that returns the row limit is run again in SPLIT_PARTS parts."""
 
     def __init__(self, logs_client, log_group: str, sleep: Callable[[float], None] = time.sleep,
-                 poll_seconds: float = 1.0, max_concurrent: int = MAX_CONCURRENT_QUERIES):
+                 poll_seconds: float = 1.0, max_concurrent: int = MAX_CONCURRENT_QUERIES,
+                 start_client=None):
         self.logs_client = logs_client
+        # StartQuery is not idempotent: a client that never retries it (start_client), so a
+        # lost reply cannot leave a second, unseen query scanning; throttling is retried here
+        self.start_client = start_client or logs_client
         self.log_group = log_group
         self._sleep = sleep
         self._poll = poll_seconds
@@ -330,9 +339,18 @@ class InvocationLogFetcher:
         # window boundary is in exactly one window
         end_ms = int(end.timestamp() * 1000)
         query = query.replace(_QUERY_HEAD, f"{_QUERY_HEAD}| filter @timestamp < {end_ms}\n", 1)
-        response = self.logs_client.start_query(
-            logGroupName=self.log_group, queryString=query,
-            startTime=int(start.timestamp()), endTime=int(end.timestamp()), limit=MAX_ROWS)
+        for attempt in range(START_ATTEMPTS):
+            try:
+                response = self.start_client.start_query(
+                    logGroupName=self.log_group, queryString=query,
+                    startTime=int(start.timestamp()), endTime=int(end.timestamp()), limit=MAX_ROWS)
+                break
+            except ClientError as e:
+                # Refused (throttled, or too many queries at once): no query was started
+                code = e.response.get('Error', {}).get('Code')
+                if code not in START_RETRY_CODES or attempt == START_ATTEMPTS - 1:
+                    raise
+                self._sleep(2 ** attempt)
         query_id = response.get('queryId')
         if not query_id:
             raise LogsQueryError("StartQuery returned no query ID")

@@ -393,6 +393,9 @@ def test_probe_clients_fail_fast():
     from bedrock_usage_analyzer.aws.client_factory import create_client
     c = create_client('sts', 'cn-north-1', probe=True)
     assert c.meta.config.retries['total_max_attempts'] == 1 and c.meta.config.connect_timeout == 3
+    # Non-idempotent calls (StartQuery): one attempt, normal timeouts
+    c = create_client('logs', 'us-east-1', single_attempt=True)
+    assert c.meta.config.retries['total_max_attempts'] == 1 and c.meta.config.read_timeout == 20
 
 
 def test_error_classifiers():

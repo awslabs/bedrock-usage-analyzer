@@ -362,8 +362,9 @@ class CloudWatchMetricsFetcher:
                             'client_errors': [],
                             'server_errors': [],
                             'latency': []
-                        }, 
-                        'period': period
+                        },
+                        'period': period,
+                        'fetch_failed': True,  # not "no usage": the usage breakdown leaves it out
                     }
                     if fetch_type == 'token':
                         all_fetched_data[model_id]['60_token'] = empty_data
