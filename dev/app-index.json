@@ -289,6 +289,21 @@
       ]
     },
     {
+      "path": "src/bedrock_usage_analyzer/aws/invocation_logs.py",
+      "summary": "Usage per caller from Bedrock model invocation logs: breakdown options, principal normalization, modelId spellings, Logs Insights query building and chunked fetching, IAM principal tags",
+      "methods": [
+        {"name": "Breakdown.parse", "description": "Parse principal | session | tag:<key> | metadata:<key>, principal filters and a log group."},
+        {"name": "normalize_principal", "description": "Caller ARN to 'role/<name>' (all sessions of a role) or 'user/<path/name>'."},
+        {"name": "logging_destination", "description": "The region's invocation log group, or why there is none."},
+        {"name": "model_id_forms", "description": "Every modelId spelling the logs may record for each CloudWatch ModelId value."},
+        {"name": "build_query", "description": "Logs Insights query of per-minute tokens and requests by modelId and caller."},
+        {"name": "InvocationLogFetcher", "description": "Runs the query in day-long windows, a few at a time, splitting full windows."},
+        {"name": "principal_tags", "description": "IAM tags of role and user principals (ListRoleTags / ListUserTags)."}
+      ],
+      "imports_libraries": ["botocore", "concurrent", "dataclasses", "datetime", "logging", "re", "time", "typing"],
+      "imports_files": ["bedrock_usage_analyzer.aws.bedrock", "bedrock_usage_analyzer.core.errors", "bedrock_usage_analyzer.utils.partition"]
+    },
+    {
       "path": "src/bedrock_usage_analyzer/aws/servicequotas.py",
       "summary": "AWS Service Quotas operations - fetch and query Bedrock service quotas",
       "methods": [
@@ -432,6 +447,16 @@
         "bedrock_usage_analyzer.utils.partition",
         "bedrock_usage_analyzer.utils.yaml_handler"
       ]
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/core/breakdown.py",
+      "summary": "Builds each report's 'Usage by ...' section from the run's invocation-log rows: grouping by principal, session, tag or metadata key, per-period stats, shares of the CloudWatch totals and the not-logged remainder",
+      "methods": [
+        {"name": "BreakdownBuilder.prepare", "description": "Resolve the log group and query the logs once for every ModelId of the run."},
+        {"name": "BreakdownBuilder.section", "description": "One report's breakdown rows and TPM/RPM series per period."}
+      ],
+      "imports_libraries": ["collections", "datetime", "logging", "typing"],
+      "imports_files": ["bedrock_usage_analyzer.aws.client_factory", "bedrock_usage_analyzer.aws.invocation_logs", "bedrock_usage_analyzer.core.errors"]
     },
     {
       "path": "src/bedrock_usage_analyzer/core/errors.py",
@@ -1524,6 +1549,12 @@
         "bedrock_usage_analyzer.core.output_generator",
         "bedrock_usage_analyzer.core.profile_fetcher"
       ]
+    },
+    {
+      "path": "tests/test_breakdown.py",
+      "summary": "Usage breakdown by caller: parsing, principal normalization, modelId spellings, chunked Logs Insights queries (FakeLogs), IAM tags (FakeIam), grouping, remainder rows, report, CLI and interactive paths.",
+      "imports_libraries": ["botocore", "conftest", "datetime", "json", "os", "pytest"],
+      "imports_files": ["bedrock_usage_analyzer.aws.invocation_logs", "bedrock_usage_analyzer.core.breakdown", "bedrock_usage_analyzer.core.metrics_fetcher"]
     },
     {
       "path": "tests/test_cli_and_sync.py",

@@ -10,6 +10,7 @@ import logging
 from datetime import datetime, timedelta
 from jinja2 import Environment, PackageLoader, select_autoescape
 
+from bedrock_usage_analyzer.aws.invocation_logs import UNATTRIBUTED
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quotas_console_url
 
 logger = logging.getLogger(__name__)
@@ -132,6 +133,8 @@ class OutputGenerator:
             'granularity_config': data.get('granularity_config', {}),
             'profile_names': data.get('profile_names', {}),
             'contributions': data.get('contributions', {}),
+            # Usage by caller from the model invocation logs (None: no breakdown asked for)
+            'breakdown': data.get('breakdown'),
             'period_names': period_names
         }
         
@@ -246,6 +249,8 @@ class OutputGenerator:
                 quotas=data.get('quotas', {}),
                 profile_names=data.get('profile_names', {}),
                 contributions=data.get('contributions', {}),
+                breakdown=data.get('breakdown'),
+                unattributed_label=UNATTRIBUTED,
                 granularity_config=data.get('granularity_config', {}),
                 period_names=period_names,
                 end_time_iso=end_time.isoformat() if end_time else None,

@@ -11,6 +11,9 @@ from typing import Dict, List, Optional, Sequence, Union
 from ..aws.bedrock import endpoint_id, region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
 from ..aws.custom_models import DEPLOYMENT_KIND, base_model_id_in_arn, deployment_short_id, is_active
+from ..aws.invocation_logs import (
+    METADATA, PRINCIPAL, SESSION, TAG, Breakdown, BreakdownError, logging_destination)
+from ..core.breakdown import ENABLE_HINT
 from ..core.errors import is_access_denied, troubleshooting_hint
 from ..core.profile_fetcher import AWS_ERRORS, UNKNOWN_SOURCE, InferenceProfileFetcher, missing_deployment_api
 from ..sync.regions import load_region_names
@@ -105,6 +108,7 @@ class UserInputs:
         self.models = []
         self.profile_fetcher: Optional[InferenceProfileFetcher] = None
         self._inactive_deployments_noted = False
+        self.breakdown: Optional[Breakdown] = None
         self._deployment_listing_noted = False
         self._fm_lists: Dict[str, Optional[List[Dict]]] = {}  # None: the region has no fm-list
         self.granularity_config = {  # The aggregation granularity for different metrics window/period
@@ -116,7 +120,7 @@ class UserInputs:
         }
 
     def collect(self, region=None, model_id: Union[None, str, Sequence[str]] = None,
-                granularity_config=None, skip_confirm=False):
+                granularity_config=None, skip_confirm=False, breakdown=None):
         """Interactive dialog to collect user inputs, skipping prompts for provided values.
 
         Args:
@@ -186,6 +190,40 @@ class UserInputs:
                     break
             # Profiles of one endpoint picked in different rounds become one report, as with -m
             self.models = merge_application_configs(self.models)
+
+        # Breakdown by caller (from the CLI; asked only in an interactive session)
+        self.breakdown = breakdown
+        if breakdown is None and not model_id and self.models:
+            self.breakdown = self._select_breakdown()
+
+    def _select_breakdown(self) -> Optional[Breakdown]:
+        """Ask whether to break usage down by caller, when the region logs invocations to
+        CloudWatch Logs (the only per-caller source of tokens and requests)."""
+        try:
+            group, reason = logging_destination(self._get_profile_fetcher().bedrock_client)
+        except AWS_ERRORS as e:
+            group, reason = None, f"the logging configuration could not be read ({e})"
+        if not group:
+            logger.info(f"\nUsage by caller (IAM principal) is not available: {reason}. {ENABLE_HINT}")
+            return None
+        choices = ['No breakdown',
+                   'By IAM principal (role or user; sessions of a role together)',
+                   'By IAM principal session',
+                   'By an IAM principal tag (e.g. team)',
+                   'By a request metadata key (requestMetadata)']
+        choice = select_from_list(
+            f"\nBreak usage down by caller? (from the model invocation logs in {group}; "
+            f"Logs Insights is charged per GB scanned)", choices, allow_cancel=False,
+            input_prompt=f"\nSelect (1-{len(choices)}): ")
+        kind = {choices[1]: PRINCIPAL, choices[2]: SESSION, choices[3]: TAG, choices[4]: METADATA}.get(choice)
+        if kind is None:
+            return None
+        while True:
+            key = input(f"{'Tag' if kind == TAG else 'Metadata'} key: ").strip() if kind in (TAG, METADATA) else ''
+            try:
+                return Breakdown.parse(f"{kind}:{key}" if key else kind, log_group=group)
+            except BreakdownError as e:
+                print(f"  {e}")
 
     def _add_models(self, configs):
         for config in configs or []:

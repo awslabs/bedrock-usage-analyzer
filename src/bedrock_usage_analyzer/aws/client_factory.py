@@ -23,7 +23,7 @@ DEFAULT_MAX_POOL_CONNECTIONS = 50
 # Bedrock control-plane calls made while the user answers prompts, uses the standard
 # policy with up to 4 attempts (max_attempts counts retries), a 10 s connect timeout and a
 # 20 s read timeout per attempt, so a bad network fails in about a minute rather than many.
-_BULK_SERVICES = {'cloudwatch', 'service-quotas', 'bedrock-runtime'}
+_BULK_SERVICES = {'cloudwatch', 'service-quotas', 'bedrock-runtime', 'logs'}
 
 
 def create_client(service: str, region: Optional[str] = None,

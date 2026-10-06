@@ -51,7 +51,7 @@ COUNTRY_PROFILE_REGIONS = {
 }
 
 
-def _in_parallel(fn, items) -> list:
+def in_parallel(fn, items) -> list:
     """[fn(item) ...] in order; one Bedrock call per item, so several run in a thread pool."""
     if len(items) <= 1:
         return [fn(item) for item in items]
@@ -199,7 +199,7 @@ class InferenceProfileFetcher:
                 return self.read_custom_deployment(identifier).get('model_arn')
             except AWS_ERRORS:
                 return None  # kept: read_custom_deployment raises it again for its caller
-        model_arns = _in_parallel(read, [i for i in dict.fromkeys(identifiers) if i not in self._read_deployments])
+        model_arns = in_parallel(read, [i for i in dict.fromkeys(identifiers) if i not in self._read_deployments])
         self.read_base_models([a for a in model_arns if a])
 
     def note_deployment_name(self, arn: str, name: str):
@@ -229,7 +229,7 @@ class InferenceProfileFetcher:
                 self.deployment_base_model(model_arn)
             except AWS_ERRORS:
                 pass  # kept: deployment_base_model raises it again for its caller
-        _in_parallel(read, [a for a in dict.fromkeys(model_arns) if (a or '') not in self._base_models])
+        in_parallel(read, [a for a in dict.fromkeys(model_arns) if (a or '') not in self._base_models])
 
     # ------------------------------------------------------------------ listing
 
@@ -566,7 +566,7 @@ class InferenceProfileFetcher:
             return name, {'id': deployment_short_id(arn), 'tags': self._get_tags(arn, name)}
 
         arns = list(deployment_arns)
-        results = _in_parallel(target, arns)  # a name and tags lookup per deployment
+        results = in_parallel(target, arns)  # a name and tags lookup per deployment
         names = {arn: name for arn, (name, _) in zip(arns, results)}
         metadata = {arn: meta for arn, (_, meta) in zip(arns, results)}
         return arns, names, metadata
@@ -622,7 +622,7 @@ class InferenceProfileFetcher:
             selected.append(app)
         # One ListTagsForResource per profile: in parallel, so many profiles do not add up
         todo = [a for a in selected if a['arn'] and a['arn'] not in self._tags_cache]
-        _in_parallel(lambda a: self._get_tags(a['arn'], a['id']), todo)
+        in_parallel(lambda a: self._get_tags(a['arn'], a['id']), todo)
         for app in selected:
             profile_metadata[app['id']] = {'id': app['id'], 'tags': self._get_tags(app['arn'], app['id'])}
 

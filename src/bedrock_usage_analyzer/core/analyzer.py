@@ -8,9 +8,10 @@ import numpy as np
 import logging
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 
-from bedrock_usage_analyzer.core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
+from bedrock_usage_analyzer.core.breakdown import PERIOD_DAYS, BreakdownBuilder
+from bedrock_usage_analyzer.core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher, in_parallel
 from bedrock_usage_analyzer.sync.quota_rules import scrub_conflicting
 from bedrock_usage_analyzer.core.metrics_fetcher import CloudWatchMetricsFetcher
 from bedrock_usage_analyzer.core.output_generator import APPLICATION_PROFILE_SCOPE, DEPLOYMENT_SCOPE, OutputGenerator
@@ -42,9 +43,13 @@ class BedrockAnalyzer:
     
     TIME_PERIODS = ["1hour", "1day", "7days", "14days", "30days"]
     
-    def __init__(self, region, granularity_config, profile_fetcher=None, fm_models=None):
+    def __init__(self, region, granularity_config, profile_fetcher=None, fm_models=None,
+                 breakdown=None, account=None):
         self.region = region
         self.granularity_config = granularity_config
+        # Optional usage breakdown by caller, from the model invocation logs (core/breakdown.py)
+        self.breakdown = breakdown
+        self.account = account
 
         # Get local timezone - use system's local timezone
         local_dt = datetime.now().astimezone()
@@ -331,6 +336,16 @@ class BedrockAnalyzer:
 
         region_info = get_region_info(self.region)
         processed = set()
+        builder = None
+        if self.breakdown is not None:
+            # One set of Logs Insights queries for every target of the run: the log group is
+            # scanned once, whatever the number of reports
+            builder = BreakdownBuilder(self.breakdown, self.region, self.bedrock_client, self.metrics_fetcher,
+                                       self._calculate_stats_from_time_series, self.local_tz, self.account,
+                                       parallel=in_parallel)
+            run_ids = sorted({cw_id for ids, _, _ in all_profiles_map.values() for cw_id in ids})
+            end = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+            builder.prepare(run_ids, end, max(PERIOD_DAYS[p] for p in self.granularity_config))
 
         # Process each model
         for model_config in models:
@@ -464,6 +479,11 @@ class BedrockAnalyzer:
 
             # Step 5: Calculate contributions
             contributions = self._calculate_contributions(model_results, time_series_data, profile_names, profile_metadata)
+            breakdown_section = None
+            if builder is not None:
+                logger.info(f"  Breaking usage down by {self.breakdown.label}...")
+                breakdown_section = builder.section(final_model_ids, profile_names, fetched_data_all_profiles,
+                                                    self.granularity_config, self.TIME_PERIODS)
 
             # Step 6: Generate output
             logger.info(f"  Generating output files...")
@@ -497,6 +517,7 @@ class BedrockAnalyzer:
                     'application_profile_scope': scope,
                     'scope_label': scope_label,
                     'file_label': file_label,
+                    'breakdown': breakdown_section,
                 }
             })
 

@@ -51,6 +51,8 @@
         .graph-container { background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
         .graph-container canvas { max-height: 350px; }
         .na { background-color: #f0f0f0; color: #666; }
+        .breakdown-section { margin: 30px 0; }
+        .breakdown-note { font-size: 0.9em; color: #555; }
     </style>
 </head>
 <body>
@@ -207,6 +209,62 @@
         </table>
     </div>
     
+    {% if breakdown %}
+    <div class="breakdown-section">
+        <h3>Usage by {{ breakdown.label }}</h3>
+        {% if breakdown.unavailable %}
+        <p class="breakdown-note">Not available: {{ breakdown.unavailable }}</p>
+        {% else %}
+        <p class="breakdown-note">From the model invocation logs in {{ breakdown.log_group }}
+            ({{ breakdown.coverage.start }} to {{ breakdown.coverage.end }}). Shares are of the endpoint's
+            CloudWatch totals over the covered time; "{{ unattributed_label }}" is usage CloudWatch counted
+            that the logs do not hold. Quotas are shared by all callers.
+            {% if breakdown.principal_filter %}Selected principals: {{ breakdown.principal_filter | join(', ') }}.{% endif %}</p>
+        {% for note in breakdown.notes %}<p class="breakdown-note">Note: {{ note }}</p>{% endfor %}
+        {% for period in ['1hour', '1day', '7days', '14days', '30days'] %}
+        {% set section = breakdown.periods.get(period) %}
+        {% if section and section.rows %}
+        <button class="collapsible">{{ period_names.get(period, period) }}{% if section.partial %} (logs cover from {{ section.covered_from }}){% endif %}</button>
+        <div class="collapsible-content">
+            <div class="contribution-table">
+                <table>
+                    <tr>
+                        <th>{{ breakdown.label }}</th>
+                        {% if breakdown.kind != 'principal' %}<th>IAM principals</th>{% else %}<th>Tags</th>{% endif %}
+                        <th>Via</th>
+                        <th>Share of tokens</th>
+                        <th>Share of requests</th>
+                        <th>Tokens</th>
+                        <th>Requests</th>
+                        <th>TPM P50</th><th>TPM P90</th><th>TPM max</th>
+                        <th>RPM P50</th><th>RPM P90</th><th>RPM max</th>
+                        {% if period != '1hour' %}<th>TPD avg</th><th>TPD max</th>{% endif %}
+                    </tr>
+                    {% for row in section.rows %}
+                    <tr>
+                        <td>{{ row.name }}</td>
+                        {% if breakdown.kind != 'principal' %}<td>{{ row.principals | join(', ') }}</td>
+                        {% else %}<td>{% if row.tags %}{% for key, value in row.tags.items() %}{{ key }}={{ value }}<br>{% endfor %}{% else %}N/A{% endif %}</td>{% endif %}
+                        <td>{{ row.via | join(', ') }}</td>
+                        <td>{% if row.share_tokens is not none %}{{ "{:.1%}".format(row.share_tokens) }}{% else %}N/A{% endif %}</td>
+                        <td>{% if row.share_requests is not none %}{{ "{:.1%}".format(row.share_requests) }}{% else %}N/A{% endif %}</td>
+                        <td>{{ "{:,.0f}".format(row.tokens) }}</td>
+                        <td>{{ "{:,.0f}".format(row.requests) }}</td>
+                        <td>{{ "{:,.0f}".format(row.tpm_p50) }}</td><td>{{ "{:,.0f}".format(row.tpm_p90) }}</td><td>{{ "{:,.0f}".format(row.tpm_max) }}</td>
+                        <td>{{ "{:,.1f}".format(row.rpm_p50) }}</td><td>{{ "{:,.1f}".format(row.rpm_p90) }}</td><td>{{ "{:,.1f}".format(row.rpm_max) }}</td>
+                        {% if period != '1hour' %}<td>{{ "{:,.0f}".format(row.tpd_avg) }}</td><td>{{ "{:,.0f}".format(row.tpd_max) }}</td>{% endif %}
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+            <div class="graph-container"><h5>TPM by {{ breakdown.label }}</h5><canvas id="breakdown_tpm_{{ period }}"></canvas></div>
+        </div>
+        {% endif %}
+        {% endfor %}
+        {% endif %}
+    </div>
+    {% endif %}
+
     <div class="graphs-section">
         <h3>Time Series Graphs</h3>
         
@@ -1009,8 +1067,43 @@
         });
         
         {% endfor %}
+
+        // Usage by caller: one TPM line per breakdown row, against the endpoint's quota
+        const breakdownSeries = {{ (breakdown.time_series if breakdown else {}) | tojson }};
+        for (const [period, rows] of Object.entries(breakdownSeries || {})) {
+            const canvas = document.getElementById('breakdown_tpm_' + period);
+            if (!canvas) continue;
+            const datasets = [];
+            let index = 0;
+            for (const [name, series] of Object.entries(rows || {})) {
+                if (!series.TPM || !series.TPM.timestamps.length) continue;
+                const color = colors[index++ % colors.length];
+                datasets.push({
+                    label: name,
+                    data: series.TPM.timestamps.map((ts, i) => ({ x: ts, y: series.TPM.values[i] })),
+                    borderColor: color, backgroundColor: color + '20',
+                    borderWidth: 0.8, pointRadius: 0.5, tension: 0.1, spanGaps: false
+                });
+            }
+            if (!datasets.length) continue;
+            if (quotas.tpm) {
+                const endMs = new Date({{ end_time_iso | tojson }}).getTime();
+                const spans = { '1hour': 3600e3, '1day': 86400e3, '7days': 7 * 86400e3, '14days': 14 * 86400e3, '30days': 30 * 86400e3 };
+                datasets.push({
+                    label: 'Quota Limit',
+                    data: [{ x: new Date(endMs - spans[period]).toISOString(), y: quotas.tpm.value },
+                           { x: new Date(endMs).toISOString(), y: quotas.tpm.value }],
+                    borderColor: 'red', borderDash: [5, 5], borderWidth: 2, pointRadius: 0, fill: false, tension: 0
+                });
+            }
+            try {
+                new Chart(canvas, { ...chartConfig, data: { datasets: datasets } });
+            } catch (error) {
+                console.error('Error creating breakdown chart for ' + period, error);
+            }
+        }
     </script>
-    
+
     <script>
         // Collapsible sections functionality
         var coll = document.getElementsByClassName("collapsible");

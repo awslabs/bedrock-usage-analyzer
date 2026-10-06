@@ -5,6 +5,12 @@ All notable changes to the Bedrock Usage Analyzer will be documented in this fil
 ## [Unreleased]
 
 ### Added
+- **Usage by IAM principal** (`--breakdown principal|session|tag:<key>|metadata:<key>`, `--principal`,
+  `--log-group`, or the interactive question): for services that share an endpoint instead of having their
+  own application inference profiles, each report breaks its usage down by calling IAM role or user, role
+  session, IAM principal tag or `requestMetadata` key, read from the model invocation logs with CloudWatch
+  Logs Insights (metadata fields only). Rows show tokens, requests, shares of the endpoint total, TPM/RPM
+  (P50, P90, max) and TPD; usage the logs do not hold is its own row. Totals and quotas stay CloudWatch's.
 - **Custom model deployments**: analyze on-demand custom model deployments, picked
   interactively or passed with `-m <custom-model-deployment ARN>`. Usage comes from CloudWatch
   under the deployment ARN; limits are the base model's "(Model customization) Sum of on demand
