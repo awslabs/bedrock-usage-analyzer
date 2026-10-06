@@ -805,7 +805,9 @@ def test_many_groups_are_folded_into_one_row(monkeypatch):
     section = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({T1: (1500, 0, 5)})}, GRANULARITY, ['1hour'])
     rows = section['periods']['1hour']['rows']
     assert [(r['name'], r['tokens']) for r in rows] == [('role/R4', 500), ('role/R3', 400), ('(3 smaller groups)', 600)]
-    assert rows[-1]['principals'] == [] and set(section['time_series']['1hour']) == {r['name'] for r in rows}
+    # The summed row says which principals it holds (in the Tags column of the HTML)
+    assert rows[-1]['principals'] == ['role/R0', 'role/R1', 'role/R2'] and rows[0]['principals'] == []
+    assert set(section['time_series']['1hour']) == {r['name'] for r in rows}
     # Under the cap nothing is folded
     monkeypatch.setattr(breakdown_module, 'MAX_GROUPS', 5)
     builder = builder_for(Breakdown(), logs)

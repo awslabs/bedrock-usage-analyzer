@@ -296,6 +296,21 @@ def test_an_old_boto3_says_what_it_needs(monkeypatch, caplog):
     assert 'need boto3 1.39.7' in caplog.text
 
 
+def test_another_regions_deployments_are_refused_unread(monkeypatch):
+    # The parallel pre-read skips them: the region check refuses them without API calls
+    from bedrock_usage_analyzer.core import user_inputs as ui_module
+    west = [DEPLOYMENT.replace('us-east-1', 'us-west-2').replace('dep0000001', d) for d in ('depA', 'depB')]
+    client = FakeCustom()
+    _inputs(monkeypatch, client)
+    monkeypatch.setattr(ui_module, 'get_caller_identity',
+                        lambda region=None, **_: {'Account': '111122223333', 'Arn': 'arn:aws:iam::1:user/a',
+                                                  'Partition': 'aws'})
+    with pytest.raises(SystemExit):
+        ui_module.UserInputs().collect(region='us-east-1', model_id=west, skip_confirm=True,
+                                       granularity_config={p: 60 for p in ['1hour', '1day', '7days', '14days', '30days']})
+    assert 'GetCustomModelDeployment' not in client.calls
+
+
 def test_deployments_read_at_once_are_not_read_again(monkeypatch):
     second = DEPLOYMENT.replace('dep0000001', 'dep0000002')
     client = FakeCustom()

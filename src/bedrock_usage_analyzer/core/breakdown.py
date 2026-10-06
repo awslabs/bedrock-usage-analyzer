@@ -153,8 +153,9 @@ class BreakdownBuilder:
         if not principals:
             return
         self._tags_read |= principals
-        iam = self._iam_client or create_client('iam', self.region)
-        tags, errors = principal_tags(iam, principals, self._parallel)
+        if self._iam_client is None:  # one client for every report's tag reads
+            self._iam_client = create_client('iam', self.region)
+        tags, errors = principal_tags(self._iam_client, principals, self._parallel)
         self._tags = {**(self._tags or {}), **tags}
         # Reported in each report's notes, with the error of that report's principals
         self._tag_errors.update(errors)
@@ -317,7 +318,8 @@ class BreakdownBuilder:
                     requests = _sum(stats, 'Invocations')
                 if not tokens and not requests:
                     continue
-                rows.append(self._row(name, principals, via, stats, tokens, requests, total, period))
+                rows.append(self._row(name, principals, via, stats, tokens, requests, total, period,
+                                      folded=name == folded_name))
                 period_series[name] = {k: ts_data[k] for k in ('TPM', 'RPM') if k in ts_data}
             rows.sort(key=lambda r: (r['name'] == UNATTRIBUTED, r['name'] == OTHER_PRINCIPALS,
                                      r['name'] == folded_name, -r['tokens']))
@@ -349,10 +351,11 @@ class BreakdownBuilder:
             for r in p['rows']:
                 r['tags'] = (self._tags or {}).get(r['name'], {})
 
-    def _row(self, name, principals, via, stats, tokens, requests, total, period) -> Dict:
+    def _row(self, name, principals, via, stats, tokens, requests, total, period, folded=False) -> Dict:
         return {
             'name': name,
-            'principals': principals if self.breakdown.kind != PRINCIPAL else [],
+            # A principal row is its own principal; the summed row lists the ones it holds
+            'principals': principals if self.breakdown.kind != PRINCIPAL or folded else [],
             'via': via,
             'tags': {},
             'tokens': tokens,
@@ -418,7 +421,9 @@ def _fold_small_groups(series: Dict, start: datetime, end: datetime) -> Tuple[Di
         for minute, values in minutes.items():
             for i in range(3):
                 folded[minute][i] += values[i]
-        for target, source in ((principals, names), (via, routes)):
+        # A principal breakdown's group is its own principal (it tracks none): list its name
+        own = names or ({name: max(minutes)} if minutes else {})
+        for target, source in ((principals, own), (via, routes)):
             for item, last in source.items():
                 _latest(target, item, last)
     folded_name = f"({len(rest)} smaller groups)"

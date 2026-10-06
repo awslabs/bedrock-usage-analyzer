@@ -17,13 +17,19 @@ logger = logging.getLogger(__name__)
 PERIOD_DAYS = {'1hour': 1 / 24, '1day': 1, '7days': 7, '14days': 14, '30days': 30}
 
 
-def failed_fetch(period):
-    """The empty dataset of a fetch that failed. fetch_failed: not "no usage", so the usage
+ALL_METRICS = ('invocations', 'input_tokens', 'output_tokens', 'throttles', 'client_errors',
+               'server_errors', 'latency')
+TOKEN_METRICS = ('invocations', 'input_tokens', 'output_tokens')
+OTHER_METRICS = ('throttles', 'client_errors', 'server_errors', 'latency')
+
+
+def failed_fetch(period, metrics=ALL_METRICS):
+    """The empty dataset of a fetch that failed (with that fetch's metrics only, so it never
+    blanks another fetch's when merged). fetch_failed: not "no usage", so the usage
     breakdown leaves that ModelId out instead of comparing its logs with zero."""
     return {
         'timestamps': [],
-        'data': {key: [] for key in ('invocations', 'input_tokens', 'output_tokens', 'throttles',
-                                     'client_errors', 'server_errors', 'latency')},
+        'data': {key: [] for key in metrics},
         'period': period,
         'fetch_failed': True,
     }
@@ -364,7 +370,7 @@ class CloudWatchMetricsFetcher:
                         
                 except Exception as e:
                     logger.info(f"    Warning: Failed to fetch {fetch_type} data (period={period}s) for {model_id}: {e}")
-                    empty_data = failed_fetch(period)
+                    empty_data = failed_fetch(period, TOKEN_METRICS if fetch_type == 'token' else OTHER_METRICS)
                     if fetch_type == 'token':
                         all_fetched_data[model_id]['60_token'] = empty_data
                     else:
@@ -438,7 +444,7 @@ class CloudWatchMetricsFetcher:
             }
         except Exception as e:
             logger.info(f"    Warning: Could not fetch token metrics: {e}")
-            return failed_fetch(period)
+            return failed_fetch(period, TOKEN_METRICS)
 
     def _fetch_other_metrics(self, model_id, start_time, end_time, period):
         """Fetch non-token metrics (throttles, errors, latency)
@@ -506,11 +512,7 @@ class CloudWatchMetricsFetcher:
             }
         except Exception as e:
             logger.info(f"    Warning: Could not fetch other metrics: {e}")
-            return {
-                'timestamps': [],
-                'data': {'throttles': [], 'client_errors': [], 'server_errors': [], 'latency': []},
-                'period': period
-            }
+            return failed_fetch(period, OTHER_METRICS)
     
     def _fetch_raw_data(self, model_id, start_time, end_time, period):
         """Fetch raw CloudWatch data for a time range"""
@@ -591,19 +593,7 @@ class CloudWatchMetricsFetcher:
             }
         except Exception as e:
             logger.info(f"    Warning: Could not fetch data: {e}")
-            return {
-                'timestamps': [], 
-                'data': {
-                    'invocations': [], 
-                    'input_tokens': [], 
-                    'output_tokens': [], 
-                    'throttles': [],
-                    'client_errors': [],
-                    'server_errors': [],
-                    'latency': []
-                }, 
-                'period': period
-            }
+            return failed_fetch(period)
     
     def slice_and_process_data(self, fetched_data, time_period, granularity_config):
         """

@@ -168,7 +168,9 @@ class UserInputs:
         if model_id:
             values = [model_id] if isinstance(model_id, str) else list(model_id)
             # Deployment ARNs and their custom models are read all at once, in parallel
-            deployment_arns = [v.strip() for v in values if f":{DEPLOYMENT_KIND}/" in v and v.strip().startswith('arn:')]
+            # (only those of the region: another region's ARN is refused below, unread)
+            deployment_arns = [v.strip() for v in values if f":{DEPLOYMENT_KIND}/" in v and v.strip().startswith('arn:')
+                               and region_from_arn(v.strip()) == self.region]
             fetcher = self._get_profile_fetcher() if len(deployment_arns) > 1 else None
             if isinstance(fetcher, InferenceProfileFetcher):
                 try:

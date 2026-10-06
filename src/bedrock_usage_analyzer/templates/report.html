@@ -244,7 +244,7 @@
                     <tr>
                         <td>{{ row.name }}</td>
                         {% if breakdown.kind != 'principal' %}<td>{{ row.principals | join(', ') }}</td>
-                        {% else %}<td>{% if row.tags %}{% for key, value in row.tags.items() %}{{ key }}={{ value }}<br>{% endfor %}{% else %}N/A{% endif %}</td>{% endif %}
+                        {% else %}<td>{% if row.principals %}{{ row.principals | join(', ') }}{% elif row.tags %}{% for key, value in row.tags.items() %}{{ key }}={{ value }}<br>{% endfor %}{% else %}N/A{% endif %}</td>{% endif %}
                         <td>{{ row.via | join(', ') }}</td>
                         <td>{% if row.share_tokens is not none %}{{ "{:.1%}".format(row.share_tokens) }}{% else %}N/A{% endif %}</td>
                         <td>{% if row.share_requests is not none %}{{ "{:.1%}".format(row.share_requests) }}{% else %}N/A{% endif %}</td>
