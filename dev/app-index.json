@@ -16,7 +16,7 @@
   "structure": {
     "src/bedrock_usage_analyzer/": "Main Python package containing all source code",
     "src/bedrock_usage_analyzer/core/": "Core analysis logic - orchestrator, metrics fetching, output generation",
-    "src/bedrock_usage_analyzer/aws/": "AWS service integrations - Bedrock, CloudWatch, Service Quotas, STS",
+    "src/bedrock_usage_analyzer/aws/": "AWS service integrations - Bedrock (incl. custom model deployments), CloudWatch, Service Quotas, STS",
     "src/bedrock_usage_analyzer/utils/": "Utility functions - CSV, YAML, UI helpers, path resolution with platformdirs",
     "src/bedrock_usage_analyzer/sync/": "Metadata sync/refresh code - regions, FM lists, quota mapping",
     "src/bedrock_usage_analyzer/templates/": "Jinja2 HTML templates for report generation",
@@ -250,6 +250,43 @@
         "typing"
       ],
       "imports_files": []
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/aws/custom_models.py",
+      "summary": "On-demand custom model deployments: listing, reading, and the base model whose custom deployment quotas apply",
+      "methods": [
+        {
+          "name": "deployment_short_id",
+          "description": "The ID part of a deployment ARN (for labels and file names)."
+        },
+        {
+          "name": "base_model_id_in_arn",
+          "description": "The base model ID a custom model ARN names (fallback when GetCustomModel is denied)."
+        },
+        {
+          "name": "base_model_id",
+          "description": "The foundation model a deployed model was trained from, following custom-model bases."
+        },
+        {
+          "name": "read_deployment",
+          "description": "A deployment as list_deployments summarizes it (arn, name, status, model_arn)."
+        },
+        {
+          "name": "is_active",
+          "description": "True for a deployment that serves traffic (status Active)."
+        },
+        {
+          "name": "list_deployments",
+          "description": "The region's custom model deployments (summaries: arn, name, status, model_arn)."
+        }
+      ],
+      "imports_libraries": [
+        "logging",
+        "typing"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.aws.bedrock"
+      ]
     },
     {
       "path": "src/bedrock_usage_analyzer/aws/servicequotas.py",
@@ -1511,6 +1548,25 @@
         "bedrock_usage_analyzer.utils.partition",
         "bedrock_usage_analyzer.utils.paths",
         "bedrock_usage_analyzer.utils.ui",
+        "bedrock_usage_analyzer.utils.yaml_handler"
+      ]
+    },
+    {
+      "path": "tests/test_custom_models.py",
+      "summary": "On-demand custom model deployments: discovery, base models, quota mapping rules and analysis targets.",
+      "imports_libraries": [
+        "botocore",
+        "conftest",
+        "pytest"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.aws",
+        "bedrock_usage_analyzer.aws.custom_models",
+        "bedrock_usage_analyzer.core",
+        "bedrock_usage_analyzer.core.analyzer",
+        "bedrock_usage_analyzer.core.profile_fetcher",
+        "bedrock_usage_analyzer.sync",
+        "bedrock_usage_analyzer.sync.quota_rules",
         "bedrock_usage_analyzer.utils.yaml_handler"
       ]
     },

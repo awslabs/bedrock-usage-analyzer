@@ -251,6 +251,20 @@ class BedrockAnalyzer:
         app_ids = tuple(sorted(model_config.get('application_profile_ids') or ()))
         return (model_config['model_id'], model_config.get('profile_prefix'), app_ids)
 
+    def _warn_other_deployments(self, base, deployment_arns):
+        """Tell the user when other active deployments share the base model's custom
+        deployment quotas: those limits are account-wide sums, so this report's
+        utilization leaves their usage out."""
+        fetcher = self.profile_fetcher
+        if not isinstance(fetcher, InferenceProfileFetcher) or base in {deployment_short_id(a) for a in deployment_arns}:
+            return  # no base model: no shared quotas
+        others = fetcher.other_deployments_of(base, deployment_arns)
+        if others:
+            names = ', '.join(f"{d['name']} ({deployment_short_id(d['arn'])})" for d in others)
+            logger.info(f"  Note: {len(others)} other active custom model deployment(s) of {base} share its "
+                        f"custom deployment quotas, so the utilization shown leaves their usage out: {names}. "
+                        f"Select them too (e.g. 'all' under 'Custom model deployments') for the account-wide view.")
+
     def _warn_other_sources(self, model_id, profile_prefix, final_model_ids):
         """Tell the user when their application profiles sit under a different endpoint."""
         if len(final_model_ids) > 1:
@@ -294,6 +308,8 @@ class BedrockAnalyzer:
             logger.info(f"  {model_id} ({profile_prefix or 'base'}): {len(final_model_ids)} profile(s) - {', '.join(profile_list)}")
             if not app_ids:
                 self._warn_other_sources(model_id, profile_prefix, final_model_ids)
+            elif profile_prefix == CUSTOM_ENDPOINT:
+                self._warn_other_deployments(model_id, app_ids)
 
         logger.info(f"Profile discovery complete.\n")
 
@@ -370,6 +386,9 @@ class BedrockAnalyzer:
                     # No on-demand endpoint: refreshing cannot add one, its profiles have the limits
                     fix = "analyze one of its inference profiles instead: " + \
                         ', '.join(endpoint_id(model_id, p) for p in profiles)
+                elif profile_prefix is None and fm_endpoints(self._fm_list(), model_id) == {CUSTOM_ENDPOINT}:
+                    # Listed only for customization: no refresh adds an on-demand endpoint
+                    fix = "analyze the custom model deployments of models customized from it instead"
                 else:
                     # fm-quotas only maps endpoints already in the model list
                     fix = f"bua refresh fm-list {self.region}, then bua refresh fm-quotas {self.region}"

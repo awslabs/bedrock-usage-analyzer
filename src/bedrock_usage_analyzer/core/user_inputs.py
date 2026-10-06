@@ -8,6 +8,8 @@ import sys
 import logging
 from typing import Dict, List, Optional, Sequence, Union
 
+from botocore.exceptions import BotoCoreError, ClientError
+
 from ..aws.bedrock import endpoint_id, region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
 from ..aws.custom_models import DEPLOYMENT_KIND, base_model_id_in_arn, deployment_short_id, is_active
@@ -104,6 +106,7 @@ class UserInputs:
         self._region_given = False  # set by _get_current_account: a region was passed in
         self.models = []
         self.profile_fetcher: Optional[InferenceProfileFetcher] = None
+        self._inactive_deployments_noted = False
         self._fm_lists: Dict[str, Optional[List[Dict]]] = {}  # None: the region has no fm-list
         self.granularity_config = {  # The aggregation granularity for different metrics window/period
             '1hour': 300,   # 5 minutes
@@ -474,7 +477,7 @@ class UserInputs:
                 # An application profile ID or ARN cannot be analyzed without the listings
                 logger.error(f"Could not list {self._failed_listing()} inference profiles in {self.region}, "
                              f"so {identifier} cannot be resolved: {e}")
-                self._report_deployment_listing_error()
+                self._report_deployment_listing_error(identifier)
                 sys.exit(1)
         if profile is None:
             fetcher = self.profile_fetcher
@@ -488,7 +491,7 @@ class UserInputs:
             if deployment:
                 return self._custom_deployment_config(deployment['arn'], deployment)
             logger.error(f"Application inference profile not found in {self.region}: {identifier}")
-            self._report_deployment_listing_error()
+            self._report_deployment_listing_error(identifier)
             sys.exit(1)
         logger.info(f"  Application inference profile {profile['name']} ({profile['id']}) "
                     f"is based on {profile['source'] or 'an unknown endpoint'}")
@@ -507,7 +510,8 @@ class UserInputs:
         # Only active deployments serve traffic: a Creating or Failed one has no usage to report
         listed = self._custom_deployments()
         deployments = [d for d in listed if is_active(d)]
-        if len(deployments) < len(listed):
+        if len(deployments) < len(listed) and not self._inactive_deployments_noted:
+            self._inactive_deployments_noted = True  # once per session: the listing is cached
             logger.info(f"  {len(listed) - len(deployments)} custom model deployment(s) in {region} are not "
                         f"active (Creating or Failed) and are not offered")
         modes = ['A foundation model (includes the application inference profiles created from it)']
@@ -527,18 +531,30 @@ class UserInputs:
         return [config] if config else []
 
     def _custom_deployments(self) -> List[Dict]:
-        """The region's custom model deployments ([] when there are none or they cannot be listed)."""
+        """The region's custom model deployments ([] when there are none or they cannot be listed).
+
+        A listing failure (API or network error) only hides the choice; a bug is raised.
+        """
+        fetcher = self._get_profile_fetcher()
+        if not isinstance(fetcher, InferenceProfileFetcher):
+            return []  # another fetcher (an API caller's) knows no deployments
         try:
-            return self._get_profile_fetcher().list_custom_deployments()
-        except Exception as e:
+            return fetcher.list_custom_deployments()
+        except (ClientError, BotoCoreError) as e:
             # Optional: a missing bedrock:ListCustomModelDeployments only hides this choice
             logger.debug(f"Could not list custom model deployments: {e}")
             return []
+        except AttributeError as e:
+            if 'list_custom_model_deployments' not in str(e):
+                raise
+            logger.info("  Custom model deployments need boto3 1.39.7 or later; not offered")
+            return []
 
-    def _report_deployment_listing_error(self):
-        """Say so when the identifier just looked for may be a deployment that could not be listed."""
-        error = self._get_profile_fetcher().custom_deployments_error
-        if error is not None:
+    def _report_deployment_listing_error(self, identifier):
+        """Say so when ``identifier`` may be a deployment that could not be listed."""
+        fetcher = self._get_profile_fetcher()
+        error = fetcher.custom_deployments_error if isinstance(fetcher, InferenceProfileFetcher) else None
+        if error is not None and not identifier.startswith('arn:'):
             logger.error(f"  (Custom model deployments could not be listed either, so it may be one: {error})")
 
     def _find_custom_deployment(self, identifier) -> Optional[Dict]:

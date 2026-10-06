@@ -248,10 +248,13 @@ def test_a_deployment_id_resolves_when_profiles_cannot_be_listed(monkeypatch):
 
 
 def test_a_failed_deployment_listing_is_requested_once_and_reported(monkeypatch, caplog):
+    from botocore.exceptions import ClientError
+
     class NoListing(FakeCustom):
         def list_custom_model_deployments(self, **kwargs):
             self.calls.append('ListCustomModelDeployments')
-            raise RuntimeError('AccessDeniedException: not authorized to ListCustomModelDeployments')
+            raise ClientError({'Error': {'Code': 'AccessDeniedException', 'Message': 'not authorized'}},
+                              'ListCustomModelDeployments')
     client = NoListing()
     inputs = _inputs(monkeypatch, client)
     with pytest.raises(SystemExit):
@@ -327,6 +330,31 @@ def test_fm_list_keeps_mapped_custom_quotas_when_customization_ends(monkeypatch,
     fm_list.refresh_region('us-east-1')
     saved = load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]
     assert saved['endpoints']['custom']['quotas']['tpm']['code'] == 'L-1'
+
+
+def test_a_bug_in_the_deployment_listing_is_raised(monkeypatch):
+    inputs = _inputs(monkeypatch, FakeCustom())
+    inputs.profile_fetcher = InferenceProfileFetcher(FakeCustom())
+    inputs.profile_fetcher.list_custom_deployments = lambda: {}['missing']  # a KeyError, not an API error
+    with pytest.raises(KeyError):
+        inputs._custom_deployments()
+
+
+def test_other_active_deployments_of_the_base_model_are_named(caplog):
+    from bedrock_usage_analyzer.core.analyzer import BedrockAnalyzer
+    sibling = dict(SUMMARY, customModelDeploymentArn=DEPLOYMENT.replace('dep0000001', 'dep0000002'),
+                   customModelDeploymentName='other-lite', modelArn=CUSTOM_MODEL.replace('cm00001', 'cm00002'))
+    failed = dict(sibling, customModelDeploymentArn=DEPLOYMENT.replace('dep0000001', 'dep0000003'), status='Failed')
+    fetcher = InferenceProfileFetcher(FakeCustom([SUMMARY, sibling, failed]))
+    fetcher.list_custom_deployments()
+    analyzer = BedrockAnalyzer.__new__(BedrockAnalyzer)
+    analyzer.profile_fetcher = fetcher
+    caplog.set_level('INFO')
+    analyzer._warn_other_deployments(BASE, [DEPLOYMENT])
+    assert '1 other active custom model deployment(s)' in caplog.text and 'other-lite (dep0000002)' in caplog.text
+    caplog.clear()
+    analyzer._warn_other_deployments(BASE, [DEPLOYMENT, sibling['customModelDeploymentArn']])
+    assert caplog.text == ''
 
 
 def test_fm_list_keeps_mapped_custom_quotas_of_a_model_no_longer_listed(monkeypatch, tmp_path):

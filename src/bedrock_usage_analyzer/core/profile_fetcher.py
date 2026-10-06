@@ -18,7 +18,7 @@ from bedrock_usage_analyzer.aws.bedrock import (
     region_group,
 )
 from bedrock_usage_analyzer.aws.custom_models import (
-    base_model_id, deployment_short_id, list_deployments, read_deployment)
+    base_model_id, base_model_id_in_arn, deployment_short_id, is_active, list_deployments, read_deployment)
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +130,25 @@ class InferenceProfileFetcher:
                     raise
                 logger.debug(f"Listing custom model deployments failed, retrying: {e}")
         return self._deployments
+
+    def other_deployments_of(self, base: str, deployment_arns) -> List[Dict]:
+        """Active deployments of models customized from ``base`` that are not in
+        ``deployment_arns``: they share the base model's custom deployment quotas.
+
+        Only a hint: uses a listing that already succeeded, never triggers a new one, and
+        reads no custom model it has not read yet (the base model ID in its ARN suffices).
+        """
+        wanted = set(deployment_arns)
+        others = []
+        for deployment in self._deployments or []:
+            if deployment['arn'] in wanted or not is_active(deployment):
+                continue
+            model_arn = deployment.get('model_arn') or ''
+            known = self._base_models.get(model_arn)
+            deployment_base = known if isinstance(known, str) else base_model_id_in_arn(model_arn)
+            if deployment_base == base:
+                others.append(deployment)
+        return others
 
     @property
     def custom_deployments_error(self) -> Optional[Exception]:
