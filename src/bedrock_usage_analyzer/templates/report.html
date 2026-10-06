@@ -1078,11 +1078,15 @@
         const breakdownSeries = {{ breakdown_tpm | tojson }};
         // One color per caller in every period's chart; past the palette, evenly spread hues
         const callerColorMap = new Map();
+        // The summed row's name carries its per-period count: one color for it in every period
+        // (a caller value of that form is quoted, so it never takes this key)
+        const colorKey = name => /^\(\d+ smaller groups\)$/.test(name) ? '(smaller groups)' : name;
         for (const [, rows] of breakdownSeries) {
             for (const [name] of rows) {
-                if (callerColorMap.has(name)) continue;
+                const key = colorKey(name);
+                if (callerColorMap.has(key)) continue;
                 const n = callerColorMap.size;
-                callerColorMap.set(name, n < colors.length ? colors[n]
+                callerColorMap.set(key, n < colors.length ? colors[n]
                     : '#' + hslToHex((n * 137.508) % 360, 65, 45));
             }
         }
@@ -1092,7 +1096,7 @@
             const datasets = [];
             for (const [name, tpm] of rows) {
                 if (!tpm.timestamps.length) continue;
-                const color = callerColorMap.get(name);
+                const color = callerColorMap.get(colorKey(name));
                 datasets.push({
                     label: name,
                     data: tpm.timestamps.map((ts, i) => ({ x: ts, y: tpm.values[i] })),

@@ -114,6 +114,8 @@ def row(at, principal, i=100, o=50, n=1, model=US_HAIKU, **extra):
     ('principal', 'principal', None), ('session', 'session', None), ('PRINCIPAL', 'principal', None),
     ('tag:team', 'tag', 'team'), ('metadata:cost-center', 'metadata', 'cost-center'),
     ('tag:Cost Center', 'tag', 'Cost Center'), ('tag: team ', 'tag', 'team'), (' metadata : app', 'metadata', 'app'),
+    # IAM tag keys may hold letters of any language
+    ('tag:Équipe', 'tag', 'Équipe'), ('tag:部署', 'tag', '部署'),
     # requestMetadata keys may hold what Bedrock allows: spaces, $ # , and up to 256 characters
     ('metadata:cost center', 'metadata', 'cost center'), ('metadata:app#$,x', 'metadata', 'app#$,x'),
     ('metadata:' + 'k' * 256, 'metadata', 'k' * 256),
@@ -130,9 +132,23 @@ def test_invalid_breakdowns_are_refused(value):
         Breakdown.parse(value)
 
 
+def test_a_trailing_newline_is_never_valid():
+    # '$' would match before it; the log group would then not be found, and a modelId would
+    # pass the query guard
+    with pytest.raises(BreakdownError):
+        Breakdown.parse('principal', log_group='/aws/bedrock\n')
+    with pytest.raises(ValueError):
+        build_query([US_HAIKU + '\n'], Breakdown())
+    assert model_id_forms([US_HAIKU + '\n'], REGION, ACCOUNT) == {}
+
+
 def test_principals_and_log_group_are_validated():
-    parsed = Breakdown.parse('principal', [ROLE_ARN, ' user/bob ', ''], '/aws/bedrock/logs')
+    parsed = Breakdown.parse('principal', [ROLE_ARN, ' user/bob '], '/aws/bedrock/logs')
     assert parsed.principals == ('role/OrdersService', 'user/bob') and parsed.log_group == '/aws/bedrock/logs'
+    # An empty --principal "$SVC" is an error, not "every caller"
+    for empty in ('', '  ', None):
+        with pytest.raises(BreakdownError, match='empty principal'):
+            Breakdown.parse('principal', [ROLE_ARN, empty])
     with pytest.raises(BreakdownError):
         Breakdown.parse('principal', ['role/x"; drop'])
     with pytest.raises(BreakdownError, match='use role/<name>'):
@@ -394,6 +410,17 @@ def test_start_query_retries_a_connection_that_was_never_made():
     with pytest.raises(ReadTimeoutError):
         fetcher.fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(hours=1), END)
     assert starter.calls == 1
+
+
+def test_waits_end_when_cancelled_and_polling_slows_down():
+    fetcher = InvocationLogFetcher(FakeLogs(), '/bedrock/logs')
+    fetcher._cancel.set()
+    assert fetcher._sleep(30) is True  # returns at once once cancelled, not after 30 s
+    waits = []
+    logs = FakeLogs(statuses=['Running'] * 12 + ['Complete'])
+    InvocationLogFetcher(logs, '/bedrock/logs', sleep=waits.append).fetch(
+        {US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(hours=1), END)
+    assert waits[0] == 1.0 and waits == sorted(waits) and waits[-1] == il.MAX_POLL_SECONDS
 
 
 def test_start_query_backoff_stops_when_the_run_is_cancelled():
@@ -840,7 +867,7 @@ def test_a_model_id_whose_cloudwatch_fetch_failed_is_left_out():
                               GRANULARITY, ['1hour'])
     rows = section['periods']['1hour']['rows']
     assert [(r['name'], r['share_tokens']) for r in rows] == [('role/A', 1.0)]
-    assert any('no 1-minute data for app0000002' in n for n in section['notes'])
+    assert any('1-minute data could not be fetched for app0000002' in n for n in section['notes'])
 
 
 def test_notes_belong_to_the_report_they_are_about():
@@ -888,6 +915,15 @@ def test_an_unavailable_breakdown_says_why_and_keeps_the_report(bedrock, logs, e
     assert expected in reason and builder.prepare([US_HAIKU], END, 1) == reason  # asked once
     section = builder.section([US_HAIKU], {}, {}, GRANULARITY, ['1hour'])
     assert expected in section['unavailable'] and section['periods'] == {}
+
+
+def test_a_log_group_newer_than_the_breakdown_end_says_why_it_is_empty():
+    # Logging enabled a moment ago: no window to read, and the report says so
+    logs = FakeLogs(groups=[{'logGroupName': '/bedrock/logs', 'creationTime': int(END.timestamp() * 1000) + 60000}])
+    builder = builder_for(Breakdown(), logs)
+    reason = builder.prepare([US_HAIKU], END, 1)
+    assert 'holds no records from before' in reason and logs.queries == []
+    assert 'holds no records' in builder.section([US_HAIKU], {}, {}, GRANULARITY, ['1hour'])['unavailable']
 
 
 def test_a_given_log_group_skips_the_logging_configuration():

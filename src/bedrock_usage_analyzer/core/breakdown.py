@@ -109,6 +109,11 @@ class BreakdownBuilder:
             covered_from = fetcher.coverage_start(start, end)
             if covered_from is None:
                 return self._give_up(f"log group {self.log_group} does not exist in {self.region}. {ENABLE_HINT}")
+            if covered_from >= end:
+                # Created after the breakdown's end: nothing to read yet
+                return self._give_up(f"log group {self.log_group} holds no records from before "
+                                     f"{end:%Y-%m-%d %H:%M} UTC yet: it was created after that "
+                                     f"(logging started recently); run again later")
             forms = model_id_forms(cw_ids, self.region, self.account, self.known_models)
             logger.info(f"  Reading model invocation logs from {self.log_group} "
                         f"({covered_from:%Y-%m-%d %H:%M} to {end:%Y-%m-%d %H:%M} UTC)...")
@@ -151,8 +156,8 @@ class BreakdownBuilder:
         (from start on) came from."""
         notes = []
         if no_cloudwatch:
-            notes.append(f"CloudWatch returned no 1-minute data for {', '.join(no_cloudwatch)}; "
-                         f"their logged calls are left out of the breakdown")
+            notes.append(f"CloudWatch's 1-minute data could not be fetched for {', '.join(no_cloudwatch)}, "
+                         f"so their logged calls are left out of the breakdown; run again to include them")
         failed = sorted(principals & set(self._tag_errors))
         if failed:
             error = main_error(self._tag_errors[p] for p in failed)
@@ -271,9 +276,10 @@ class BreakdownBuilder:
             # The period's own largest callers keep their rows (a caller that started today
             # leads the last hour even if it is small over 30 days)
             series, folded_name = _fold_small_groups(group_series, window_start, end)
-            if others:
+            # Only when they have usage in this period, like the groups
+            if any(_window_sum(others, window_start, end)):
                 series[OTHER_PRINCIPALS] = (others, {}, {})
-            if remainder:
+            if any(_window_sum(remainder, window_start, end)):
                 series[UNATTRIBUTED] = (remainder, {}, {})
             rows, period_series = [], {}
             for name, (minutes, principal_last, via_last) in series.items():

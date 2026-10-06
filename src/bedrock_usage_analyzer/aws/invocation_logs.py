@@ -16,7 +16,6 @@ Only metadata fields are queried: prompts and completions are never read.
 import logging
 import re
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -42,6 +41,7 @@ MAX_ROWS = 10000
 # Queries run at once (the account allows 100 across all users, and 10 StartQuery per second)
 MAX_CONCURRENT_QUERIES = 4
 QUERY_TIMEOUT_SECONDS = 900
+MAX_POLL_SECONDS = 10  # polling slows from poll_seconds to this as a query runs
 # A query window is never split below this, even if it returns MAX_ROWS rows
 MIN_WINDOW = timedelta(minutes=10)
 # A window that returns MAX_ROWS rows is run again as this many parts
@@ -58,12 +58,12 @@ _QUERY_HEAD = 'fields @timestamp\n'
 # requestMetadata keys (Bedrock allows letters, digits, whitespace and :_@$#=/+,-.) go into
 # the query inside backticks, which none of these characters can close; IAM tag keys are
 # only looked up in ListRoleTags/ListUserTags results
-_KEY_PATTERN = re.compile(r'^[A-Za-z0-9 :_@$#=/+,.-]{1,256}$')
-_TAG_KEY_PATTERN = re.compile(r'^[A-Za-z0-9 _.:/=+@-]{1,128}$')
+_KEY_PATTERN = re.compile(r'^[A-Za-z0-9 :_@$#=/+,.-]{1,256}\Z')
+_TAG_KEY_PATTERN = re.compile(r'^[\w .:/=+@-]{1,128}\Z')  # \w: letters and digits of any language
 # modelId values in a query string literal: model, profile and deployment IDs and ARNs
-_MODEL_ID_PATTERN = re.compile(r'^[A-Za-z0-9_.:/-]{1,2048}$')
+_MODEL_ID_PATTERN = re.compile(r'^[A-Za-z0-9_.:/-]{1,2048}\Z')
 # An IAM principal given with --principal: 'role/<name>', 'user/<name>' or an ARN
-_PRINCIPAL_PATTERN = re.compile(r'^[A-Za-z0-9_.:/=+,@-]{1,2048}$')
+_PRINCIPAL_PATTERN = re.compile(r'^[A-Za-z0-9_.:/=+,@-]{1,2048}\Z')
 
 UNATTRIBUTED = '(not in the invocation logs)'
 
@@ -90,19 +90,23 @@ class Breakdown:
             raise BreakdownError(f"unknown breakdown '{value}': use principal, session, tag:<key> or metadata:<key>")
         if kind == TAG:
             if not _TAG_KEY_PATTERN.match(key):
-                raise BreakdownError(f"'{value}' needs a key of letters, digits, spaces and _.:/=+@- (e.g. tag:team)")
+                raise BreakdownError(f"'{value}' needs a key of letters (any language), digits, spaces and _.:/=+@- (e.g. tag:team)")
         elif kind == METADATA:
             if not _KEY_PATTERN.match(key):
                 raise BreakdownError(f"'{value}' needs a key of letters, digits, spaces and :_@$#=/+,-. "
                                      f"(e.g. metadata:team)")
         elif key:
             raise BreakdownError(f"'{kind}' takes no key: '{value}'")
-        names = tuple(normalize_principal(p.strip()) for p in principals if p and p.strip())
+        principals = tuple(principals)
+        if any(not (p or '').strip() for p in principals):
+            # An empty --principal "$SVC" would otherwise read every caller's usage
+            raise BreakdownError("empty principal: use role/<name>, user/<name> or an IAM ARN")
+        names = tuple(normalize_principal(p.strip()) for p in principals)
         for name in names:
             if not _PRINCIPAL_PATTERN.match(name) or not name.startswith(('role/', 'user/', 'arn:')) \
                     or name in ('role/', 'user/'):
                 raise BreakdownError(f"invalid principal '{name}': use role/<name>, user/<name> or an IAM ARN")
-        if log_group is not None and not re.match(r'^[A-Za-z0-9_./#-]{1,512}$', log_group):
+        if log_group is not None and not re.match(r'^[A-Za-z0-9_./#-]{1,512}\Z', log_group):
             raise BreakdownError(f"invalid log group name '{log_group}'")
         return cls(kind, key or None, names, log_group)
 
@@ -268,7 +272,7 @@ class InvocationLogFetcher:
     """Runs the breakdown query over a time window, split into day-long queries that run a
     few at a time; a window that returns the row limit is run again in SPLIT_PARTS parts."""
 
-    def __init__(self, logs_client, log_group: str, sleep: Callable[[float], None] = time.sleep,
+    def __init__(self, logs_client, log_group: str, sleep: Optional[Callable[[float], object]] = None,
                  poll_seconds: float = 1.0, max_concurrent: int = MAX_CONCURRENT_QUERIES,
                  start_client=None):
         self.logs_client = logs_client
@@ -276,13 +280,14 @@ class InvocationLogFetcher:
         # lost reply cannot leave a second, unseen query scanning; throttling is retried here
         self.start_client = start_client or logs_client
         self.log_group = log_group
-        self._sleep = sleep
         self._poll = poll_seconds
         self._max_concurrent = max_concurrent
         self.bytes_scanned = 0.0
         self.queries_run = 0
         self._cancel = threading.Event()
         self._count_lock = threading.Lock()
+        # Waits (backoff, polling) end at once when the run is cancelled
+        self._sleep = sleep or self._cancel.wait
 
     def coverage_start(self, start: datetime, end: datetime) -> Optional[datetime]:
         """The earliest time of [start, end] the log group can hold (its creation time and
@@ -372,7 +377,7 @@ class InvocationLogFetcher:
             raise LogsQueryError("StartQuery returned no query ID")
         with self._count_lock:  # queries run in several threads
             self.queries_run += 1
-        waited = 0.0
+        waited, polls = 0.0, 0
         try:
             while True:
                 if self._cancel.is_set():
@@ -388,8 +393,12 @@ class InvocationLogFetcher:
                     raise LogsQueryError(f"the Logs Insights query {status.lower()}")
                 if waited >= QUERY_TIMEOUT_SECONDS:
                     raise LogsQueryError(f"the Logs Insights query did not finish in {QUERY_TIMEOUT_SECONDS} s")
-                self._sleep(self._poll)
-                waited += self._poll
+                # Each poll returns the partial results so far: poll less often as a query
+                # runs longer, so a long query's rows are not fetched again every second
+                delay = min(self._poll * 1.5 ** polls, MAX_POLL_SECONDS)
+                polls += 1
+                self._sleep(delay)
+                waited += delay
         except BaseException:
             # Interrupted or failed: do not leave it running (and counting) in the account
             try:
