@@ -79,17 +79,24 @@ This tool requires different IAM permissions depending on which features you use
         "servicequotas:ListServiceQuotas",
         "bedrock:GetModelInvocationLoggingConfiguration",
         "logs:DescribeLogGroups",
-        "logs:StartQuery",
         "logs:GetQueryResults",
         "logs:StopQuery",
         "iam:ListRoleTags",
         "iam:ListUserTags"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "QueryInvocationLogs",
+      "Effect": "Allow",
+      "Action": "logs:StartQuery",
+      "Resource": "arn:aws:logs:<region>:<account-id>:log-group:<invocation-log-group>:*"
     }
   ]
 }
 ```
+
+Replace the placeholders in the `QueryInvocationLogs` statement with the invocation log group of each analyzed Region (or drop the statement if you do not use `--breakdown`).
 
 **What this allows:**
 - `sts:GetCallerIdentity` - Get your AWS account ID
