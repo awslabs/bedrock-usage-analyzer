@@ -31,6 +31,12 @@ logger = logging.getLogger(__name__)
 # beats parallel per-code lookups (4 at a time) for a few dozen codes
 QUOTA_LISTING_THRESHOLD = 40
 
+
+def _base_unknown(model_id, deployment_arns) -> bool:
+    """True for a deployment target without a known base model: its deployment ID stands in
+    for the model ID (UserInputs._custom_deployment_config)."""
+    return model_id in {deployment_short_id(a) for a in deployment_arns}
+
 class BedrockAnalyzer:
     """Main orchestrator for Bedrock token usage analysis"""
     
@@ -256,7 +262,7 @@ class BedrockAnalyzer:
         deployment quotas: those limits are account-wide sums, so this report's
         utilization leaves their usage out."""
         fetcher = self.profile_fetcher
-        if not isinstance(fetcher, InferenceProfileFetcher) or base in {deployment_short_id(a) for a in deployment_arns}:
+        if not isinstance(fetcher, InferenceProfileFetcher) or _base_unknown(base, deployment_arns):
             return  # no base model: no shared quotas
         others = fetcher.other_deployments_of(base, deployment_arns)
         if others:
@@ -361,7 +367,7 @@ class BedrockAnalyzer:
                 logger.info(f"  {endpoint_id(model_id, profile_prefix)} is not offered in "
                             f"{self.region}; {ending}")
             elif not any(quota_codes.values()) and profile_prefix == CUSTOM_ENDPOINT:
-                if model_id in {deployment_short_id(a) for a in app_ids}:
+                if _base_unknown(model_id, app_ids):
                     # No base model: the deployment ID stands in for it (said when it was
                     # selected), so no refresh can map limits
                     fix = ""

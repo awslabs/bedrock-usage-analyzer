@@ -35,6 +35,13 @@ TAG_WORKERS = 8
 # else from the custom model deployment reads is a bug and is raised
 AWS_ERRORS = (ClientError, BotoCoreError)
 
+
+def missing_deployment_api(error: Exception) -> bool:
+    """True for the AttributeError of a boto3 older than the custom model deployment APIs
+    (pyproject requires 1.39.7; an older system boto3 can still be picked up)."""
+    return isinstance(error, AttributeError) and \
+        any(api in str(error) for api in ('custom_model_deployment', 'get_custom_model'))
+
 # Regions behind the country-level Asia Pacific profiles, extended at run time from the
 # listed profiles. Used only for copies of a country profile the region does not list.
 COUNTRY_PROFILE_REGIONS = {
@@ -113,6 +120,7 @@ class InferenceProfileFetcher:
         self._deployment_names: Dict[str, str] = {}  # deployment ARN -> name (selected ones)
         # deployed model ARN -> base model ID, or the error reading it (raised again)
         self._base_models: Dict[str, object] = {}
+        self._read_deployments: Dict[str, object] = {}  # identifier -> summary, or its read error
 
     # ------------------------------------------------------------------ custom models
 
@@ -141,19 +149,23 @@ class InferenceProfileFetcher:
         """Active deployments of models customized from ``base`` that are not in
         ``deployment_arns``: they share the base model's custom deployment quotas.
 
-        Only a hint: lists the deployments once (cached; a listing error gives none), and
-        reads no custom model it has not read yet (the base model ID in its ARN suffices).
+        Only a hint: lists the deployments once (cached; a listing error gives none). A
+        custom model ARN that names no base model ('custom-model/imported/...') is read with
+        GetCustomModel, all of them at once; one that cannot be read is left out.
         """
         try:
             deployments = self.list_custom_deployments()
-        except AWS_ERRORS + (AttributeError,) as e:  # AttributeError: a boto3 without the API
+        except Exception as e:
+            if not (isinstance(e, AWS_ERRORS) or missing_deployment_api(e)):
+                raise
             logger.debug(f"Could not list custom model deployments: {e}")
             return []
         wanted = set(deployment_arns)
+        candidates = [d for d in deployments if d['arn'] not in wanted and is_active(d)]
+        self.read_base_models([d.get('model_arn') for d in candidates
+                               if not base_model_id_in_arn(d.get('model_arn'))])
         others = []
-        for deployment in deployments:
-            if deployment['arn'] in wanted or not is_active(deployment):
-                continue
+        for deployment in candidates:
             model_arn = deployment.get('model_arn') or ''
             known = self._base_models.get(model_arn)
             deployment_base = known if isinstance(known, str) else base_model_id_in_arn(model_arn)
@@ -167,8 +179,28 @@ class InferenceProfileFetcher:
         return self._deployments_error
 
     def read_custom_deployment(self, identifier: str) -> Dict:
-        """A deployment's summary (arn, name, model_arn), read by its ID or ARN (raises)."""
-        return read_deployment(self.bedrock_client, identifier)
+        """A deployment's summary (arn, name, status, model_arn), read by its ID, name or ARN
+        once per run: an API error is raised again without another request."""
+        if identifier not in self._read_deployments:
+            try:
+                self._read_deployments[identifier] = read_deployment(self.bedrock_client, identifier)
+            except AWS_ERRORS as e:
+                self._read_deployments[identifier] = e
+        result = self._read_deployments[identifier]
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    def read_custom_deployments(self, identifiers):
+        """Read several deployments and their custom models at once (in parallel), for
+        read_custom_deployment and deployment_base_model to answer from."""
+        def read(identifier):
+            try:
+                return self.read_custom_deployment(identifier).get('model_arn')
+            except AWS_ERRORS:
+                return None  # kept: read_custom_deployment raises it again for its caller
+        model_arns = _in_parallel(read, [i for i in dict.fromkeys(identifiers) if i not in self._read_deployments])
+        self.read_base_models([a for a in model_arns if a])
 
     def note_deployment_name(self, arn: str, name: str):
         """Remember a selected deployment's name, so find_profiles need not read it again."""
@@ -523,11 +555,12 @@ class InferenceProfileFetcher:
         def target(arn):
             name = self._deployment_names.get(arn)  # resolved when it was selected
             if name is None:
-                # The name is cosmetic: the ARN still gives the metrics (AttributeError: a boto3
-                # without the API)
+                # The name is cosmetic: the ARN still gives the metrics
                 try:
                     name = self.read_custom_deployment(arn)['name']
-                except AWS_ERRORS + (AttributeError,) as e:
+                except Exception as e:
+                    if not (isinstance(e, AWS_ERRORS) or missing_deployment_api(e)):
+                        raise
                     logger.debug(f"Could not read custom model deployment {arn}: {e}")
             name = name or deployment_short_id(arn)
             return name, {'id': deployment_short_id(arn), 'tags': self._get_tags(arn, name)}

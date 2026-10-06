@@ -27,7 +27,8 @@ def deployment_short_id(arn: str) -> str:
 
 def base_model_id_in_arn(model_arn: Optional[str]) -> Optional[str]:
     """The base model ID a custom model ARN names ('.../custom-model/<base model ID>/<id>'),
-    or None (another ARN form). GetCustomModel is authoritative; this is the fallback."""
+    or None ('custom-model/imported/<id>', a model created from imported weights, names
+    none). GetCustomModel is authoritative; this is the fallback."""
     resource = (model_arn or '').split(':custom-model/', 1)
     if len(resource) != 2 or resource[1].count('/') != 1:
         return None
@@ -38,7 +39,7 @@ def base_model_id_in_arn(model_arn: Optional[str]) -> Optional[str]:
 def base_model_id(bedrock_client, model_arn: Optional[str]) -> Optional[str]:
     """The foundation model a deployed model was trained from, following custom-model bases.
 
-    None for a model without one (an imported model). Raises the API error of GetCustomModel.
+    None when GetCustomModel names none. Raises the API error of GetCustomModel.
     """
     model_arn = model_arn or ''
     for _ in range(_MAX_BASE_CHAIN):

@@ -260,12 +260,51 @@ def test_a_failed_deployment_listing_is_requested_once_and_reported(monkeypatch,
             self.calls.append('ListCustomModelDeployments')
             raise ClientError({'Error': {'Code': 'AccessDeniedException', 'Message': 'not authorized'}},
                               'ListCustomModelDeployments')
+
+        def get_custom_model_deployment(self, customModelDeploymentIdentifier):
+            if customModelDeploymentIdentifier != 'my-lite':
+                raise aws_error('ResourceNotFoundException', 'GetCustomModelDeployment')
+            return super().get_custom_model_deployment(customModelDeploymentIdentifier)
     client = NoListing()
     inputs = _inputs(monkeypatch, client)
     with pytest.raises(SystemExit):
         inputs._parse_model_id('zzzzzzzzzzzz')
     assert client.calls.count('ListCustomModelDeployments') == 1
     assert 'Custom model deployments could not be listed either' in caplog.text
+    # A deployment name still resolves without the listing: GetCustomModelDeployment takes it
+    assert inputs._parse_model_id('my-lite')['application_profile_ids'] == [DEPLOYMENT]
+
+
+def test_a_failed_arn_read_falls_back_to_the_listed_arn_only(monkeypatch):
+    # Another deployment is named like the requested deployment's ID: it must not be substituted
+    impostor = dict(SUMMARY, customModelDeploymentArn=DEPLOYMENT.replace('dep0000001', 'dep0000009'),
+                    customModelDeploymentName='dep0000001')
+
+    class Missing(FakeCustom):
+        def get_custom_model_deployment(self, customModelDeploymentIdentifier):
+            raise aws_error('ResourceNotFoundException', 'GetCustomModelDeployment')
+    inputs = _inputs(monkeypatch, Missing([impostor]))
+    assert inputs._parse_model_id(DEPLOYMENT)['application_profile_ids'] == [DEPLOYMENT]
+
+
+def test_an_old_boto3_says_what_it_needs(monkeypatch, caplog):
+    class Old(FakeBedrock):
+        pass  # no custom model deployment APIs
+    inputs = _inputs(monkeypatch, Old())
+    with pytest.raises(SystemExit):
+        inputs._parse_model_id(DEPLOYMENT)
+    assert 'need boto3 1.39.7' in caplog.text
+
+
+def test_deployments_read_at_once_are_not_read_again(monkeypatch):
+    second = DEPLOYMENT.replace('dep0000001', 'dep0000002')
+    client = FakeCustom()
+    inputs = _inputs(monkeypatch, client)
+    inputs._get_profile_fetcher().read_custom_deployments([DEPLOYMENT, second])
+    before = list(client.calls)
+    assert [inputs._parse_model_id(v)['model_id'] for v in (DEPLOYMENT, second)] == [BASE, BASE]
+    assert client.calls == before  # answered from what was read in parallel
+    assert before.count('GetCustomModelDeployment') == 2 and before.count('GetCustomModel') == 1
 
 
 def test_deployments_are_listed_once_and_selected_names_are_reused(monkeypatch):
@@ -371,6 +410,21 @@ def test_the_shared_quota_note_lists_deployments_for_an_arn_target(caplog):
     caplog.set_level('INFO')
     analyzer._warn_other_deployments(BASE, [DEPLOYMENT])
     assert 'other-lite (dep0000002)' in caplog.text
+
+
+def test_a_sibling_whose_arn_names_no_base_is_read(caplog):
+    from bedrock_usage_analyzer.core.analyzer import BedrockAnalyzer
+    imported = 'arn:aws:bedrock:us-east-1:111122223333:custom-model/imported/cm00007'
+    sibling = dict(SUMMARY, customModelDeploymentArn=DEPLOYMENT.replace('dep0000001', 'dep0000007'),
+                   customModelDeploymentName='from-weights', modelArn=imported)
+    client = FakeCustom([SUMMARY, sibling], bases={
+        CUSTOM_MODEL: f"arn:aws:bedrock:us-east-1::foundation-model/{BASE}",
+        imported: f"arn:aws:bedrock:us-east-1::foundation-model/{BASE}"})
+    analyzer = BedrockAnalyzer.__new__(BedrockAnalyzer)
+    analyzer.profile_fetcher = InferenceProfileFetcher(client)
+    caplog.set_level('INFO')
+    analyzer._warn_other_deployments(BASE, [DEPLOYMENT])
+    assert 'from-weights (dep0000007)' in caplog.text
 
 
 def test_a_bug_reading_a_base_model_is_raised(monkeypatch):

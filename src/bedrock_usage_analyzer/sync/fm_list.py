@@ -69,7 +69,7 @@ def _empty_endpoint() -> Dict:
 def _has_mapped_quota(endpoint) -> bool:
     """True when a saved endpoint entry maps at least one quota code."""
     quotas = endpoint.get('quotas') if isinstance(endpoint, dict) else None
-    return isinstance(quotas, dict) and any(quotas.values())
+    return isinstance(quotas, dict) and any(isinstance(q, dict) and q.get('code') for q in quotas.values())
 
 
 def refresh_region(region: str, update_bundle: bool = False):

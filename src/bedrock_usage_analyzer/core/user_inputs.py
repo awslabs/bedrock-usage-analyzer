@@ -12,7 +12,7 @@ from ..aws.bedrock import endpoint_id, region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
 from ..aws.custom_models import DEPLOYMENT_KIND, base_model_id_in_arn, deployment_short_id, is_active
 from ..core.errors import is_access_denied, troubleshooting_hint
-from ..core.profile_fetcher import AWS_ERRORS, UNKNOWN_SOURCE, InferenceProfileFetcher
+from ..core.profile_fetcher import AWS_ERRORS, UNKNOWN_SOURCE, InferenceProfileFetcher, missing_deployment_api
 from ..sync.regions import load_region_names
 from ..utils.yaml_handler import CUSTOM_ENDPOINT, endpoint_keys, fm_endpoints, has_endpoint, invokable_endpoint_keys, load_fm_list, profile_endpoints
 from ..utils.ui import require_credentials_partition, select_from_list
@@ -105,6 +105,7 @@ class UserInputs:
         self.models = []
         self.profile_fetcher: Optional[InferenceProfileFetcher] = None
         self._inactive_deployments_noted = False
+        self._deployment_listing_noted = False
         self._fm_lists: Dict[str, Optional[List[Dict]]] = {}  # None: the region has no fm-list
         self.granularity_config = {  # The aggregation granularity for different metrics window/period
             '1hour': 300,   # 5 minutes
@@ -161,6 +162,15 @@ class UserInputs:
         # Model selection (skip if provided via CLI)
         if model_id:
             values = [model_id] if isinstance(model_id, str) else list(model_id)
+            # Deployment ARNs and their custom models are read all at once, in parallel
+            deployment_arns = [v.strip() for v in values if f":{DEPLOYMENT_KIND}/" in v and v.strip().startswith('arn:')]
+            fetcher = self._get_profile_fetcher() if len(deployment_arns) > 1 else None
+            if isinstance(fetcher, InferenceProfileFetcher):
+                try:
+                    fetcher.read_custom_deployments(deployment_arns)
+                except AttributeError as e:
+                    if not missing_deployment_api(e):
+                        raise  # the per-ARN read says what boto3 is needed
             configs = []
             for value in values:
                 configs.append(self._parse_model_id(value))
@@ -429,8 +439,14 @@ class UserInputs:
         if summary is None:
             try:
                 summary = fetcher.read_custom_deployment(deployment_arn)
-            except AWS_ERRORS as e:
-                summary = self._find_custom_deployment(deployment_short_id(deployment_arn))
+            except Exception as e:
+                if missing_deployment_api(e):
+                    logger.error(f"Custom model deployments need boto3 1.39.7 or later: {e}")
+                    sys.exit(1)
+                if not isinstance(e, AWS_ERRORS):
+                    raise
+                # The listing may still have it (same ARN: a name may equal another's ID)
+                summary = next((d for d in self._custom_deployments() if d['arn'] == deployment_arn), None)
                 if summary is None:
                     hint = troubleshooting_hint(e, self.region) if is_access_denied(e) else None
                     if hint:
@@ -446,7 +462,7 @@ class UserInputs:
         if reason is None:
             try:
                 base = fetcher.deployment_base_model(summary.get('model_arn'))
-                reason = "has no foundation base model"  # e.g. a model imported with Custom Model Import
+                reason = "has no foundation base model"  # GetCustomModel names none
             except AWS_ERRORS as e:
                 base = base_model_id_in_arn(summary.get('model_arn'))
                 reason = f"has a custom model that could not be read ({e})"
@@ -469,9 +485,9 @@ class UserInputs:
                 if not self._listing_error():
                     raise  # a bug, not missing permissions
                 # The ID or name of a custom model deployment needs no profile listing
-                deployment = self._find_custom_deployment(identifier)
-                if deployment:
-                    return self._custom_deployment_config(deployment['arn'], deployment)
+                config = self._deployment_target(identifier)
+                if config:
+                    return config
                 # An application profile ID or ARN cannot be analyzed without the listings
                 logger.error(f"Could not list {self._failed_listing()} inference profiles in {self.region}, "
                              f"so {identifier} cannot be resolved: {e}")
@@ -484,10 +500,9 @@ class UserInputs:
                 logger.error(f"Application inference profile {identifier} routes to no foundation model; "
                              f"this tool has no metrics or quotas for it")
                 sys.exit(1)
-            # The short ID (or name) the deployment list shows
-            deployment = self._find_custom_deployment(identifier)
-            if deployment:
-                return self._custom_deployment_config(deployment['arn'], deployment)
+            config = self._deployment_target(identifier)
+            if config:
+                return config
             logger.error(f"Application inference profile not found in {self.region}: {identifier}")
             self._report_deployment_listing_error(identifier)
             sys.exit(1)
@@ -531,22 +546,36 @@ class UserInputs:
     def _custom_deployments(self) -> List[Dict]:
         """The region's custom model deployments ([] when there are none or they cannot be listed).
 
-        A listing failure (API or network error) only hides the choice; a bug is raised.
+        A listing failure (API or network error, or a boto3 without the API) only hides the
+        choice, and is said once per session; a bug is raised.
         """
         fetcher = self._get_profile_fetcher()
         if not isinstance(fetcher, InferenceProfileFetcher):
             return []  # another fetcher (an API caller's) knows no deployments
         try:
             return fetcher.list_custom_deployments()
-        except AWS_ERRORS as e:
-            # Optional: a missing bedrock:ListCustomModelDeployments only hides this choice
-            logger.debug(f"Could not list custom model deployments: {e}")
-            return []
-        except AttributeError as e:
-            if 'list_custom_model_deployments' not in str(e):
+        except Exception as e:
+            if not (isinstance(e, AWS_ERRORS) or missing_deployment_api(e)):
                 raise
-            logger.info("  Custom model deployments need boto3 1.39.7 or later; not offered")
+            if not self._deployment_listing_noted:
+                self._deployment_listing_noted = True
+                need = "need boto3 1.39.7 or later" if missing_deployment_api(e) else f"could not be listed ({e})"
+                logger.info(f"  Custom model deployments {need}; they are not offered")
             return []
+
+    def _deployment_target(self, identifier) -> Optional[Dict]:
+        """The config of the custom model deployment with this ID or name (the ones the
+        deployment list shows), or None. Without the listing it is read directly, as
+        GetCustomModelDeployment also takes an ID or name."""
+        deployment = self._find_custom_deployment(identifier)
+        fetcher = self._get_profile_fetcher()
+        if deployment is None and not identifier.startswith('arn:') and \
+                isinstance(fetcher, InferenceProfileFetcher) and fetcher.custom_deployments_error is not None:
+            try:
+                deployment = fetcher.read_custom_deployment(identifier)
+            except AWS_ERRORS as e:
+                logger.debug(f"{identifier} is not a readable custom model deployment either: {e}")
+        return self._custom_deployment_config(deployment['arn'], deployment) if deployment else None
 
     def _report_deployment_listing_error(self, identifier):
         """Say so when ``identifier`` may be a deployment that could not be listed."""
