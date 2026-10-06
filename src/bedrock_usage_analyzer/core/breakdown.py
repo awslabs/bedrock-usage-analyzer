@@ -19,7 +19,7 @@ from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.sts import get_account_id
 from bedrock_usage_analyzer.aws.invocation_logs import (
     MAX_ROWS, METADATA, PRINCIPAL, SESSION, TAG, UNATTRIBUTED, Breakdown, InvocationLogFetcher,
-    LogsQueryError, logging_destination, main_error, model_id_forms, principal_tags)
+    LogsQueryError, logging_destination, main_error, model_id_forms, next_minute, principal_tags)
 from bedrock_usage_analyzer.core.errors import AWS_ERRORS, troubleshooting_hint
 from bedrock_usage_analyzer.core.metrics_fetcher import PERIOD_DAYS
 
@@ -87,7 +87,9 @@ class BreakdownBuilder:
             return self._give_up(f"could not read the model invocation logs: {e}")
 
     def _prepare(self, cw_ids: Iterable[str], now: datetime, days: float) -> Optional[str]:
-        end = now - LOG_DELIVERY_DELAY
+        # On a minute (the per-minute rows end there); now itself stays the real clock,
+        # which log retention counts back from
+        end = (now - LOG_DELIVERY_DELAY).replace(second=0, microsecond=0)
         try:
             if not self.log_group:
                 self.log_group, reason = logging_destination(self.bedrock_client)
@@ -107,7 +109,7 @@ class BreakdownBuilder:
             # shares and the not-logged row are compared with; longer periods are marked partly
             # covered
             start = now - timedelta(days=min(days, CLOUDWATCH_MINUTE_DAYS))
-            covered_from = fetcher.coverage_start(start, end)
+            covered_from = fetcher.coverage_start(start, end, now)
             if covered_from is None:
                 return self._give_up(f"log group {self.log_group} does not exist in {self.region}. {ENABLE_HINT}")
             if covered_from >= end:
@@ -247,7 +249,9 @@ class BreakdownBuilder:
         # This report's CloudWatch 1-minute data starts 15 days before it was fetched (after
         # the logs were read): the breakdown starts where both sources have data
         cw_end = max((d['end_time'] for d in fetched_cw.values() if d.get('end_time')), default=end)
-        cw_from = _next_minute(cw_end - timedelta(days=CLOUDWATCH_MINUTE_DAYS))
+        # The minute after: cw_end is rounded down to a minute, and the data ages out from the
+        # real fetch time (up to a minute later), so the boundary minute may be partly gone
+        cw_from = next_minute(cw_end - timedelta(days=CLOUDWATCH_MINUTE_DAYS)) + timedelta(minutes=1)
         covered_from = max(logs_from, cw_from)
 
         # name -> (its minutes, the last minute of each of its principals, and of each profile)
@@ -354,6 +358,7 @@ class BreakdownBuilder:
             'name': name,
             # A principal row is its own principal; the summed row lists the ones it holds
             'principals': principals if self.breakdown.kind != PRINCIPAL or folded else [],
+            'folded': folded,  # the '(N smaller groups)' row: one chart color in every period
             'via': via,
             'tags': {},
             'tokens': tokens,
@@ -436,12 +441,6 @@ def _latest(last_seen: Dict[str, datetime], item: str, minute: datetime) -> None
 def _active(last_seen: Dict[str, datetime], start: datetime) -> List[str]:
     """The items seen at or after start (every period ends at the breakdown's end)."""
     return sorted(item for item, last in last_seen.items() if last >= start)
-
-
-def _next_minute(moment: datetime) -> datetime:
-    """The first whole minute at or after moment."""
-    floor = moment.replace(second=0, microsecond=0)
-    return floor if floor == moment else floor + timedelta(minutes=1)
 
 
 def _caller_value(value: str) -> str:

@@ -24,7 +24,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from botocore.exceptions import ClientError, ConnectTimeoutError, EndpointConnectionError
 
-from bedrock_usage_analyzer.aws.bedrock import arn_resource, endpoint_id, split_profile_id
+from bedrock_usage_analyzer.aws.bedrock import arn_resource, split_profile_id
 from bedrock_usage_analyzer.core.errors import AWS_ERRORS, is_access_denied
 from bedrock_usage_analyzer.utils.partition import build_arn
 
@@ -190,8 +190,7 @@ def model_id_forms(cw_ids: Iterable[str], region: str, account: Optional[str],
             # have yet ('kr.anthropic.x') looks like a model ID: an ID that is not one of the
             # region's foundation models gets both ARN spellings
             if account and (prefix or cw_id not in known_models):
-                profile_id = endpoint_id(model_id, prefix) if prefix else cw_id
-                forms[build_arn('bedrock', region, account, f"inference-profile/{profile_id}")] = cw_id
+                forms[build_arn('bedrock', region, account, f"inference-profile/{cw_id}")] = cw_id
             if not prefix:
                 forms[build_arn('bedrock', region, '', f"foundation-model/{model_id}")] = cw_id
     return {form: cw_id for form, cw_id in forms.items() if _MODEL_ID_PATTERN.match(form)}
@@ -281,6 +280,12 @@ def _value_batches(forms: Iterable[str], breakdown: Breakdown) -> List[List[str]
     return batches
 
 
+def next_minute(moment: datetime) -> datetime:
+    """The first whole minute at or after moment."""
+    floor = moment.replace(second=0, microsecond=0)
+    return floor if floor == moment else floor + timedelta(minutes=1)
+
+
 def _number(value) -> float:
     try:
         return float(value)
@@ -312,21 +317,26 @@ class InvocationLogFetcher:
         # Waits (backoff, polling) end at once when the run is cancelled
         self._sleep = sleep or self._cancel.wait
 
-    def coverage_start(self, start: datetime, end: datetime) -> Optional[datetime]:
+    def coverage_start(self, start: datetime, end: datetime,
+                       now: Optional[datetime] = None) -> Optional[datetime]:
         """The earliest time of [start, end] the log group can hold (its creation time and
-        retention), or None when it does not exist."""
+        retention, counted back from now: records expire by the clock, not by the window's
+        end), or None when it does not exist."""
         group = self._log_group()
         if group is None:
             return None
-        earliest = start
+        # On a minute: window boundaries then fall on whole seconds (startTime is in seconds)
+        earliest = start.replace(second=0, microsecond=0)
         created = group.get('creationTime')
         if created:
-            earliest = max(earliest, datetime.fromtimestamp(created / 1000, tz=timezone.utc))
+            created_at = datetime.fromtimestamp(created / 1000, tz=timezone.utc)
+            earliest = max(earliest, created_at.replace(second=0, microsecond=0))
         retention = group.get('retentionInDays')
         if retention:
-            earliest = max(earliest, end - timedelta(days=retention))
-        # On a minute: window boundaries then fall on whole seconds (startTime is in seconds)
-        return min(earliest.replace(second=0, microsecond=0), end)
+            # Up to the next minute: the minute retention cuts into may be partly deleted
+            kept_from = (now or end) - timedelta(days=retention)
+            earliest = max(earliest, next_minute(kept_from))
+        return min(earliest, end)
 
     def _log_group(self) -> Optional[Dict]:
         """The log group's description. The name is a prefix filter, so other groups whose

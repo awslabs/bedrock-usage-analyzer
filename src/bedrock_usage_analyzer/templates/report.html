@@ -224,7 +224,7 @@
         {% for period in period_ms %}
         {% set section = breakdown.periods.get(period) %}
         {% if section and section.rows %}
-        <button class="collapsible">{{ period_names.get(period, period) }}{% if section.partial %} (covers {{ section.covered_from }} to {{ section.covered_to }}: {% if section.partial_reason == 'cloudwatch' %}CloudWatch keeps 1-minute data for 15 days{% else %}the invocation logs start later{% endif %}){% endif %}</button>
+        <button class="collapsible">{{ breakdown_period_names.get(period, period) }}{% if section.partial %} (covers {{ section.covered_from }} to {{ section.covered_to }}: {% if section.partial_reason == 'cloudwatch' %}CloudWatch keeps 1-minute data for 15 days{% else %}the invocation logs start later{% endif %}){% endif %}</button>
         <div class="collapsible-content">
             <div class="contribution-table">
                 <table>
@@ -1079,11 +1079,11 @@
         // One color per caller in every period's chart; past the palette, evenly spread hues
         const callerColorMap = new Map();
         // The summed row's name carries its per-period count: one color for it in every period
-        // (a caller value of that form is quoted, so it never takes this key)
-        const colorKey = name => /^\(\d+ smaller groups\)$/.test(name) ? '(smaller groups)' : name;
+        // (marked folded; a caller value of that form is quoted, so it never takes this key)
+        const colorKey = (name, folded) => folded ? '(smaller groups)' : name;
         for (const [, rows] of breakdownSeries) {
-            for (const [name] of rows) {
-                const key = colorKey(name);
+            for (const [name, , folded] of rows) {
+                const key = colorKey(name, folded);
                 if (callerColorMap.has(key)) continue;
                 const n = callerColorMap.size;
                 callerColorMap.set(key, n < colors.length ? colors[n]
@@ -1094,9 +1094,9 @@
             const canvas = document.getElementById('breakdown_tpm_' + period);
             if (!canvas) continue;
             const datasets = [];
-            for (const [name, tpm] of rows) {
+            for (const [name, tpm, folded] of rows) {
                 if (!tpm.timestamps.length) continue;
-                const color = callerColorMap.get(colorKey(name));
+                const color = callerColorMap.get(colorKey(name, folded));
                 datasets.push({
                     label: name,
                     data: tpm.timestamps.map((ts, i) => ({ x: ts, y: tpm.values[i] })),

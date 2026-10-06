@@ -33,11 +33,15 @@ def https_url(value) -> str:
 
 
 def _breakdown_tpm(breakdown) -> list:
-    """The breakdown chart's data: [[period, [[caller, TPM series], ...]], ...]. Pairs, not
-    objects, as callers are names chosen by whoever calls Bedrock (an object key such as
-    "__proto__" would be dropped by the script); TPM only, the one series it draws."""
-    series = (breakdown or {}).get('time_series') or {}
-    return [[period, [[name, s['TPM']] for name, s in rows.items() if s.get('TPM')]]
+    """The breakdown chart's data: [[period, [[caller, TPM series, folded], ...]], ...].
+    Lists, not objects, as callers are names chosen by whoever calls Bedrock (an object key
+    such as "__proto__" would be dropped by the script); TPM only, the one series it draws;
+    folded marks the '(N smaller groups)' row, whose name changes with N."""
+    breakdown = breakdown or {}
+    series = breakdown.get('time_series') or {}
+    periods = breakdown.get('periods') or {}
+    folded = {period: {r['name'] for r in (p.get('rows') or []) if r.get('folded')} for period, p in periods.items()}
+    return [[period, [[name, s['TPM'], name in folded.get(period, ())] for name, s in rows.items() if s.get('TPM')]]
             for period, rows in series.items()]
 
 
@@ -230,6 +234,13 @@ class OutputGenerator:
     def _generate_html(self, filename, model_id, timestamp, data):
         """Generate HTML output with interactive graphs"""
         period_names = self._generate_period_names(data.get('end_time'), data.get('tz_offset', '+00:00'))
+        # The breakdown's periods end where the logs were read up to, before the report's end
+        breakdown_end = ((data.get('breakdown') or {}).get('coverage') or {}).get('end')
+        breakdown_period_names = period_names
+        if breakdown_end:
+            local = data.get('end_time').tzinfo if data.get('end_time') else None
+            breakdown_period_names = self._generate_period_names(
+                datetime.fromisoformat(breakdown_end).astimezone(local), data.get('tz_offset', '+00:00'))
 
         # Format timestamp for display
         end_time = data.get('end_time')
@@ -265,6 +276,7 @@ class OutputGenerator:
                 period_ms={period: days * 86400 * 1000 for period, days in PERIOD_DAYS.items()},
                 granularity_config=data.get('granularity_config', {}),
                 period_names=period_names,
+                breakdown_period_names=breakdown_period_names,
                 end_time_iso=end_time.isoformat() if end_time else None,
                 service_quotas_console_url=get_service_quotas_console_url(
                     region_name if region_name != 'N/A' else None),

@@ -360,7 +360,7 @@ bua analyze -r us-east-1 -m us.amazon.nova-lite-v1:0 -y --breakdown metadata:app
 bua analyze -r us-east-1 -m us.amazon.nova-lite-v1:0 -y --principal role/OrdersService
 ```
 
-Interactively, the tool asks whether to break usage down once the region logs invocations to CloudWatch Logs.
+When you pick the models interactively (no `-m`), the tool asks whether to break usage down once the region logs invocations to CloudWatch Logs. With `-m`, pass `--breakdown` (or `--principal`).
 
 - **What a row shows:** a caller's tokens and requests and its share of the endpoint's total, TPM and RPM (P50, P90, max per minute), and TPD, for each period, plus a TPM chart against the quota. The JSON report's `breakdown.time_series` holds each row's TPM and RPM series per period (the HTML chart draws TPM). "Via" lists the profiles or deployments it called; for session, tag and metadata rows, the IAM principals in the group. With `principal`, the callers' IAM tags are shown.
 - **Totals and quotas stay CloudWatch's.** Quotas are per account, Region and model, shared by all callers. Usage CloudWatch counted that the logs do not hold (logging was off, records not delivered) is shown as **(not in the invocation logs)**, so the shares add up.

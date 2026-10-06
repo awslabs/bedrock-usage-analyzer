@@ -607,6 +607,11 @@ def test_coverage_follows_creation_and_retention():
     assert fetcher_for(logs).coverage_start(END - timedelta(days=30), END) == created
     logs.groups[0] = {'logGroupName': '/bedrock/logs', 'retentionInDays': 7}
     assert fetcher_for(logs).coverage_start(END - timedelta(days=30), END) == END - timedelta(days=7)
+    # Records expire by the clock: retention counts back from now (the run, after the end),
+    # up to the next whole minute
+    now = END + timedelta(minutes=5, seconds=20)
+    assert fetcher_for(logs).coverage_start(END - timedelta(days=30), END, now) == \
+        END - timedelta(days=7) + timedelta(minutes=6)
     assert fetcher_for(FakeLogs(groups=[])).coverage_start(END - timedelta(days=1), END) is None
 
 
@@ -943,7 +948,8 @@ def test_minutes_logged_before_this_reports_cloudwatch_data_starts_are_left_out(
     data = cloudwatch({T1: (150, 0, 1)})
     data['end_time'] = END + timedelta(minutes=10, seconds=30)
     section = builder.section([US_HAIKU], {}, {US_HAIKU: data}, GRANULARITY, ['30days'])
-    assert section['coverage']['start'] == (END - timedelta(days=15) + timedelta(minutes=11)).isoformat()
+    # From the minute after the next whole one (the 15 days age out from the real fetch time)
+    assert section['coverage']['start'] == (END - timedelta(days=15) + timedelta(minutes=12)).isoformat()
     assert [r['name'] for r in section['periods']['30days']['rows']] == ['role/A']
 
 
@@ -1082,6 +1088,16 @@ def test_a_tag_read_failure_keeps_the_rows():
     assert any('tags could not be read (no iam)' in n for n in section['notes'])
 
 
+def test_retention_counts_back_from_the_real_clock_not_the_rounded_end():
+    # The analyzer passes the clock as it is: only the breakdown's end is on a minute
+    logs = FakeLogs(groups=[{'logGroupName': '/bedrock/logs', 'retentionInDays': 7}])
+    builder = builder_for(Breakdown(), logs)
+    builder.prepare([US_HAIKU], END + timedelta(seconds=40), 30)
+    covered_from, end = builder.coverage
+    assert end == END - timedelta(minutes=5)
+    assert covered_from == END - timedelta(days=7) + timedelta(minutes=1)  # the minute retention cuts into is out
+
+
 def test_a_log_group_newer_than_the_breakdown_end_says_why_it_is_empty():
     # Logging enabled a moment ago: no window to read, and the report says so
     logs = FakeLogs(groups=[{'logGroupName': '/bedrock/logs', 'creationTime': int(END.timestamp() * 1000) + 60000}])
@@ -1119,14 +1135,22 @@ def test_report_renders_the_breakdown_escaped(analyzer, tmp_path, monkeypatch):
     assert 'Usage by IAM principal' in html and '<img src=x' not in html
     assert 'role/&lt;img src=x onerror=alert(1)&gt;' in html
     assert 'breakdown_tpm_1hour' in html
+    # The breakdown's period headings end where its logs end, not at the report's end
+    end = datetime.fromisoformat(data['breakdown']['coverage']['end']).astimezone(analyzer.local_tz)
+    start = end - timedelta(hours=1)
+    assert f"Last 1 hour ({start:%H:%M}-{end:%H:%M})" in html
 
 
 def test_the_chart_gets_tpm_pairs_so_no_caller_name_is_an_object_key():
     from bedrock_usage_analyzer.core.output_generator import _breakdown_tpm
     tpm = {'timestamps': ['t'], 'values': [1]}
     breakdown = {'time_series': {'1hour': {'__proto__': {'TPM': tpm, 'RPM': tpm}, 'constructor': {'TPM': tpm},
-                                           'no-tpm': {}}}}
-    assert _breakdown_tpm(breakdown) == [['1hour', [['__proto__', tpm], ['constructor', tpm]]]]
+                                           '(2 smaller groups)': {'TPM': tpm}, 'no-tpm': {}}},
+                 'periods': {'1hour': {'rows': [{'name': '(2 smaller groups)', 'folded': True},
+                                                {'name': '__proto__', 'folded': False}]}}}
+    # The summed row is marked, so the chart keys its color on the mark, not on its name
+    assert _breakdown_tpm(breakdown) == [['1hour', [['__proto__', tpm, False], ['constructor', tpm, False],
+                                                    ['(2 smaller groups)', tpm, True]]]]
     assert _breakdown_tpm(None) == [] and _breakdown_tpm({'unavailable': 'x'}) == []
 
 
