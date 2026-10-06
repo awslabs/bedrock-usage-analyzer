@@ -345,13 +345,16 @@ class BedrockAnalyzer:
                 logger.info(f"  {endpoint_id(model_id, profile_prefix)} is not offered in "
                             f"{self.region}; {ending}")
             elif not any(quota_codes.values()) and profile_prefix == CUSTOM_ENDPOINT:
-                if '.' in model_id and not self._endpoint_listed(model_id, profile_prefix):
+                if model_id in {deployment_short_id(a) for a in app_ids}:
+                    # No base model: the deployment ID stands in for it (said when it was
+                    # selected), so no refresh can map limits
+                    fix = ""
+                elif self._endpoint_listed(model_id, profile_prefix):
+                    # Mapped by fm-quotas where Service Quotas has custom deployment quotas
+                    fix = f" To map them: bua refresh fm-quotas {self.region}"
+                else:
                     # A model list from before custom model deployments were mapped
                     fix = f" To map them: bua refresh fm-list {self.region}, then bua refresh fm-quotas {self.region}"
-                else:
-                    # No base model (model_id is the deployment ID, said when it was selected),
-                    # or Service Quotas has no custom deployment quotas for it: no refresh helps
-                    fix = ""
                 logger.info(f"  No custom model deployment quotas are known for {model_id} in "
                             f"{self.region}; the report will show usage without limits.{fix}")
             elif not any(quota_codes.values()) and profile_prefix != UNKNOWN_SOURCE:

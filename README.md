@@ -86,7 +86,7 @@ This tool requires different IAM permissions depending on which features you use
 **What this allows:**
 - `sts:GetCallerIdentity` - Get your AWS account ID
 - `bedrock:ListInferenceProfiles` - Discover inference profiles for selected models
-- `bedrock:ListTagsForResource` - Retrieve tags for inference profiles (for metadata display)
+- `bedrock:ListTagsForResource` - Retrieve tags for inference profiles and custom model deployments (for metadata display)
 - `bedrock:ListCustomModelDeployments`, `bedrock:GetCustomModelDeployment`, `bedrock:GetCustomModel` - Optional: analyze on-demand custom model deployments (their base model gives the quotas)
 - `cloudwatch:GetMetricData` - Fetch CloudWatch metrics for token usage (TPM, RPM, TPD, throttles)
 - `servicequotas:GetServiceQuota` - Retrieve service quota limits for visualization
@@ -304,14 +304,14 @@ If you analyze an endpoint that has no application profiles while the account ha
 
 ### Analyzing custom model deployments
 
-[On-demand custom model deployments](https://docs.aws.amazon.com/bedrock/latest/userguide/deploy-custom-model-on-demand.html) are analyzed like any other endpoint. Choose "Custom model deployments" at step 3 (shown when the region has any), or pass the deployment ARN with `--model-id`:
+[On-demand custom model deployments](https://docs.aws.amazon.com/bedrock/latest/userguide/deploy-custom-model-on-demand.html) are analyzed like any other endpoint. Choose "Custom model deployments" at step 3 (shown when the region has an active one), or pass the deployment ARN, ID or name with `--model-id`:
 
 ```bash
 bedrock-usage-analyzer analyze -r us-east-1 -y -g 5min -o ./results \
   -m arn:aws:bedrock:us-east-1:111122223333:custom-model-deployment/dep0example1
 ```
 
-The report shows the deployment's usage (CloudWatch records it under the deployment ARN) against the custom model deployment quotas of its base model, for example "(Model customization) Sum of on demand custom model deployment tokens per minute for Amazon Nova Lite". These quotas are mapped in the fm-list as the base model's `custom` endpoint. A model imported with Custom Model Import has no foundation base model, so its report shows usage without limits.
+The report shows the deployment's usage (CloudWatch records it under the deployment ARN) against the custom model deployment quotas of its base model, for example "(Model customization) Sum of on demand custom model deployment tokens per minute for Amazon Nova Lite". These quotas are mapped in the fm-list as the base model's `custom` endpoint. A model imported with Custom Model Import has no foundation base model, so its report shows usage without limits; so does a deployment whose details cannot be read (without the optional permissions above, a deployment ARN still gives its usage).
 
 ### Step 4b: Scripted/Non-Interactive Usage
 

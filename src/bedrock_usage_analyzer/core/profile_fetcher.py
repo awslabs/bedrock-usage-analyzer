@@ -98,21 +98,29 @@ class InferenceProfileFetcher:
         self._deployments: Optional[List[Dict]] = None
         self._deployments_error: Optional[Exception] = None
         self._deployment_names: Dict[str, str] = {}  # deployment ARN -> name (selected ones)
-        self._base_models: Dict[str, Optional[str]] = {}  # deployed model ARN -> base model ID
+        # deployed model ARN -> base model ID, or the error reading it (raised again)
+        self._base_models: Dict[str, object] = {}
 
     # ------------------------------------------------------------------ custom models
 
     def list_custom_deployments(self) -> List[Dict]:
-        """The region's custom model deployments, listed once per run: a failure is raised
-        again on later calls without another request."""
+        """The region's custom model deployments, listed once per run.
+
+        Like the profile listings, a failed listing is retried once at once; a second
+        failure is raised again on later calls without another request.
+        """
         if self._deployments_error is not None:
             raise self._deployments_error
-        if self._deployments is None:
+        for attempt in range(MAX_LISTING_ATTEMPTS):
+            if self._deployments is not None:
+                break
             try:
                 self._deployments = list_deployments(self.bedrock_client)
             except Exception as e:
-                self._deployments_error = e
-                raise
+                if is_access_denied(e) or attempt + 1 == MAX_LISTING_ATTEMPTS:
+                    self._deployments_error = e
+                    raise
+                logger.debug(f"Listing custom model deployments failed, retrying: {e}")
         return self._deployments
 
     def read_custom_deployment(self, identifier: str) -> Dict:
@@ -124,11 +132,18 @@ class InferenceProfileFetcher:
         self._deployment_names[arn] = name
 
     def deployment_base_model(self, model_arn: Optional[str]) -> Optional[str]:
-        """Base foundation model of a deployed model, once per model (raises API errors)."""
+        """Base foundation model of a deployed model, read once per model: an API error is
+        raised again for every deployment of that model without another request."""
         key = model_arn or ''
         if key not in self._base_models:
-            self._base_models[key] = base_model_id(self.bedrock_client, model_arn)
-        return self._base_models[key]
+            try:
+                self._base_models[key] = base_model_id(self.bedrock_client, model_arn)
+            except Exception as e:
+                self._base_models[key] = e
+        result = self._base_models[key]
+        if isinstance(result, Exception):
+            raise result
+        return result
 
     # ------------------------------------------------------------------ listing
 
@@ -449,19 +464,19 @@ class InferenceProfileFetcher:
         return self._tags_cache[profile_arn]
 
     def _deployment_targets(self, deployment_arns):
-        """(ARNs, names, metadata) of custom model deployments, named by their deployment name."""
+        """(ARNs, names, metadata) of custom model deployments, named by their deployment name
+        and with their tags, as application profiles are."""
         names: Dict[str, str] = {}
         metadata: Dict[str, Dict] = {}
         for arn in deployment_arns:
             name = self._deployment_names.get(arn)  # resolved when it was selected
             if name is None:
                 try:
-                    deployment = self.bedrock_client.get_custom_model_deployment(customModelDeploymentIdentifier=arn)
-                    name = deployment.get('modelDeploymentName')
+                    name = self.read_custom_deployment(arn)['name']
                 except Exception as e:  # the name is cosmetic: the ARN still gives the metrics
                     logger.debug(f"Could not read custom model deployment {arn}: {e}")
             names[arn] = name or deployment_short_id(arn)
-            metadata[arn] = {'id': deployment_short_id(arn), 'tags': {}}
+            metadata[arn] = {'id': deployment_short_id(arn), 'tags': self._get_tags(arn, names[arn])}
         return list(deployment_arns), names, metadata
 
     def find_profiles(self, model_id, profile_prefix, application_profile_ids=None):

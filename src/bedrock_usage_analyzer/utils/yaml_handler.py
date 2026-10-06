@@ -9,6 +9,8 @@ import yaml
 # ("(Model customization) Sum of on demand custom model deployment tokens per minute for
 # Amazon Nova Lite"). Not an inference profile prefix: 'custom.<model>' is never invoked.
 CUSTOM_ENDPOINT = 'custom'
+# What every custom model deployment quota name says
+QUOTA_KEYWORD_CUSTOM = 'custom model deployment'
 
 
 class MetadataReadError(yaml.YAMLError):

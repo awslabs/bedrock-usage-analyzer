@@ -12,7 +12,7 @@ import yaml
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.core.errors import is_access_denied
 from bedrock_usage_analyzer.utils.partition import build_arn, partition_region_prefix
-from bedrock_usage_analyzer.utils.yaml_handler import CUSTOM_ENDPOINT
+from bedrock_usage_analyzer.utils.yaml_handler import CUSTOM_ENDPOINT, QUOTA_KEYWORD_CUSTOM
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 QUOTA_KEYWORD_ON_DEMAND = 'on-demand'
 QUOTA_KEYWORD_CROSS_REGION = 'cross-region'
 QUOTA_KEYWORD_GLOBAL = 'global'
-QUOTA_KEYWORD_CUSTOM = 'custom model deployment'
 
 # Used only when no prefix-mapping.yml can be read at all (the bundled file is the source
 # of truth and normally always present)

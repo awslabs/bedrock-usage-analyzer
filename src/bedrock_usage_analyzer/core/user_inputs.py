@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Sequence, Union
 from ..aws.bedrock import endpoint_id, region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
 from ..aws.custom_models import DEPLOYMENT_KIND, deployment_short_id
-from ..core.errors import troubleshooting_hint
+from ..core.errors import is_access_denied, troubleshooting_hint
 from ..core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
 from ..sync.regions import load_region_names
 from ..utils.yaml_handler import CUSTOM_ENDPOINT, fm_endpoints, has_endpoint, invokable_endpoint_keys, load_fm_list, profile_endpoints
@@ -409,27 +409,33 @@ class UserInputs:
 
         Its usage is reported under the deployment ARN; its limits are the base model's
         custom model deployment quotas (the fm-list's 'custom' endpoint of that model).
-        ``summary`` is its list_deployments entry; without it the deployment is read, and the
-        run exits when it cannot be. Its base model only gives the limits: when that cannot be
-        read, the deployment is analyzed without them.
+        ``summary`` is its list_deployments entry; without it the deployment is read. When it
+        cannot be read for lack of permission, its ARN still gives the metrics, so it is
+        analyzed without limits; any other error (no such deployment) ends the run. Its base
+        model only gives the limits: when that cannot be read, they are left out.
         """
         fetcher = self._get_profile_fetcher()
+        base, reason = None, None
         if summary is None:
             try:
                 summary = fetcher.read_custom_deployment(deployment_arn)
             except Exception as e:
-                logger.error(f"Could not read custom model deployment {deployment_arn} in {self.region}: {e}")
                 hint = troubleshooting_hint(e, self.region)
-                if hint:
-                    logger.error(f"Hint: {hint}")
-                sys.exit(1)
+                if not (is_access_denied(e) and deployment_arn.startswith('arn:')):
+                    logger.error(f"Could not read custom model deployment {deployment_arn} in {self.region}: {e}")
+                    if hint:
+                        logger.error(f"Hint: {hint}")
+                    sys.exit(1)
+                summary = {'arn': deployment_arn, 'name': deployment_short_id(deployment_arn), 'model_arn': None}
+                reason = f"could not be read ({e})"
         arn, name = summary['arn'], summary['name']
         fetcher.note_deployment_name(arn, name)
-        try:
-            base = fetcher.deployment_base_model(summary.get('model_arn'))
-            reason = "has no foundation base model"  # e.g. a model imported with Custom Model Import
-        except Exception as e:
-            base, reason = None, f"has a custom model that could not be read ({e})"
+        if reason is None:
+            try:
+                base = fetcher.deployment_base_model(summary.get('model_arn'))
+                reason = "has no foundation base model"  # e.g. a model imported with Custom Model Import
+            except Exception as e:
+                reason = f"has a custom model that could not be read ({e})"
         if base:
             logger.info(f"  Custom model deployment {name} ({deployment_short_id(arn)}) is based on {base}")
         else:
@@ -483,7 +489,12 @@ class UserInputs:
             logger.info(f"  Could not list {self._failed_listing()} inference profiles: {e}")
             app_profiles = []
 
-        deployments = self._custom_deployments()
+        # Only active deployments serve traffic: a Creating or Failed one has no usage to report
+        listed = self._custom_deployments()
+        deployments = [d for d in listed if (d.get('status') or '').lower() == 'active']
+        if len(deployments) < len(listed):
+            logger.info(f"  {len(listed) - len(deployments)} custom model deployment(s) in {region} are not "
+                        f"active (Creating or Failed) and are not offered")
         modes = ['A foundation model (includes the application inference profiles created from it)']
         if app_profiles:
             modes.append(f'Specific application inference profiles ({len(app_profiles)} in {region})')

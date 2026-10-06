@@ -66,6 +66,12 @@ def _empty_endpoint() -> Dict:
     return {'quotas': {'concurrent': None, 'rpm': None, 'tpd': None, 'tpm': None}}
 
 
+def _has_mapped_quota(endpoint) -> bool:
+    """True when a saved endpoint entry maps at least one quota code."""
+    quotas = endpoint.get('quotas') if isinstance(endpoint, dict) else None
+    return isinstance(quotas, dict) and any(quotas.values())
+
+
 def refresh_region(region: str, update_bundle: bool = False):
     """Refresh foundation models for a region
 
@@ -205,10 +211,11 @@ def refresh_region(region: str, update_bundle: bool = False):
         if 'ON_DEMAND' in model.get('inference_types', []):
             endpoints.setdefault('base', _empty_endpoint())
         # 'custom': quotas of the model's on-demand custom model deployments, while the region
-        # lets the model be customized
+        # lets the model be customized. Mapped ones stay when customization ends: deployments
+        # of earlier custom models keep running against them.
         if model.get('customizations'):
             endpoints.setdefault(CUSTOM_ENDPOINT, _empty_endpoint())
-        else:
+        elif not _has_mapped_quota(endpoints.get(CUSTOM_ENDPOINT)):
             endpoints.pop(CUSTOM_ENDPOINT, None)
         
         # Add inference profiles if available

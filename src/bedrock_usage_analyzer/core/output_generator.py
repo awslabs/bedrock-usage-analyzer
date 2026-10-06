@@ -114,6 +114,8 @@ class OutputGenerator:
             'model_id': model_id,
             'endpoint': data.get('endpoint', model_id),
             'application_profile_scope': data.get('application_profile_scope', []),
+            # What the scope names are: application inference profiles or custom model deployments
+            'scope_label': data.get('scope_label') or 'Application inference profiles analyzed',
             'region': data.get('region', 'N/A'),
             'region_info': self._region_info(data),
             'generated_at': formatted_timestamp,

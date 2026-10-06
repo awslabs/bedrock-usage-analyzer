@@ -140,18 +140,34 @@ def test_a_deployment_arn_with_m_becomes_a_custom_target(monkeypatch):
         'model_id': BASE, 'profile_prefix': 'custom', 'application_profile_ids': [DEPLOYMENT]}
 
 
-def test_an_unreadable_deployment_exits_with_its_arn(monkeypatch, caplog):
+def test_a_missing_deployment_exits_with_its_arn(monkeypatch, caplog):
     from bedrock_usage_analyzer.core import user_inputs as ui_module
 
-    class Denied(FakeCustom):
+    class Missing(FakeCustom):
         def get_custom_model_deployment(self, customModelDeploymentIdentifier):
-            raise RuntimeError('AccessDeniedException: not authorized')
-    monkeypatch.setattr(ui_module, 'create_client', lambda service, region=None, **_: Denied())
+            raise RuntimeError('ResourceNotFoundException: no such deployment')
+    monkeypatch.setattr(ui_module, 'create_client', lambda service, region=None, **_: Missing())
     inputs = ui_module.UserInputs()
     inputs.region = 'us-east-1'
     with pytest.raises(SystemExit):
         inputs._parse_model_id(DEPLOYMENT)
     assert DEPLOYMENT in caplog.text
+
+
+def test_a_deployment_arn_that_cannot_be_read_is_analyzed_without_limits(monkeypatch, caplog):
+    from bedrock_usage_analyzer.core import user_inputs as ui_module
+    from botocore.exceptions import ClientError
+
+    class Denied(FakeCustom):
+        def get_custom_model_deployment(self, customModelDeploymentIdentifier):
+            raise ClientError({'Error': {'Code': 'AccessDeniedException', 'Message': 'not authorized'}},
+                              'GetCustomModelDeployment')
+    monkeypatch.setattr(ui_module, 'create_client', lambda service, region=None, **_: Denied())
+    inputs = ui_module.UserInputs()
+    inputs.region = 'us-east-1'
+    assert inputs._parse_model_id(DEPLOYMENT) == {
+        'model_id': 'dep0000001', 'profile_prefix': 'custom', 'application_profile_ids': [DEPLOYMENT]}
+    assert 'usage without limits' in caplog.text
 
 
 def _inputs(monkeypatch, client):
@@ -215,4 +231,62 @@ def test_deployments_are_listed_once_and_selected_names_are_reused(monkeypatch):
     inputs._select_custom_deployments(inputs._custom_deployments())
     _, names, _ = inputs.profile_fetcher.find_profiles(BASE, 'custom', application_profile_ids=[DEPLOYMENT])
     assert names[DEPLOYMENT] == 'my-lite'
-    assert client.calls == ['ListCustomModelDeployments', 'GetCustomModel']
+    assert [c for c in client.calls if isinstance(c, str)] == [
+        'ListCustomModelDeployments', 'GetCustomModel']  # no GetCustomModelDeployment
+
+
+def test_the_picker_offers_only_active_deployments(monkeypatch):
+    failed = dict(SUMMARY, customModelDeploymentArn=DEPLOYMENT.replace('dep0000001', 'dep0000009'),
+                  customModelDeploymentName='broken', status='Failed')
+    inputs = _inputs(monkeypatch, FakeCustom([SUMMARY, failed]))
+    offered = []
+    monkeypatch.setattr(inputs, '_select_custom_deployments', lambda deployments: offered.extend(deployments) or [])
+    monkeypatch.setattr('bedrock_usage_analyzer.core.user_inputs.select_from_list',
+                        lambda prompt, modes, **_: next(m for m in modes if m.startswith('Custom')))
+    inputs._select_targets('us-east-1')
+    assert [d['name'] for d in offered] == ['my-lite']
+
+
+def test_deployment_tags_are_reported(monkeypatch):
+    class Tagged(FakeCustom):
+        def list_tags_for_resource(self, resourceARN):
+            return {'tags': [{'key': 'team', 'value': 'search'}]}
+    _, _, metadata = InferenceProfileFetcher(Tagged()).find_profiles(BASE, 'custom', application_profile_ids=[DEPLOYMENT])
+    assert metadata[DEPLOYMENT]['tags'] == {'team': 'search'}
+
+
+def test_a_base_model_error_is_read_once_per_model(monkeypatch):
+    class NoModel(FakeCustom):
+        def get_custom_model(self, modelIdentifier):
+            self.calls.append('GetCustomModel')
+            raise RuntimeError('AccessDeniedException: not authorized')
+    client = NoModel()
+    fetcher = InferenceProfileFetcher(client)
+    for _ in range(3):
+        with pytest.raises(RuntimeError):
+            fetcher.deployment_base_model(CUSTOM_MODEL)
+    assert client.calls == ['GetCustomModel']
+
+
+def test_a_transient_listing_failure_is_retried_once():
+    class Flaky(FakeCustom):
+        def list_custom_model_deployments(self, **kwargs):
+            self.calls.append('ListCustomModelDeployments')
+            if len(self.calls) == 1:
+                raise RuntimeError('ThrottlingException: slow down')
+            return {'modelDeploymentSummaries': [SUMMARY]}
+    assert InferenceProfileFetcher(Flaky()).list_custom_deployments()[0]['name'] == 'my-lite'
+
+
+def test_fm_list_keeps_mapped_custom_quotas_when_customization_ends(monkeypatch, tmp_path):
+    from bedrock_usage_analyzer.sync import fm_list
+    (tmp_path / 'data').mkdir(exist_ok=True)
+    save_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'), {'models': [
+        {'model_id': BASE, 'provider': 'Amazon', 'endpoints': {'custom': {'quotas': {'tpm': {'code': 'L-1', 'name': TPM}}}}}]})
+    monkeypatch.setattr(fm_list, 'discover_prefix_mapping', lambda region, profiles=None: [])
+    monkeypatch.setattr(fm_list, 'list_system_profiles', lambda region: [])
+    monkeypatch.setattr(fm_list, 'fetch_foundation_models', lambda region: [
+        {'model_id': BASE, 'provider': 'Amazon', 'inference_types': ['PROVISIONED'], 'customizations': []}])
+    fm_list.refresh_region('us-east-1')
+    saved = load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models'][0]
+    assert saved['endpoints']['custom']['quotas']['tpm']['code'] == 'L-1'
