@@ -10,10 +10,10 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
-from bedrock_usage_analyzer.core.breakdown import PERIOD_DAYS, BreakdownBuilder
+from bedrock_usage_analyzer.core.breakdown import BreakdownBuilder
 from bedrock_usage_analyzer.core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher, in_parallel
 from bedrock_usage_analyzer.sync.quota_rules import scrub_conflicting
-from bedrock_usage_analyzer.core.metrics_fetcher import CloudWatchMetricsFetcher
+from bedrock_usage_analyzer.core.metrics_fetcher import PERIOD_DAYS, CloudWatchMetricsFetcher
 from bedrock_usage_analyzer.core.output_generator import APPLICATION_PROFILE_SCOPE, DEPLOYMENT_SCOPE, OutputGenerator
 from bedrock_usage_analyzer.aws.bedrock import (
     endpoint_id, get_endpoint_quota_keywords, get_regional_profile_prefixes)

@@ -209,18 +209,47 @@ def test_query_per_kind():
     assert 'inputBodyJson' not in principal and 'outputBodyJson' not in principal  # metadata fields only
     # Failed calls are left out, as CloudWatch's Invocations counts only successful ones
     assert '| filter not ispresent(errorCode)\n' in principal
-    assert 'identity.arn as session' in build_query([US_HAIKU], Breakdown.parse('session'))
+    assert 'arn as session' in build_query([US_HAIKU], Breakdown.parse('session'))
     assert '`requestMetadata.team` as meta' in build_query([US_HAIKU], Breakdown.parse('metadata:team'))
     # Keys with '-' (or : / = + @) are read as one field name
     assert '`requestMetadata.cost-center` as meta' in build_query([US_HAIKU], Breakdown.parse('metadata:cost-center'))
     assert ', principal\n' in build_query([US_HAIKU], Breakdown.parse('tag:team')) + '\n'
 
 
+def test_counts_and_caller_are_read_from_the_raw_record_by_bedrocks_own_structure():
+    # Past Logs Insights' 200 discovered fields (large bodies), the counts and the caller
+    # are read from @message (the discovered fields come first when present). The bodies are
+    # embedded JSON and may hold the same keys, e.g. a streamed response's own metrics or
+    # keys a caller or a model put there; only Bedrock's own fields match
+    query = build_query([US_HAIKU], Breakdown())
+    assert 'coalesce(input.inputTokenCount, i_tok)' in query and 'coalesce(identity.arn, caller)' in query
+    patterns = {name: re.compile(pattern.replace(f'(?<{name}>', f'(?P<{name}>'))
+                for pattern, name in re.findall(r'\| parse @message /(.*\(\?<(\w+)>.*)/\n', query)}
+    assert set(patterns) == {'i_tok', 'o_tok', 'caller'}
+    spoof = '{"inputTokenCount":999999},"identity":{"arn":"arn:aws:iam::1:user/victim"},"text":"say \\"x\\""'
+    streamed = ('[{"chunk":{"amazon-bedrock-invocationMetrics":{"inputTokenCount":7,"outputTokenCount":8}}},'
+                '{"tool":{"outputTokenCount":5},"identity":{"arn":"arn:aws:iam::1:user/model"}}]')
+    message = ('{"modelId":"m","input":{"inputContentType":"application/json","inputBodyJson":'
+               '{"additionalModelRequestFields":' + spoof + '},"inputTokenCount":12,'
+               '"cacheReadInputTokenCount":0},"output":{"outputContentType":"application/json",'
+               '"outputBodyJson":' + streamed + ',"outputTokenCount":3},'
+               '"identity":{"arn":"arn:aws:sts::1:assumed-role/Real/s"},"inferenceRegion":"us-east-1",'
+               '"schemaType":"ModelInvocationLog","schemaVersion":"1.0"}')
+    found = {name: p.search(message).group(name) for name, p in patterns.items()}
+    assert found == {'i_tok': '12', 'o_tok': '3', 'caller': 'arn:aws:sts::1:assumed-role/Real/s'}
+    # An embedding: no output count, the input count and the caller are still found
+    embedding = ('{"modelId":"e","input":{"inputContentType":"application/json","inputBodyJson":{"inputText":"a"},'
+                 '"inputTokenCount":5},"output":{"outputContentType":"application/json"},'
+                 '"identity":{"arn":"arn:aws:iam::1:user/u"},"schemaType":"ModelInvocationLog","schemaVersion":"1.0"}')
+    assert patterns['i_tok'].search(embedding).group('i_tok') == '5' and not patterns['o_tok'].search(embedding)
+    assert patterns['caller'].search(embedding).group('caller') == 'arn:aws:iam::1:user/u'
+
+
 def test_long_model_id_lists_are_split_across_queries(monkeypatch):
-    monkeypatch.setattr(il, 'MAX_QUERY_LENGTH', 700)
+    monkeypatch.setattr(il, 'MAX_QUERY_LENGTH', 1100)
     ids = [f"us.vendor.model-{n:03d}-v1:0" for n in range(40)]
     queries = il.query_batches(ids, Breakdown())
-    assert len(queries) > 1 and all(len(q) <= 700 for q in queries)
+    assert len(queries) > 1 and all(len(q) <= 1100 for q in queries)
     # Every spelling is in exactly one query
     assert sorted(i for i in ids for q in queries if f'"{i}"' in q) == sorted(ids)
     assert il.query_batches([US_HAIKU], Breakdown()) == [build_query([US_HAIKU], Breakdown())]
@@ -228,7 +257,7 @@ def test_long_model_id_lists_are_split_across_queries(monkeypatch):
     # The counted lengths are the real ones: each batch is as full as the budget allows
     for query, nxt in zip(queries, queries[1:]):
         first_next = re.search(r'\["([^"]+)"', nxt).group(1)
-        assert len(query) + len(first_next) + 4 > 700 - il.QUERY_END_FILTER_LENGTH
+        assert len(query) + len(first_next) + 4 > 1100 - il.QUERY_END_FILTER_LENGTH
 
     logs = FakeLogs([row(END - timedelta(minutes=5), 'assumed-role/A', model=ids[0]),
                      row(END - timedelta(minutes=5), 'assumed-role/A', model=ids[-1])])
@@ -255,7 +284,7 @@ def test_rows_are_fetched_per_day_and_normalized():
     assert alice['minute'].tzinfo is not None
     # Windows meet: each query's end is cut at the millisecond where the next one starts
     assert all(q['end'] - q['start'] == 86400 for q in logs.queries)
-    assert all(f"| filter @timestamp < {q['end'] * 1000}\n" in q['query'] for q in logs.queries)
+    assert all(q['query'].startswith(f"filter @timestamp < {q['end'] * 1000}\n| fields @timestamp\n") for q in logs.queries)
 
 
 def test_a_record_in_the_last_second_before_a_window_boundary_is_counted_once():
@@ -458,12 +487,36 @@ def test_session_and_metadata_keys_are_kept():
     assert {r['key'] for r in meta} == {None, 'checkout'}
 
 
-def test_principal_tags_reads_roles_and_users_and_keeps_the_first_denial():
+def test_principal_tags_reads_roles_and_users_and_keeps_each_error():
     iam = FakeIam(role_tags={'OrdersService': {'team': 'orders'}}, user_tags={'alice': {'team': 'ops'}}, deny={'Locked'})
-    tags, error = principal_tags(iam, ['role/OrdersService', 'user/ops/alice', 'role/Locked',
-                                       f"arn:aws:iam::{ACCOUNT}:root", 'role/OrdersService'])
+    tags, errors = principal_tags(iam, ['role/OrdersService', 'user/ops/alice', 'role/Locked',
+                                        f"arn:aws:iam::{ACCOUNT}:root", 'role/OrdersService'])
     assert tags == {'role/OrdersService': {'team': 'orders'}, 'user/ops/alice': {'team': 'ops'}}
-    assert error is not None and ('user', 'alice') in iam.calls and len(iam.calls) == 3
+    assert set(errors) == {'role/Locked'} and ('user', 'alice') in iam.calls and len(iam.calls) == 3
+
+
+def test_iam_tag_reads_back_off_adaptively():
+    # Hundreds of principals' tags, several at a time, against IAM's low request rate
+    from bedrock_usage_analyzer.aws.client_factory import create_client
+    assert create_client('iam', 'us-east-1').meta.config.retries['mode'] == 'adaptive'
+
+
+def test_the_quoted_tag_error_is_a_denial_first():
+    from bedrock_usage_analyzer.aws.invocation_logs import main_error
+    gone, denied = aws_error('NoSuchEntity', 'ListRoleTags'), aws_error('AccessDenied', 'ListRoleTags')
+    assert main_error([gone, denied]) is denied and main_error([gone]) is gone and main_error([]) is None
+
+
+def test_each_report_quotes_the_tag_error_of_its_own_principals():
+    class Iam(FakeIam):
+        def list_role_tags(self, RoleName):
+            raise aws_error('NoSuchEntity' if RoleName == 'Gone' else 'AccessDenied', 'ListRoleTags')
+    logs = FakeLogs([row(T1, 'assumed-role/Gone', model=US_HAIKU), row(T1, 'assumed-role/Locked', model=f"eu.{HAIKU}")])
+    builder = builder_for(Breakdown(), logs, iam=Iam())
+    builder.prepare([US_HAIKU, f"eu.{HAIKU}"], END, 1)
+    first = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({T1: (300, 0, 2)})}, GRANULARITY, ['1hour'])
+    second = builder.section([f"eu.{HAIKU}"], {}, {f"eu.{HAIKU}": cloudwatch({T1: (300, 0, 2)})}, GRANULARITY, ['1hour'])
+    assert 'NoSuchEntity' in ' '.join(first['notes']) and 'AccessDenied' in ' '.join(second['notes'])
 
 
 # ------------------------------------------------------------------ builder
@@ -940,9 +993,12 @@ def test_cli_options_become_a_breakdown(monkeypatch, tmp_path, argv, expected):
     assert seen['analyzer']['breakdown'] is b and seen['analyzer']['account'] == ACCOUNT and seen['ran']
 
 
-def test_an_invalid_cli_breakdown_exits(monkeypatch, caplog):
+@pytest.mark.parametrize('extra', [[], ['--log-group', '/g']])
+@pytest.mark.parametrize('value', ['owner', ''])
+def test_an_invalid_cli_breakdown_exits(monkeypatch, caplog, value, extra):
+    # An empty --breakdown "$BY" too: it is an error, not a run without a breakdown
     from bedrock_usage_analyzer import __main__ as cli
-    monkeypatch.setattr('sys.argv', ['bua', 'analyze', '-r', REGION, '-m', HAIKU, '--breakdown', 'owner'])
+    monkeypatch.setattr('sys.argv', ['bua', 'analyze', '-r', REGION, '-m', HAIKU, '--breakdown', value, *extra])
     with pytest.raises(SystemExit):
         cli.main()
     assert 'unknown breakdown' in caplog.text

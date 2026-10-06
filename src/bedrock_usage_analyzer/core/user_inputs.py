@@ -8,7 +8,7 @@ import sys
 import logging
 from typing import Dict, List, Optional, Sequence, Union
 
-from ..aws.bedrock import endpoint_id, region_from_arn, split_profile_id
+from ..aws.bedrock import arn_resource, endpoint_id, region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
 from ..aws.custom_models import DEPLOYMENT_KIND, base_model_id_in_arn, deployment_short_id, is_active
 from ..aws.invocation_logs import (
@@ -367,7 +367,7 @@ class UserInputs:
         value = model_id.strip()
 
         if value.startswith('arn:'):
-            resource = value.split(':', 5)[-1] if value.count(':') >= 5 else ''
+            resource = arn_resource(value)
             kind, _, ident = resource.partition('/')
             arn_region = region_from_arn(value)
             if arn_region and self.region and arn_region != self.region:

@@ -245,6 +245,11 @@ def region_from_arn(arn: str) -> str:
     return parts[3] if len(parts) > 3 else ''
 
 
+def arn_resource(arn: str) -> str:
+    """Resource part of an ARN, everything after the account field ('' if malformed)."""
+    return arn.split(':', 5)[5] if arn.count(':') >= 5 else ''
+
+
 def list_inference_profiles(bedrock_client, type_equals: str) -> List[Dict]:
     """List all inference profiles of one type ('SYSTEM_DEFINED' or 'APPLICATION')."""
     profiles = []

@@ -24,7 +24,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from botocore.exceptions import ClientError, ConnectTimeoutError, EndpointConnectionError
 
-from bedrock_usage_analyzer.aws.bedrock import endpoint_id, split_profile_id
+from bedrock_usage_analyzer.aws.bedrock import arn_resource, endpoint_id, split_profile_id
 from bedrock_usage_analyzer.core.errors import AWS_ERRORS, is_access_denied
 from bedrock_usage_analyzer.utils.partition import build_arn
 
@@ -124,7 +124,7 @@ def normalize_principal(arn: str) -> str:
     value = (arn or '').strip()
     resource = value
     if value.startswith('arn:'):
-        resource = value.split(':', 5)[5] if value.count(':') >= 5 else ''
+        resource = arn_resource(value)
     if resource.startswith('assumed-role/'):
         return 'role/' + resource.split('/')[1]
     if resource.startswith(('role/', 'user/')):
@@ -192,19 +192,31 @@ def build_query(forms: Iterable[str], breakdown: Breakdown) -> str:
     in_list = ', '.join(f'"{value}"' for value in values)
     keys = ['principal']
     if breakdown.kind == SESSION:
-        keys.append('identity.arn as session')
+        keys.append('arn as session')
     elif breakdown.kind == METADATA:
         # Backticks: keys may hold characters (- : / = + @) that are not field-name characters
         keys.append(f'`requestMetadata.{breakdown.key}` as meta')
     return _QUERY_HEAD + '\n'.join([
         f'| filter modelId in [{in_list}]',
         # Failed calls are logged too (with an errorCode); CloudWatch's Invocations counts
-        # only successful ones
+        # only successful ones. A failed call's record has no bodies, so its few fields are
+        # always discovered
         '| filter not ispresent(errorCode)',
-        r'| parse identity.arn /:(?<p_role>assumed-role\/[^\/]+)\// ',
-        r'| parse identity.arn /:(?<p_user>user\/.+)$/',
-        '| fields coalesce(p_role, p_user, identity.arn) as principal',
-        '| stats sum(input.inputTokenCount) as i, sum(output.outputTokenCount) as o, count(*) as n'
+        # The token counts and the caller come after the request and response bodies, so in a
+        # record with large bodies they can be past the first 200 fields Logs Insights
+        # discovers. Then they are read from the raw record, anchored on the structure Bedrock
+        # writes around them (bodies are embedded JSON and may hold keys of the same names,
+        # e.g. a streamed response's own metrics): the input count closes the input object
+        # before the output object, the output count and the caller end the record
+        r'| parse @message /"inputTokenCount":(?<i_tok>\d+)[^{}]*\},"output":\{"outputContentType"/',
+        r'| parse @message /"outputTokenCount":(?<o_tok>\d+)[^{}]*\},"identity":\{"arn":"[^"]+"\}[^{}]*\}\s*$/',
+        r'| parse @message /"identity":\{"arn":"(?<caller>[^"]+)"\}[^{}]*\}\s*$/',
+        '| fields coalesce(input.inputTokenCount, i_tok) as in_tokens,'
+        ' coalesce(output.outputTokenCount, o_tok) as out_tokens, coalesce(identity.arn, caller) as arn',
+        r'| parse arn /:(?<p_role>assumed-role\/[^\/]+)\// ',
+        r'| parse arn /:(?<p_user>user\/.+)$/',
+        '| fields coalesce(p_role, p_user, arn) as principal',
+        '| stats sum(in_tokens) as i, sum(out_tokens) as o, count(*) as n'
         f' by bin(1m) as minute, modelId, {", ".join(keys)}',
         f'| limit {MAX_ROWS}',
     ])
@@ -338,7 +350,7 @@ class InvocationLogFetcher:
         # cut at the millisecond in the query, so a record in the last second before a
         # window boundary is in exactly one window
         end_ms = int(end.timestamp() * 1000)
-        query = query.replace(_QUERY_HEAD, f"{_QUERY_HEAD}| filter @timestamp < {end_ms}\n", 1)
+        query = f"filter @timestamp < {end_ms}\n| {query}"  # its own first stage
         for attempt in range(START_ATTEMPTS):
             if self._cancel.is_set():  # another window failed while this one was backing off
                 raise LogsQueryError("cancelled")
@@ -403,11 +415,12 @@ class InvocationLogFetcher:
 
 
 def principal_tags(iam_client, principals: Iterable[str],
-                   parallel: Callable = None) -> Tuple[Dict[str, Dict[str, str]], Optional[Exception]]:
+                   parallel: Callable = None) -> Tuple[Dict[str, Dict[str, str]], Dict[str, Exception]]:
     """IAM tags of 'role/<name>' and 'user/<name>' principals.
 
-    Returns ({principal: tags}, the first error), principals whose tags could not be read
-    being left out. Other principals (root, federated users) have no tags to read.
+    Returns ({principal: tags}, {principal: error}) for the principals whose tags were read
+    and those whose tags could not be. Other principals (root, federated users) have no
+    tags to read.
     """
     def read(principal):
         kind, _, name = principal.partition('/')
@@ -424,10 +437,17 @@ def principal_tags(iam_client, principals: Iterable[str],
     names = [p for p in dict.fromkeys(principals) if p.startswith(('role/', 'user/'))]
     results = parallel(read, names) if parallel else [read(p) for p in names]
     tags: Dict[str, Dict[str, str]] = {}
-    error = None
+    errors: Dict[str, Exception] = {}
     for principal, value, e in results:
         if value is not None:
             tags[principal] = value
-        elif error is None or (is_access_denied(e) and not is_access_denied(error)):
-            error = e
-    return tags, error
+        else:
+            errors[principal] = e
+    return tags, errors
+
+
+def main_error(errors: Iterable[Exception]) -> Optional[Exception]:
+    """The error to quote for several failed reads: a denial (the fix is a permission)
+    before others such as a deleted principal."""
+    errors = list(errors)
+    return next((e for e in errors if is_access_denied(e)), errors[0] if errors else None)

@@ -19,7 +19,7 @@ from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.sts import get_account_id
 from bedrock_usage_analyzer.aws.invocation_logs import (
     METADATA, PRINCIPAL, SESSION, TAG, UNATTRIBUTED, Breakdown, InvocationLogFetcher, LogsQueryError,
-    logging_destination, model_id_forms, principal_tags)
+    logging_destination, main_error, model_id_forms, principal_tags)
 from bedrock_usage_analyzer.core.errors import AWS_ERRORS, troubleshooting_hint
 from bedrock_usage_analyzer.core.metrics_fetcher import PERIOD_DAYS
 
@@ -68,9 +68,8 @@ class BreakdownBuilder:
         self.log_group: Optional[str] = breakdown.log_group
         self.coverage: Optional[Tuple[datetime, datetime]] = None
         self._tags: Optional[Dict[str, Dict[str, str]]] = None
-        self._tag_error: Optional[Exception] = None
         self._tags_read: Set[str] = set()
-        self._tag_failed: Set[str] = set()  # principals whose tags could not be read
+        self._tag_errors: Dict[str, Exception] = {}  # principals whose tags could not be read
 
     # ------------------------------------------------------------------ fetching
 
@@ -141,14 +140,10 @@ class BreakdownBuilder:
             return
         self._tags_read |= principals
         iam = self._iam_client or create_client('iam', self.region)
-        tags, error = principal_tags(iam, principals, self._parallel)
+        tags, errors = principal_tags(iam, principals, self._parallel)
         self._tags = {**(self._tags or {}), **tags}
-        failed = principals - set(tags)
-        if failed:
-            self._tag_failed |= failed
-            if self._tag_error is None:
-                self._tag_error = error
-            logger.info(f"  Note: IAM tags of {len(failed)} principal(s) could not be read ({error})")
+        # Reported in each report's notes, with the error of that report's principals
+        self._tag_errors.update(errors)
 
     def _notes(self, principals: Set[str], start: datetime, no_cloudwatch: List[str]) -> List[str]:
         """This report's notes: ModelIds left out for want of CloudWatch data, principals
@@ -158,8 +153,10 @@ class BreakdownBuilder:
         if no_cloudwatch:
             notes.append(f"CloudWatch returned no 1-minute data for {', '.join(no_cloudwatch)}; "
                          f"their logged calls are left out of the breakdown")
-        if principals & self._tag_failed:
-            message = f"some IAM principal tags could not be read ({self._tag_error})"
+        failed = sorted(principals & set(self._tag_errors))
+        if failed:
+            error = main_error(self._tag_errors[p] for p in failed)
+            message = f"some IAM principal tags could not be read ({error})"
             if self.breakdown.kind == TAG:
                 message += "; principals without readable tags are grouped under '(tags not readable)'"
             notes.append(message)
@@ -184,7 +181,7 @@ class BreakdownBuilder:
             return row['key'] or row['principal']
         if kind == METADATA:
             return _caller_value(row['key']) if row['key'] not in (None, '') else f"(no {self.breakdown.key})"
-        if row['principal'] in self._tag_failed:
+        if row['principal'] in self._tag_errors:
             return '(tags not readable)'
         tags = (self._tags or {}).get(row['principal'])
         # IAM tag keys are case-insensitive (a principal cannot have both Team and team)
@@ -264,9 +261,6 @@ class BreakdownBuilder:
                 remainder[minute] = list(gap)
 
         group_series = {name: (g['minutes'], g['principals'], g['via']) for name, g in groups.items()}
-        # Each shown series' minutes in the fetcher's shape, built once for all periods (and
-        # only for series some period shows: thousands of sessions are folded in every period)
-        datasets: Dict[str, Dict] = {}
 
         periods, time_series = {}, {}
         for period in time_periods:
@@ -283,12 +277,9 @@ class BreakdownBuilder:
                 series[UNATTRIBUTED] = (remainder, {}, {})
             rows, period_series = [], {}
             for name, (minutes, principal_last, via_last) in series.items():
-                if name == folded_name:
-                    dataset = self._dataset(minutes, end)
-                else:
-                    if name not in datasets:
-                        datasets[name] = self._dataset(minutes, end)
-                    dataset = datasets[name]
+                # Only the period's own minutes (the fetcher slices to the same start), so the
+                # 1-hour period does not sort and convert 15 days of minutes
+                dataset = self._dataset({m: v for m, v in minutes.items() if m >= period_start}, end)
                 ts_data = self.metrics_fetcher.slice_and_process_data(dataset, period, granularity_config)
                 principals, via = _active(principal_last, window_start), _active(via_last, window_start)
                 stats = self._stats(ts_data, period)

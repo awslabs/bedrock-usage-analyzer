@@ -96,13 +96,15 @@ def cmd_analyze(args):
             sys.exit(1)
     
     breakdown = None
-    if args.log_group and not (args.breakdown or args.principal):
+    if args.log_group and args.breakdown is None and not args.principal:
         # Naming the log group alone does not start a (billed) Logs Insights scan
         logger.error("Error: --log-group needs --breakdown or --principal")
         sys.exit(1)
-    if args.breakdown or args.principal:
+    if args.breakdown is not None or args.principal:
         try:
-            breakdown = Breakdown.parse(args.breakdown or PRINCIPAL, args.principal or (), args.log_group)
+            # An empty --breakdown "$BY" is an error, not "no breakdown"
+            kind = PRINCIPAL if args.breakdown is None else args.breakdown
+            breakdown = Breakdown.parse(kind, args.principal or (), args.log_group)
         except BreakdownError as e:
             logger.error(f"Error: {e}")
             sys.exit(1)
