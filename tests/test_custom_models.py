@@ -4,6 +4,7 @@
 """On-demand custom model deployments: discovery, quota mapping rules and analysis targets."""
 
 import pytest
+from botocore.exceptions import ClientError
 
 from bedrock_usage_analyzer.aws import bedrock
 from bedrock_usage_analyzer.aws.custom_models import base_model_id, deployment_short_id, list_deployments, read_deployment
@@ -17,6 +18,10 @@ DEPLOYMENT = 'arn:aws:bedrock:us-east-1:111122223333:custom-model-deployment/dep
 CUSTOM_MODEL = 'arn:aws:bedrock:us-east-1:111122223333:custom-model/amazon.nova-lite-v1:0:300k/cm00001'
 BASE = 'amazon.nova-lite-v1:0:300k'
 TPM = '(Model customization) Sum of on demand custom model deployment tokens per minute for Amazon Nova Lite'
+
+
+def aws_error(code, operation):
+    return ClientError({'Error': {'Code': code, 'Message': code}}, operation)
 
 
 SUMMARY = {'customModelDeploymentArn': DEPLOYMENT, 'customModelDeploymentName': 'my-lite',
@@ -144,7 +149,7 @@ def test_a_deployment_arn_with_m_becomes_a_custom_target(monkeypatch):
 def test_a_deleted_deployment_arn_still_gives_its_usage(monkeypatch, caplog):
     class Missing(FakeCustom):
         def get_custom_model_deployment(self, customModelDeploymentIdentifier):
-            raise RuntimeError('ResourceNotFoundException: no such deployment')
+            raise aws_error('ResourceNotFoundException', 'GetCustomModelDeployment')
     inputs = _inputs(monkeypatch, Missing())
     assert inputs._parse_model_id(DEPLOYMENT) == {
         'model_id': 'dep0000001', 'profile_prefix': 'custom', 'application_profile_ids': [DEPLOYMENT]}
@@ -209,7 +214,7 @@ def test_an_unreadable_custom_model_falls_back_to_the_base_its_arn_names(monkeyp
     class Denied(FakeCustom):
         def get_custom_model(self, modelIdentifier):
             if modelIdentifier != CUSTOM_MODEL:
-                raise RuntimeError('AccessDeniedException: not authorized to GetCustomModel')
+                raise aws_error('AccessDeniedException', 'GetCustomModel')
             return super().get_custom_model(modelIdentifier)
     inputs = _inputs(monkeypatch, Denied([SUMMARY] + others))
     caplog.set_level('INFO')
@@ -299,11 +304,11 @@ def test_a_base_model_error_is_read_once_per_model(monkeypatch):
     class NoModel(FakeCustom):
         def get_custom_model(self, modelIdentifier):
             self.calls.append('GetCustomModel')
-            raise RuntimeError('AccessDeniedException: not authorized')
+            raise aws_error('AccessDeniedException', 'GetCustomModel')
     client = NoModel()
     fetcher = InferenceProfileFetcher(client)
     for _ in range(3):
-        with pytest.raises(RuntimeError):
+        with pytest.raises(ClientError):
             fetcher.deployment_base_model(CUSTOM_MODEL)
     assert client.calls == ['GetCustomModel']
 
@@ -313,7 +318,7 @@ def test_a_transient_listing_failure_is_retried_once():
         def list_custom_model_deployments(self, **kwargs):
             self.calls.append('ListCustomModelDeployments')
             if len(self.calls) == 1:
-                raise RuntimeError('ThrottlingException: slow down')
+                raise aws_error('ThrottlingException', 'ListCustomModelDeployments')
             return {'modelDeploymentSummaries': [SUMMARY]}
     assert InferenceProfileFetcher(Flaky()).list_custom_deployments()[0]['name'] == 'my-lite'
 
@@ -355,6 +360,35 @@ def test_other_active_deployments_of_the_base_model_are_named(caplog):
     caplog.clear()
     analyzer._warn_other_deployments(BASE, [DEPLOYMENT, sibling['customModelDeploymentArn']])
     assert caplog.text == ''
+
+
+def test_the_shared_quota_note_lists_deployments_for_an_arn_target(caplog):
+    from bedrock_usage_analyzer.core.analyzer import BedrockAnalyzer
+    sibling = dict(SUMMARY, customModelDeploymentArn=DEPLOYMENT.replace('dep0000001', 'dep0000002'),
+                   customModelDeploymentName='other-lite')
+    analyzer = BedrockAnalyzer.__new__(BedrockAnalyzer)
+    analyzer.profile_fetcher = InferenceProfileFetcher(FakeCustom([SUMMARY, sibling]))  # nothing listed yet
+    caplog.set_level('INFO')
+    analyzer._warn_other_deployments(BASE, [DEPLOYMENT])
+    assert 'other-lite (dep0000002)' in caplog.text
+
+
+def test_a_bug_reading_a_base_model_is_raised(monkeypatch):
+    class Broken(FakeCustom):
+        def get_custom_model(self, modelIdentifier):
+            return None  # .get on None: a TypeError/AttributeError, not an API error
+    inputs = _inputs(monkeypatch, Broken())
+    with pytest.raises(AttributeError):
+        inputs._custom_deployment_config(DEPLOYMENT, list_deployments(FakeCustom([SUMMARY]))[0])
+
+
+def test_selected_deployments_read_each_custom_model_once(monkeypatch):
+    client = FakeCustom([SUMMARY, dict(SUMMARY, customModelDeploymentArn=DEPLOYMENT.replace('dep0000001', 'dep0000002'))])
+    inputs = _inputs(monkeypatch, client)
+    monkeypatch.setattr('builtins.input', lambda prompt='': 'all')
+    configs = inputs._select_custom_deployments(inputs._custom_deployments())
+    assert [c['model_id'] for c in configs] == [BASE, BASE]
+    assert client.calls.count('GetCustomModel') == 1
 
 
 def test_fm_list_keeps_mapped_custom_quotas_of_a_model_no_longer_listed(monkeypatch, tmp_path):

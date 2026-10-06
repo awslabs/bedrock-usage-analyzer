@@ -8,13 +8,11 @@ import sys
 import logging
 from typing import Dict, List, Optional, Sequence, Union
 
-from botocore.exceptions import BotoCoreError, ClientError
-
 from ..aws.bedrock import endpoint_id, region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
 from ..aws.custom_models import DEPLOYMENT_KIND, base_model_id_in_arn, deployment_short_id, is_active
 from ..core.errors import is_access_denied, troubleshooting_hint
-from ..core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
+from ..core.profile_fetcher import AWS_ERRORS, UNKNOWN_SOURCE, InferenceProfileFetcher
 from ..sync.regions import load_region_names
 from ..utils.yaml_handler import CUSTOM_ENDPOINT, endpoint_keys, fm_endpoints, has_endpoint, invokable_endpoint_keys, load_fm_list, profile_endpoints
 from ..utils.ui import require_credentials_partition, select_from_list
@@ -431,7 +429,7 @@ class UserInputs:
         if summary is None:
             try:
                 summary = fetcher.read_custom_deployment(deployment_arn)
-            except Exception as e:
+            except AWS_ERRORS as e:
                 summary = self._find_custom_deployment(deployment_short_id(deployment_arn))
                 if summary is None:
                     hint = troubleshooting_hint(e, self.region) if is_access_denied(e) else None
@@ -449,7 +447,7 @@ class UserInputs:
             try:
                 base = fetcher.deployment_base_model(summary.get('model_arn'))
                 reason = "has no foundation base model"  # e.g. a model imported with Custom Model Import
-            except Exception as e:
+            except AWS_ERRORS as e:
                 base = base_model_id_in_arn(summary.get('model_arn'))
                 reason = f"has a custom model that could not be read ({e})"
                 if base:
@@ -540,7 +538,7 @@ class UserInputs:
             return []  # another fetcher (an API caller's) knows no deployments
         try:
             return fetcher.list_custom_deployments()
-        except (ClientError, BotoCoreError) as e:
+        except AWS_ERRORS as e:
             # Optional: a missing bedrock:ListCustomModelDeployments only hides this choice
             logger.debug(f"Could not list custom model deployments: {e}")
             return []
@@ -558,33 +556,42 @@ class UserInputs:
             logger.error(f"  (Custom model deployments could not be listed either, so it may be one: {error})")
 
     def _find_custom_deployment(self, identifier) -> Optional[Dict]:
-        """The region's custom model deployment with this ID or name, or None (an ARN of
-        another kind, such as an application profile's, needs no listing)."""
-        if identifier.startswith('arn:') and f":{DEPLOYMENT_KIND}/" not in identifier:
+        """The region's custom model deployment with this ID or name, or None (an ARN needs
+        no listing: deployment ARNs are read directly)."""
+        if identifier.startswith('arn:'):
             return None
         return next((d for d in self._custom_deployments()
                      if identifier in (deployment_short_id(d['arn']), d['name'])), None)
 
-    def _select_custom_deployments(self, deployments) -> List[Dict]:
-        """Pick one or more custom model deployments by number."""
-        print("\nCustom model deployments:")
-        for i, deployment in enumerate(deployments, 1):
-            print(f"  {i}. {deployment['name']} ({deployment_short_id(deployment['arn'])}) - {deployment['status']}")
+    @staticmethod
+    def _pick(title: str, lines: List[str], what: str) -> List[int]:
+        """Print a numbered list and read a selection ('1,3-4' or 'all'): the chosen indices."""
+        print(f"\n{title}:")
+        for i, line in enumerate(lines, 1):
+            print(f"  {i}. {line}")
         while True:
             try:
-                text = input("\nSelect deployments (e.g. 1,3-4 or all): ")
-                indices = parse_selection(text, len(deployments))
-                break
+                return parse_selection(input(f"\nSelect {what} (e.g. 1,3-4 or all): "), len(lines))
             except ValueError as e:
                 print(f"Please enter valid numbers: {e}")
+
+    def _select_custom_deployments(self, deployments) -> List[Dict]:
+        """Pick one or more custom model deployments by number."""
+        indices = self._pick("Custom model deployments", [
+            f"{d['name']} ({deployment_short_id(d['arn'])}) - {d['status']}" for d in deployments], 'deployments')
+        chosen = [deployments[i] for i in indices]
+        # One base-model read per custom model, in parallel (results and errors are kept)
+        fetcher = self._get_profile_fetcher()
+        if isinstance(fetcher, InferenceProfileFetcher):
+            fetcher.read_base_models([d.get('model_arn') for d in chosen])
         # Listed: no read can fail and end the session (a base model that cannot be read only
         # leaves out the limits)
-        return [self._custom_deployment_config(deployments[i]['arn'], deployments[i]) for i in indices]
+        return [self._custom_deployment_config(d['arn'], d) for d in chosen]
 
     def _select_application_profiles(self, app_profiles) -> List[Dict]:
         """Pick one or more application inference profiles by number."""
-        print("\nApplication inference profiles:")
-        for i, app in enumerate(app_profiles, 1):
+        lines = []
+        for app in app_profiles:
             # A guessed source the region no longer lists is marked here, before it is picked
             if app['profile_prefix'] is None:
                 # A base-model copy of a model the fm-list knows without an on-demand endpoint
@@ -594,14 +601,8 @@ class UserInputs:
                 retired = app['profile_prefix'] != UNKNOWN_SOURCE and app['source'] and \
                     not self._is_system_profile(app['source'])
             note = f" (not offered in {self.region} any more)" if retired else ""
-            print(f"  {i}. {app['name']} ({app['id']}) - based on {app['source'] or 'an unknown endpoint'}{note}")
-        while True:
-            try:
-                text = input(f"\nSelect profiles (e.g. 1,3-4 or all): ")
-                indices = parse_selection(text, len(app_profiles))
-                break
-            except ValueError as e:
-                print(f"Please enter valid numbers: {e}")
+            lines.append(f"{app['name']} ({app['id']}) - based on {app['source'] or 'an unknown endpoint'}{note}")
+        indices = self._pick("Application inference profiles", lines, 'profiles')
         return group_application_profiles([app_profiles[i] for i in indices])
 
     def _select_model(self, region):

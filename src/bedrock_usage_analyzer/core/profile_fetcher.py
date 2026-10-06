@@ -7,6 +7,8 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, FrozenSet, Iterable, List, Optional
 
+from botocore.exceptions import BotoCoreError, ClientError
+
 from bedrock_usage_analyzer.core.errors import is_access_denied
 from bedrock_usage_analyzer.utils.yaml_handler import CUSTOM_ENDPOINT, endpoint_keys
 from bedrock_usage_analyzer.aws.bedrock import (
@@ -29,6 +31,9 @@ UNKNOWN_SOURCE = 'unknown'
 # Attempts at listing application profiles per run before giving up on transient errors
 MAX_LISTING_ATTEMPTS = 2
 TAG_WORKERS = 8
+# Errors of an AWS call (a missing permission, throttling, a network failure); anything
+# else from the custom model deployment reads is a bug and is raised
+AWS_ERRORS = (ClientError, BotoCoreError)
 
 # Regions behind the country-level Asia Pacific profiles, extended at run time from the
 # listed profiles. Used only for copies of a country profile the region does not list.
@@ -114,8 +119,9 @@ class InferenceProfileFetcher:
     def list_custom_deployments(self) -> List[Dict]:
         """The region's custom model deployments, listed once per run.
 
-        Like the profile listings, a failed listing is retried once at once; a second
-        failure is raised again on later calls without another request.
+        Like the profile listings, a failed listing (an API error) is retried once at once;
+        a second failure is raised again on later calls without another request. Any other
+        error is a bug and is raised as it is.
         """
         if self._deployments_error is not None:
             raise self._deployments_error
@@ -124,7 +130,7 @@ class InferenceProfileFetcher:
                 break
             try:
                 self._deployments = list_deployments(self.bedrock_client)
-            except Exception as e:
+            except AWS_ERRORS as e:
                 if is_access_denied(e) or attempt + 1 == MAX_LISTING_ATTEMPTS:
                     self._deployments_error = e
                     raise
@@ -135,12 +141,17 @@ class InferenceProfileFetcher:
         """Active deployments of models customized from ``base`` that are not in
         ``deployment_arns``: they share the base model's custom deployment quotas.
 
-        Only a hint: uses a listing that already succeeded, never triggers a new one, and
+        Only a hint: lists the deployments once (cached; a listing error gives none), and
         reads no custom model it has not read yet (the base model ID in its ARN suffices).
         """
+        try:
+            deployments = self.list_custom_deployments()
+        except AWS_ERRORS + (AttributeError,) as e:  # AttributeError: a boto3 without the API
+            logger.debug(f"Could not list custom model deployments: {e}")
+            return []
         wanted = set(deployment_arns)
         others = []
-        for deployment in self._deployments or []:
+        for deployment in deployments:
             if deployment['arn'] in wanted or not is_active(deployment):
                 continue
             model_arn = deployment.get('model_arn') or ''
@@ -165,17 +176,28 @@ class InferenceProfileFetcher:
 
     def deployment_base_model(self, model_arn: Optional[str]) -> Optional[str]:
         """Base foundation model of a deployed model, read once per model: an API error is
-        raised again for every deployment of that model without another request."""
+        raised again for every deployment of that model without another request (a bug is
+        raised as it is, and not kept)."""
         key = model_arn or ''
         if key not in self._base_models:
             try:
                 self._base_models[key] = base_model_id(self.bedrock_client, model_arn)
-            except Exception as e:
+            except AWS_ERRORS as e:
                 self._base_models[key] = e
         result = self._base_models[key]
         if isinstance(result, Exception):
             raise result
         return result
+
+    def read_base_models(self, model_arns):
+        """Read the base models of several deployed models at once (in parallel); their
+        results and API errors are kept for deployment_base_model."""
+        def read(model_arn):
+            try:
+                self.deployment_base_model(model_arn)
+            except AWS_ERRORS:
+                pass  # kept: deployment_base_model raises it again for its caller
+        _in_parallel(read, [a for a in dict.fromkeys(model_arns) if (a or '') not in self._base_models])
 
     # ------------------------------------------------------------------ listing
 
@@ -501,9 +523,11 @@ class InferenceProfileFetcher:
         def target(arn):
             name = self._deployment_names.get(arn)  # resolved when it was selected
             if name is None:
+                # The name is cosmetic: the ARN still gives the metrics (AttributeError: a boto3
+                # without the API)
                 try:
                     name = self.read_custom_deployment(arn)['name']
-                except Exception as e:  # the name is cosmetic: the ARN still gives the metrics
+                except AWS_ERRORS + (AttributeError,) as e:
                     logger.debug(f"Could not read custom model deployment {arn}: {e}")
             name = name or deployment_short_id(arn)
             return name, {'id': deployment_short_id(arn), 'tags': self._get_tags(arn, name)}
