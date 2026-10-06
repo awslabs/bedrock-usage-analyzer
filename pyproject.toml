@@ -1,5 +1,6 @@
 [build-system]
-requires = ["setuptools>=77", "wheel"]  # 77: SPDX license string (PEP 639); 61: [project] table
+# setuptools 77: SPDX license string (PEP 639); wheel 0.38.1: CVE-2022-40898 fixed
+requires = ["setuptools>=77", "wheel>=0.38.1"]
 build-backend = "setuptools.build_meta"
 
 [project]

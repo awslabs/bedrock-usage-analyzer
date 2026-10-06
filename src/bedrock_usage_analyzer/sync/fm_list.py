@@ -234,7 +234,7 @@ def refresh_region(region: str, update_bundle: bool = False):
     for model_id, saved in existing_models.items():
         custom = model_endpoints(saved).get(CUSTOM_ENDPOINT)
         if model_id not in listed_ids and _has_mapped_quota(custom):
-            updated_models.append({'model_id': model_id, 'provider': saved.get('provider', ''),
+            updated_models.append({'model_id': model_id, 'provider': saved.get('provider') or '',
                                    'inference_types': [], 'endpoints': {CUSTOM_ENDPOINT: custom}})
 
     # Save updated models

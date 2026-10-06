@@ -10,11 +10,11 @@ from typing import Dict, List, Optional, Sequence, Union
 
 from ..aws.bedrock import endpoint_id, region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
-from ..aws.custom_models import DEPLOYMENT_KIND, base_model_id_in_arn, deployment_short_id
+from ..aws.custom_models import DEPLOYMENT_KIND, base_model_id_in_arn, deployment_short_id, is_active
 from ..core.errors import is_access_denied, troubleshooting_hint
 from ..core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
 from ..sync.regions import load_region_names
-from ..utils.yaml_handler import CUSTOM_ENDPOINT, fm_endpoints, has_endpoint, invokable_endpoint_keys, load_fm_list, profile_endpoints
+from ..utils.yaml_handler import CUSTOM_ENDPOINT, endpoint_keys, fm_endpoints, has_endpoint, invokable_endpoint_keys, load_fm_list, profile_endpoints
 from ..utils.ui import require_credentials_partition, select_from_list
 from ..utils.partition import (
     filter_regions_by_partition,
@@ -348,11 +348,11 @@ class UserInputs:
                            f"usage is under its inference profiles: {options}")
         elif not known_model and not prefix and \
                 CUSTOM_ENDPOINT in (fm_endpoints(self._load_fm_list(self.region), base_model_id) or set()):
-            # Listed only to be customized: its usage is under its custom model deployments
-            logger.error(f"{value} is offered in {self.region} only for customization; analyze its custom "
-                         f"model deployments instead (pass a deployment ARN, ID or name with -m, or choose "
-                         f"'Custom model deployments' interactively)")
-            sys.exit(1)
+            # Listed only for its custom deployment quotas (customizable, or no longer listed by
+            # Bedrock): still analyzed, as other unknown endpoints are, but not silently
+            logger.warning(f"  WARNING: {value} has no on-demand endpoint in {self.region}; the usage of "
+                           f"models customized from it is under their custom model deployments (pass a "
+                           f"deployment ARN, ID or name with -m, or choose 'Custom model deployments')")
         elif not known_model and self.region and prefix and self._is_system_profile(value):
             # Listed by Bedrock, only the model list is older: no reason to doubt the ID
             logger.info(f"  Note: {value} is listed in {self.region} but not in its model list; "
@@ -417,11 +417,11 @@ class UserInputs:
 
         Its usage is reported under the deployment ARN; its limits are the base model's
         custom model deployment quotas (the fm-list's 'custom' endpoint of that model).
-        ``summary`` is its list_deployments entry; without it the deployment is read. When it
-        cannot be read for lack of permission, the listing may still have it, and otherwise
-        its ARN still gives the metrics, so it is analyzed without limits; any other error
-        (no such deployment) ends the run. Its base model only gives the limits: when that
-        cannot be read, the base model ID in the custom model ARN is used, or none.
+        ``summary`` is its list_deployments entry; without it the deployment (passed by ARN)
+        is read. When that fails (no permission, or a deleted deployment whose usage CloudWatch
+        still keeps), the listing may still have it, and otherwise its ARN still gives the
+        metrics, so it is analyzed without limits. Its base model only gives the limits: when
+        that cannot be read, the base model ID in the custom model ARN is used, or none.
         """
         fetcher = self._get_profile_fetcher()
         base, reason = None, None
@@ -429,18 +429,19 @@ class UserInputs:
             try:
                 summary = fetcher.read_custom_deployment(deployment_arn)
             except Exception as e:
-                hint = troubleshooting_hint(e, self.region)
-                if not (is_access_denied(e) and deployment_arn.startswith('arn:')):
-                    logger.error(f"Could not read custom model deployment {deployment_arn} in {self.region}: {e}")
-                    if hint:
-                        logger.error(f"Hint: {hint}")
-                    sys.exit(1)
                 summary = self._find_custom_deployment(deployment_short_id(deployment_arn))
                 if summary is None:
+                    hint = troubleshooting_hint(e, self.region) if is_access_denied(e) else None
+                    if hint:
+                        logger.warning(f"  Hint: {hint}")
                     summary = {'arn': deployment_arn, 'name': deployment_short_id(deployment_arn), 'model_arn': None}
-                    reason = f"could not be read ({e})"
+                    reason = (f"could not be read ({e}); if it was deleted, the report still shows the usage "
+                              f"CloudWatch keeps for it")
         arn, name = summary['arn'], summary['name']
         fetcher.note_deployment_name(arn, name)
+        if summary.get('status') and not is_active(summary):
+            logger.warning(f"  WARNING: custom model deployment {name} is {summary['status']}, not Active; "
+                           f"it serves no traffic, so its report may show no usage")
         if reason is None:
             try:
                 base = fetcher.deployment_base_model(summary.get('model_arn'))
@@ -473,6 +474,7 @@ class UserInputs:
                 # An application profile ID or ARN cannot be analyzed without the listings
                 logger.error(f"Could not list {self._failed_listing()} inference profiles in {self.region}, "
                              f"so {identifier} cannot be resolved: {e}")
+                self._report_deployment_listing_error()
                 sys.exit(1)
         if profile is None:
             fetcher = self.profile_fetcher
@@ -486,9 +488,7 @@ class UserInputs:
             if deployment:
                 return self._custom_deployment_config(deployment['arn'], deployment)
             logger.error(f"Application inference profile not found in {self.region}: {identifier}")
-            error = self._deployment_listing_error()
-            if error is not None:
-                logger.error(f"  (Custom model deployments could not be listed either, so it may be one: {error})")
+            self._report_deployment_listing_error()
             sys.exit(1)
         logger.info(f"  Application inference profile {profile['name']} ({profile['id']}) "
                     f"is based on {profile['source'] or 'an unknown endpoint'}")
@@ -506,7 +506,7 @@ class UserInputs:
 
         # Only active deployments serve traffic: a Creating or Failed one has no usage to report
         listed = self._custom_deployments()
-        deployments = [d for d in listed if (d.get('status') or '').lower() == 'active']
+        deployments = [d for d in listed if is_active(d)]
         if len(deployments) < len(listed):
             logger.info(f"  {len(listed) - len(deployments)} custom model deployment(s) in {region} are not "
                         f"active (Creating or Failed) and are not offered")
@@ -535,12 +535,17 @@ class UserInputs:
             logger.debug(f"Could not list custom model deployments: {e}")
             return []
 
-    def _deployment_listing_error(self) -> Optional[Exception]:
-        """Why the custom model deployments could not be listed (after a listing), or None."""
-        return self._get_profile_fetcher().custom_deployments_error
+    def _report_deployment_listing_error(self):
+        """Say so when the identifier just looked for may be a deployment that could not be listed."""
+        error = self._get_profile_fetcher().custom_deployments_error
+        if error is not None:
+            logger.error(f"  (Custom model deployments could not be listed either, so it may be one: {error})")
 
     def _find_custom_deployment(self, identifier) -> Optional[Dict]:
-        """The region's custom model deployment with this ID or name, or None."""
+        """The region's custom model deployment with this ID or name, or None (an ARN of
+        another kind, such as an application profile's, needs no listing)."""
+        if identifier.startswith('arn:') and f":{DEPLOYMENT_KIND}/" not in identifier:
+            return None
         return next((d for d in self._custom_deployments()
                      if identifier in (deployment_short_id(d['arn']), d['name'])), None)
 
@@ -628,6 +633,11 @@ class UserInputs:
         inference_profiles = sorted(k for k in endpoints if k != 'base')
 
         if not endpoints:
+            if CUSTOM_ENDPOINT in endpoint_keys(selected_model):
+                # Listed for its custom deployment quotas: its usage is under the deployments
+                logger.info(f"\n  {model_id} has no on-demand or inference profile endpoint in {region}. "
+                            f"To analyze models customized from it, choose 'Custom model deployments' "
+                            f"(offered when the region has an active one) or pass a deployment ARN with -m.")
             return self._manual_model_entry()
 
         profile_prefix = self._select_profile_prefix(endpoints, inference_profiles)

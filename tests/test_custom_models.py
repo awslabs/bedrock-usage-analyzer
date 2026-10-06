@@ -50,7 +50,8 @@ def test_deployment_short_id():
 
 
 def test_a_deployment_is_read_like_a_listed_one():
-    assert read_deployment(FakeCustom(), DEPLOYMENT) == {'arn': DEPLOYMENT, 'name': 'my-lite', 'model_arn': CUSTOM_MODEL}
+    assert read_deployment(FakeCustom(), DEPLOYMENT) == {
+        'arn': DEPLOYMENT, 'name': 'my-lite', 'status': 'Active', 'model_arn': CUSTOM_MODEL}
     assert list_deployments(FakeCustom([SUMMARY]))[0]['model_arn'] == CUSTOM_MODEL
 
 
@@ -140,18 +141,31 @@ def test_a_deployment_arn_with_m_becomes_a_custom_target(monkeypatch):
         'model_id': BASE, 'profile_prefix': 'custom', 'application_profile_ids': [DEPLOYMENT]}
 
 
-def test_a_missing_deployment_exits_with_its_arn(monkeypatch, caplog):
-    from bedrock_usage_analyzer.core import user_inputs as ui_module
-
+def test_a_deleted_deployment_arn_still_gives_its_usage(monkeypatch, caplog):
     class Missing(FakeCustom):
         def get_custom_model_deployment(self, customModelDeploymentIdentifier):
             raise RuntimeError('ResourceNotFoundException: no such deployment')
-    monkeypatch.setattr(ui_module, 'create_client', lambda service, region=None, **_: Missing())
-    inputs = ui_module.UserInputs()
-    inputs.region = 'us-east-1'
+    inputs = _inputs(monkeypatch, Missing())
+    assert inputs._parse_model_id(DEPLOYMENT) == {
+        'model_id': 'dep0000001', 'profile_prefix': 'custom', 'application_profile_ids': [DEPLOYMENT]}
+    assert 'if it was deleted' in caplog.text
+
+
+def test_a_deployment_that_is_not_active_is_named(monkeypatch, caplog):
+    class Failed(FakeCustom):
+        def get_custom_model_deployment(self, customModelDeploymentIdentifier):
+            return dict(super().get_custom_model_deployment(customModelDeploymentIdentifier), status='Failed')
+    inputs = _inputs(monkeypatch, Failed())
+    inputs._parse_model_id(DEPLOYMENT)
+    assert 'my-lite is Failed, not Active' in caplog.text
+
+
+def test_an_application_profile_arn_needs_no_deployment_listing(monkeypatch):
+    client = FakeCustom([SUMMARY])
+    inputs = _inputs(monkeypatch, client)
     with pytest.raises(SystemExit):
-        inputs._parse_model_id(DEPLOYMENT)
-    assert DEPLOYMENT in caplog.text
+        inputs._parse_model_id('arn:aws:bedrock:us-east-1:111122223333:application-inference-profile/missing00001')
+    assert 'ListCustomModelDeployments' not in client.calls
 
 
 def test_a_deployment_arn_that_cannot_be_read_is_analyzed_without_limits(monkeypatch, caplog):
@@ -220,9 +234,9 @@ def test_a_denied_deployment_read_uses_the_listing(monkeypatch):
 
 def test_a_customizable_only_model_points_to_its_deployments(monkeypatch, caplog):
     inputs = _inputs(monkeypatch, FakeCustom())
-    with pytest.raises(SystemExit):
-        inputs._parse_model_id('amazon.nova-lite-v1:0:300k')
-    assert 'only for customization' in caplog.text
+    # Still analyzed (an entry kept for a model Bedrock no longer lists may have past usage)
+    assert inputs._parse_model_id('amazon.nova-lite-v1:0:300k') == {'model_id': BASE, 'profile_prefix': None}
+    assert 'under their custom model deployments' in caplog.text
 
 
 def test_a_deployment_id_resolves_when_profiles_cannot_be_listed(monkeypatch):

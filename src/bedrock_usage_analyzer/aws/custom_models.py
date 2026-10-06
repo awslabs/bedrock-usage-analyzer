@@ -49,12 +49,18 @@ def base_model_id(bedrock_client, model_arn: Optional[str]) -> Optional[str]:
 
 
 def read_deployment(bedrock_client, deployment_arn: str) -> Dict:
-    """A deployment as list_deployments summarizes it (arn, name, model_arn). Raises the API
-    error (a missing deployment, a missing permission)."""
+    """A deployment as list_deployments summarizes it (arn, name, status, model_arn). Raises
+    the API error (a missing deployment, a missing permission)."""
     deployment = bedrock_client.get_custom_model_deployment(customModelDeploymentIdentifier=deployment_arn)
     return {'arn': deployment.get('customModelDeploymentArn') or deployment_arn,
             'name': deployment.get('modelDeploymentName') or deployment_short_id(deployment_arn),
+            'status': deployment.get('status'),
             'model_arn': deployment.get('modelArn')}
+
+
+def is_active(deployment: Dict) -> bool:
+    """True for a deployment that serves traffic (status Active; Creating and Failed do not)."""
+    return (deployment.get('status') or '').lower() == 'active'
 
 
 def list_deployments(bedrock_client) -> List[Dict]:

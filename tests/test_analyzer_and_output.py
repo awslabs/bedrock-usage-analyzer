@@ -106,6 +106,8 @@ def test_a_custom_model_deployment_report(analyzer, tmp_path, caplog):
                      output_dir=str(out))
     files = reports(out)
     assert set(analyzer.cw.dimensions) == {deployment}
+    assert '-deployment-dep0000001-' in files[0] and '-app-' not in files[0]
+    assert json.loads((out / files[1]).read_text())['scope_label'] == 'Custom model deployments analyzed'
     html = (out / files[0]).read_text()
     assert 'Custom model deployments analyzed:</strong> dep0000001' in html
     assert 'No custom model deployment quotas are known for dep0000001' in caplog.text

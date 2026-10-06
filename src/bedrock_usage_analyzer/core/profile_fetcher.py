@@ -39,6 +39,14 @@ COUNTRY_PROFILE_REGIONS = {
 }
 
 
+def _in_parallel(fn, items) -> list:
+    """[fn(item) ...] in order; one Bedrock call per item, so several run in a thread pool."""
+    if len(items) <= 1:
+        return [fn(item) for item in items]
+    with ThreadPoolExecutor(max_workers=min(TAG_WORKERS, len(items))) as pool:
+        return list(pool.map(fn, items))
+
+
 def _model_of(arns) -> Optional[str]:
     """The model a profile serves: the first model ID of its routed ARNs."""
     return min((m for m in map(model_id_from_arn, arns) if m), default=None)
@@ -482,9 +490,7 @@ class InferenceProfileFetcher:
             return name, {'id': deployment_short_id(arn), 'tags': self._get_tags(arn, name)}
 
         arns = list(deployment_arns)
-        # A name and tags lookup per deployment: in parallel, as for application profiles
-        with ThreadPoolExecutor(max_workers=max(1, min(TAG_WORKERS, len(arns)))) as pool:
-            results = list(pool.map(target, arns))
+        results = _in_parallel(target, arns)  # a name and tags lookup per deployment
         names = {arn: name for arn, (name, _) in zip(arns, results)}
         metadata = {arn: meta for arn, (_, meta) in zip(arns, results)}
         return arns, names, metadata
@@ -540,9 +546,7 @@ class InferenceProfileFetcher:
             selected.append(app)
         # One ListTagsForResource per profile: in parallel, so many profiles do not add up
         todo = [a for a in selected if a['arn'] and a['arn'] not in self._tags_cache]
-        if len(todo) > 1:
-            with ThreadPoolExecutor(max_workers=min(TAG_WORKERS, len(todo))) as pool:
-                list(pool.map(lambda a: self._get_tags(a['arn'], a['id']), todo))
+        _in_parallel(lambda a: self._get_tags(a['arn'], a['id']), todo)
         for app in selected:
             profile_metadata[app['id']] = {'id': app['id'], 'tags': self._get_tags(app['arn'], app['id'])}
 

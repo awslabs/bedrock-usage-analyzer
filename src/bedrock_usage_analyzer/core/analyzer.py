@@ -443,17 +443,16 @@ class BedrockAnalyzer:
             # Step 6: Generate output
             logger.info(f"  Generating output files...")
             end_time_local = datetime.now(self.local_tz)
-            if profile_prefix == UNKNOWN_SOURCE:
-                endpoint = f"{model_id} (source endpoint unknown)"
-            elif profile_prefix == CUSTOM_ENDPOINT:
-                endpoint = f"{model_id} (custom model deployment)"
-            else:
-                endpoint = endpoint_id(model_id, profile_prefix)
+            scope_label = APPLICATION_PROFILE_SCOPE
             if profile_prefix == CUSTOM_ENDPOINT:
+                endpoint = f"{model_id} (custom model deployment)"
+                scope_label = DEPLOYMENT_SCOPE
                 # Deployment IDs, not their ARNs, in the file name
                 file_label = self._file_label(f"custom-deployment.{model_id}",
-                                              [deployment_short_id(a) for a in app_ids])
+                                              [deployment_short_id(a) for a in app_ids], marker='deployment')
             else:
+                endpoint = f"{model_id} (source endpoint unknown)" if profile_prefix == UNKNOWN_SOURCE \
+                    else endpoint_id(model_id, profile_prefix)
                 file_label = self._file_label(endpoint, app_ids)
             scope = [profile_names.get(pid, pid) for pid in final_model_ids] if app_ids else []
 
@@ -471,20 +470,24 @@ class BedrockAnalyzer:
                     'region_info': region_info,
                     'endpoint': endpoint,
                     'application_profile_scope': scope,
-                    'scope_label': DEPLOYMENT_SCOPE if profile_prefix == CUSTOM_ENDPOINT else APPLICATION_PROFILE_SCOPE,
+                    'scope_label': scope_label,
                     'file_label': file_label,
                 }
             })
 
     @staticmethod
-    def _file_label(endpoint, app_ids):
-        """Distinct output name per target, so two endpoints of one model do not overwrite each other."""
+    def _file_label(endpoint, app_ids, marker='app'):
+        """Distinct output name per target, so two endpoints of one model do not overwrite each other.
+
+        ``marker`` names what the IDs are: 'app' (application profiles) or 'deployment'.
+        """
         if app_ids:
             if len(app_ids) <= 3:
-                return f"{endpoint}-app-{'-'.join(app_ids)}"
-            # Many profiles: a short digest of the sorted IDs keeps different sets apart
+                return f"{endpoint}-{marker}-{'-'.join(app_ids)}"
+            # Many targets: a short digest of the sorted IDs keeps different sets apart
             digest = hashlib.sha256('\n'.join(sorted(app_ids)).encode()).hexdigest()[:8]
-            return f"{endpoint}-app-{len(app_ids)}profiles-{digest}"
+            kind = 'profiles' if marker == 'app' else 'deployments'
+            return f"{endpoint}-{marker}-{len(app_ids)}{kind}-{digest}"
         return endpoint
 
 
