@@ -85,6 +85,7 @@
         "traceback"
       ],
       "imports_files": [
+        "bedrock_usage_analyzer.aws.invocation_logs",
         "bedrock_usage_analyzer.core.analyzer",
         "bedrock_usage_analyzer.core.errors",
         "bedrock_usage_analyzer.core.user_inputs",
@@ -208,6 +209,7 @@
       ],
       "imports_files": [
         "bedrock_usage_analyzer.aws.client_factory",
+        "bedrock_usage_analyzer.core.errors",
         "bedrock_usage_analyzer.utils.partition",
         "bedrock_usage_analyzer.utils.paths",
         "bedrock_usage_analyzer.utils.yaml_handler"
@@ -437,9 +439,12 @@
         "traceback"
       ],
       "imports_files": [
+        "bedrock_usage_analyzer.__main__",
         "bedrock_usage_analyzer.aws.bedrock",
         "bedrock_usage_analyzer.aws.client_factory",
+        "bedrock_usage_analyzer.aws.custom_models",
         "bedrock_usage_analyzer.aws.servicequotas",
+        "bedrock_usage_analyzer.core.breakdown",
         "bedrock_usage_analyzer.core.metrics_fetcher",
         "bedrock_usage_analyzer.core.output_generator",
         "bedrock_usage_analyzer.core.profile_fetcher",
@@ -456,7 +461,7 @@
         {"name": "BreakdownBuilder.section", "description": "One report's breakdown rows and TPM/RPM series per period."}
       ],
       "imports_libraries": ["collections", "datetime", "logging", "typing"],
-      "imports_files": ["bedrock_usage_analyzer.aws.client_factory", "bedrock_usage_analyzer.aws.invocation_logs", "bedrock_usage_analyzer.core.errors"]
+      "imports_files": ["bedrock_usage_analyzer.aws.client_factory", "bedrock_usage_analyzer.aws.invocation_logs", "bedrock_usage_analyzer.aws.sts", "bedrock_usage_analyzer.core.errors", "bedrock_usage_analyzer.core.metrics_fetcher"]
     },
     {
       "path": "src/bedrock_usage_analyzer/core/errors.py",
@@ -647,6 +652,7 @@
       "imports_libraries": [
         "copy",
         "datetime",
+        "functools",
         "jinja2",
         "json",
         "logging",
@@ -654,6 +660,8 @@
         "re"
       ],
       "imports_files": [
+        "bedrock_usage_analyzer.aws.invocation_logs",
+        "bedrock_usage_analyzer.core.metrics_fetcher",
         "bedrock_usage_analyzer.utils.partition"
       ]
     },
@@ -737,12 +745,16 @@
         }
       ],
       "imports_libraries": [
+        "concurrent",
         "logging",
+        "re",
         "typing"
       ],
       "imports_files": [
         "bedrock_usage_analyzer.aws.bedrock",
-        "bedrock_usage_analyzer.core.errors"
+        "bedrock_usage_analyzer.aws.custom_models",
+        "bedrock_usage_analyzer.core.errors",
+        "bedrock_usage_analyzer.utils.yaml_handler"
       ]
     },
     {
@@ -905,6 +917,9 @@
       "imports_files": [
         "bedrock_usage_analyzer.aws.bedrock",
         "bedrock_usage_analyzer.aws.client_factory",
+        "bedrock_usage_analyzer.aws.custom_models",
+        "bedrock_usage_analyzer.aws.invocation_logs",
+        "bedrock_usage_analyzer.core.breakdown",
         "bedrock_usage_analyzer.core.errors",
         "bedrock_usage_analyzer.core.profile_fetcher",
         "bedrock_usage_analyzer.sync.regions",
@@ -1150,7 +1165,7 @@
         "re",
         "typing"
       ],
-      "imports_files": []
+      "imports_files": ["bedrock_usage_analyzer.utils.yaml_handler"]
     },
     {
       "path": "src/bedrock_usage_analyzer/sync/regions.py",
@@ -1223,6 +1238,7 @@
       "imports_files": [
         "bedrock_usage_analyzer.__main__",
         "bedrock_usage_analyzer.aws.client_factory",
+        "bedrock_usage_analyzer.core.errors",
         "bedrock_usage_analyzer.utils.partition",
         "bedrock_usage_analyzer.utils.paths",
         "bedrock_usage_analyzer.utils.yaml_handler"

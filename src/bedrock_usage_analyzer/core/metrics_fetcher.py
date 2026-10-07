@@ -670,12 +670,7 @@ class CloudWatchMetricsFetcher:
                     filtered_other_data[key] = []
         else:
             # No other metrics available
-            filtered_other_data = {
-                'throttles': [],
-                'client_errors': [],
-                'server_errors': [],
-                'latency': []
-            }
+            filtered_other_data = {key: [] for key in OTHER_METRICS}
         
         # Merge datasets: token metrics at 1-min, other metrics at configured granularity
         # Process with special handling for TPM/RPM peak aggregation
