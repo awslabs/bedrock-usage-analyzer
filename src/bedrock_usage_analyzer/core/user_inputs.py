@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Sequence, Union
 
 from ..aws.bedrock import arn_resource, endpoint_id, region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
-from ..aws.custom_models import DEPLOYMENT_KIND, IMPORTED_KIND, base_model_id_in_arn, deployment_short_id, is_active
+from ..aws.custom_models import DEPLOYMENT_KIND, IMPORTED_KIND, base_model_id_in_arn, deployment_short_id, is_active, is_imported
 from ..aws.invocation_logs import (
     METADATA, PRINCIPAL, SESSION, TAG, Breakdown, BreakdownError, logging_destination)
 from ..core.breakdown import CONFIG_DENIED_HINT, ENABLE_HINT
@@ -712,6 +712,12 @@ class UserInputs:
             for candidate in candidates:
                 try:
                     imported = fetcher.read_imported_model(candidate)
+                    if not is_imported(imported['arn']):
+                        # Read by name, but the answer names no imported model ARN to analyze
+                        logger.debug(f"GetImportedModel({candidate}) returned no model ARN")
+                        imported = None
+                        answers.append(True)  # an answer, and no model to analyze
+                        continue
                     break
                 except Exception as e:
                     if not deployment_read_error(e):

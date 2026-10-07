@@ -430,7 +430,10 @@ class BedrockAnalyzer:
                     # fm-quotas has no quota keyword for it, so refreshing cannot map one
                     fix = None
                 elif self._endpoint_listed(model_id, profile_prefix):
-                    fix = f"bua refresh fm-quotas {self.region}"
+                    # A new model may have no quotas in Service Quotas yet (zai.glm-5.3): then
+                    # refreshing maps none either
+                    fix = (f"bua refresh fm-quotas {self.region} (if Service Quotas lists quotas for it; "
+                           f"a new model may have none yet)")
                 elif profile_prefix is None and profiles:
                     # No on-demand endpoint: refreshing cannot add one, its profiles have the limits
                     fix = "analyze one of its inference profiles instead: " + \

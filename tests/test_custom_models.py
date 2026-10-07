@@ -643,6 +643,20 @@ def test_an_imported_model_name_is_read_when_the_listing_fails(monkeypatch, capl
         _inputs(monkeypatch, NotFound())._parse_model_id('nothing-by-that-name')
     assert 'Imported models could not be listed either' in caplog.text
 
+    # A read by name that names no model ARN is no target (not a traceback later)
+    class NoArn(NoList):
+        def get_imported_model(self, modelIdentifier):
+            if modelIdentifier.startswith('arn:'):
+                raise aws_error('ResourceNotFoundException', 'GetImportedModel')
+            return {'modelName': 'my-qwen'}
+    caplog.clear()
+    inputs = _inputs(monkeypatch, NoArn())
+    inputs.account = '111122223333'
+    with pytest.raises(SystemExit):
+        inputs._parse_model_id('my-qwen')
+    # Both reads answered, neither with a model: not 'it may be one'
+    assert 'Imported models could not be listed either' not in caplog.text
+
     # A throttled read says nothing about whether it exists: it may be one
     caplog.clear()
 
