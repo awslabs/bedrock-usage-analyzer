@@ -18,8 +18,8 @@ from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.sts import get_account_id
 from bedrock_usage_analyzer.aws.invocation_logs import (
-    MAX_ROWS, METADATA, PRINCIPAL, SESSION, TAG, UNATTRIBUTED, Breakdown, InvocationLogFetcher,
-    LogsQueryError, logging_destination, main_error, model_id_forms, next_minute, principal_tags)
+    MAX_ROWS, METADATA, PRINCIPAL, SESSION, TAG, UNATTRIBUTED, UNKNOWN_CALLER, Breakdown, InvocationLogFetcher,
+    LogsQueryError, has_tags, logging_destination, main_error, model_id_forms, next_minute, principal_tags)
 from bedrock_usage_analyzer.core.errors import AWS_ERRORS, troubleshooting_hint
 from bedrock_usage_analyzer.core.metrics_fetcher import PERIOD_DAYS
 
@@ -68,7 +68,7 @@ class BreakdownBuilder:
         self._truncated: List[Tuple[datetime, datetime, frozenset]] = []  # query windows cut at the row limit
         self.log_group: Optional[str] = breakdown.log_group
         self.coverage: Optional[Tuple[datetime, datetime]] = None
-        self._tags: Optional[Dict[str, Dict[str, str]]] = None
+        self._tags: Dict[str, Dict[str, str]] = {}
         self._tags_read: Set[str] = set()
         self._tag_errors: Dict[str, Exception] = {}  # principals whose tags could not be read
 
@@ -147,7 +147,7 @@ class BreakdownBuilder:
         return reason
 
     def _read_tags(self, principals):
-        principals = {p for p in principals if p.startswith(('role/', 'user/'))}
+        principals = {p for p in principals if has_tags(p)}
         if not principals:
             return
         self._tags_read |= principals
@@ -157,7 +157,7 @@ class BreakdownBuilder:
             tags, errors = principal_tags(self._iam_client, principals, self._parallel)
         except Exception as e:  # tags are never worth the rows: these are '(tags not readable)'
             tags, errors = {}, {p: e for p in principals}
-        self._tags = {**(self._tags or {}), **tags}
+        self._tags.update(tags)
         # Reported in each report's notes, with the error of that report's principals
         self._tag_errors.update(errors)
 
@@ -171,7 +171,7 @@ class BreakdownBuilder:
         if cut:
             # The tool cut these, not the logs: say so, or the remainder row would blame logging
             shortest = min(b - a for a, b in cut)
-            notes.append(f"{len(cut)} invocation-log query window(s) between {cut[0][0]:%Y-%m-%d %H:%M} and "
+            notes.append(f"{len(cut)} invocation-log query window(s) between {max(cut[0][0], start):%Y-%m-%d %H:%M} and "
                          f"{cut[-1][1]:%Y-%m-%d %H:%M} UTC returned the Logs Insights limit of {MAX_ROWS} rows "
                          f"even when split down to {int(shortest.total_seconds() // 60)} minutes; the usage "
                          f"of callers left out there is counted in '{UNATTRIBUTED}'")
@@ -207,9 +207,11 @@ class BreakdownBuilder:
             return row['key'] or row['principal']
         if kind == METADATA:
             return _caller_value(row['key']) if row['key'] not in (None, '') else f"(no {self.breakdown.key})"
+        if row['principal'] == UNKNOWN_CALLER:  # no caller: no tags, but not '(no <key> tag)' either
+            return UNKNOWN_CALLER
         if row['principal'] in self._tag_errors:
             return '(tags not readable)'
-        tags = (self._tags or {}).get(row['principal'])
+        tags = self._tags.get(row['principal'])
         # IAM tag keys are case-insensitive (a principal cannot have both Team and team)
         wanted = self.breakdown.key.lower()
         value = next((v for k, v in (tags or {}).items() if k.lower() == wanted), None)
@@ -351,7 +353,7 @@ class BreakdownBuilder:
         self._read_tags(names - self._tags_read)
         for p in periods.values():
             for r in p['rows']:
-                r['tags'] = (self._tags or {}).get(r['name'], {})
+                r['tags'] = self._tags.get(r['name'], {})
 
     def _row(self, name, principals, via, stats, tokens, requests, total, period, folded=False) -> Dict:
         return {

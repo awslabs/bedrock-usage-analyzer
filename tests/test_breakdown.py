@@ -381,6 +381,9 @@ def test_the_report_says_when_the_tool_cut_a_window_at_the_row_limit(monkeypatch
                            frozenset({US_HAIKU}))]
     assert not builder._notes(set(), END - timedelta(hours=1), [], [US_HAIKU])
     assert 'split down to 6 minutes' in builder._notes(set(), END - timedelta(days=3), [], [US_HAIKU])[0]
+    # A cut window that starts before this report's coverage is quoted from the coverage start
+    start = END - timedelta(days=2) + timedelta(minutes=3)
+    assert f"between {start:%Y-%m-%d %H:%M} and" in builder._notes(set(), start, [], [US_HAIKU])[0]
 
 
 @pytest.mark.parametrize('status', ['Failed', 'Cancelled', 'Timeout'])
@@ -604,15 +607,15 @@ def test_coverage_follows_creation_and_retention():
     # boundaries fall on whole seconds
     logs = FakeLogs(groups=[{'logGroupName': '/bedrock/logs', 'creationTime': int(created.timestamp() * 1000) + 37123},
                             {'logGroupName': '/bedrock/logs-other'}])
-    assert fetcher_for(logs).coverage_start(END - timedelta(days=30), END) == created
+    assert fetcher_for(logs).coverage_start(END - timedelta(days=30), END, END) == created
     logs.groups[0] = {'logGroupName': '/bedrock/logs', 'retentionInDays': 7}
-    assert fetcher_for(logs).coverage_start(END - timedelta(days=30), END) == END - timedelta(days=7)
+    assert fetcher_for(logs).coverage_start(END - timedelta(days=30), END, END) == END - timedelta(days=7)
     # Records expire by the clock: retention counts back from now (the run, after the end),
     # up to the next whole minute
     now = END + timedelta(minutes=5, seconds=20)
     assert fetcher_for(logs).coverage_start(END - timedelta(days=30), END, now) == \
         END - timedelta(days=7) + timedelta(minutes=6)
-    assert fetcher_for(FakeLogs(groups=[])).coverage_start(END - timedelta(days=1), END) is None
+    assert fetcher_for(FakeLogs(groups=[])).coverage_start(END - timedelta(days=1), END, END) is None
 
 
 def test_session_and_metadata_keys_are_kept():
@@ -622,6 +625,14 @@ def test_session_and_metadata_keys_are_kept():
     assert {r['key'] for r in session} == {ROLE_ARN, 'role/OrdersService'}
     meta = fetcher_for(logs).fetch({US_HAIKU: US_HAIKU}, Breakdown.parse('metadata:app'), END - timedelta(hours=1), END)
     assert {r['key'] for r in meta} == {None, 'checkout'}
+
+
+def test_a_record_without_a_readable_caller_gets_a_named_row():
+    # Neither the discovered field nor the anchored parse found the caller: not a blank row
+    logs = FakeLogs([row(END - timedelta(minutes=5), '')])
+    rows = fetcher_for(logs).fetch({US_HAIKU: US_HAIKU}, Breakdown.parse('session'), END - timedelta(hours=1), END)
+    assert [(r['principal'], r['key']) for r in rows] == [(il.UNKNOWN_CALLER, il.UNKNOWN_CALLER)]
+    assert not il.has_tags(il.UNKNOWN_CALLER)
 
 
 def test_principal_tags_reads_roles_and_users_and_keeps_each_error():
@@ -742,6 +753,16 @@ def test_a_tag_breakdown_keeps_the_logged_rows_when_iam_fails():
     section = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({})}, GRANULARITY, ['1hour'])
     assert [r['name'] for r in section['periods']['1hour']['rows']] == ['(tags not readable)']
     assert any('(no iam)' in n for n in section['notes'])
+
+
+def test_an_unrecorded_caller_has_its_own_row_in_a_tag_breakdown():
+    # Not '(no team tag)': that would say a known principal lacks the tag
+    logs = FakeLogs([row(T1, ''), row(T1, 'assumed-role/OrdersService')])
+    iam = FakeIam(role_tags={'OrdersService': {'team': 'shop'}})
+    builder = builder_for(Breakdown.parse('tag:team'), logs, iam)
+    builder.prepare([US_HAIKU], END, 1)
+    section = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({})}, GRANULARITY, ['1hour'])
+    assert {r['name'] for r in section['periods']['1hour']['rows']} == {'shop', il.UNKNOWN_CALLER}
 
 
 def test_metadata_and_session_breakdowns():
@@ -1058,10 +1079,10 @@ def test_the_log_group_is_found_past_the_first_page_of_prefix_matches():
                 return {'logGroups': [{'logGroupName': f'/bedrock/logs-{n}'} for n in range(50)], 'nextToken': 't'}
             return {'logGroups': [{'logGroupName': '/bedrock/logs', 'creationTime': 0}]}
     logs = Paged()
-    assert InvocationLogFetcher(logs, '/bedrock/logs').coverage_start(END - timedelta(days=1), END) == END - timedelta(days=1)
+    assert InvocationLogFetcher(logs, '/bedrock/logs').coverage_start(END - timedelta(days=1), END, END) == END - timedelta(days=1)
     assert logs.pages == 2
     missing = FakeLogs(groups=[{'logGroupName': '/bedrock/logs-other'}])
-    assert InvocationLogFetcher(missing, '/bedrock/logs').coverage_start(END - timedelta(days=1), END) is None
+    assert InvocationLogFetcher(missing, '/bedrock/logs').coverage_start(END - timedelta(days=1), END, END) is None
 
 
 def test_a_query_times_out_on_wall_time_too(monkeypatch):
@@ -1152,6 +1173,17 @@ def test_the_chart_gets_tpm_pairs_so_no_caller_name_is_an_object_key():
     assert _breakdown_tpm(breakdown) == [['1hour', [['__proto__', tpm, False], ['constructor', tpm, False],
                                                     ['(2 smaller groups)', tpm, True]]]]
     assert _breakdown_tpm(None) == [] and _breakdown_tpm({'unavailable': 'x'}) == []
+
+
+def test_a_run_with_nothing_to_report_reads_no_logs(analyzer, tmp_path, monkeypatch):
+    # No target has a ModelId: no logging configuration, STS or log group calls
+    from bedrock_usage_analyzer.core import breakdown as breakdown_module
+
+    def never(*args, **kwargs):
+        raise AssertionError('prepare must not run')
+    monkeypatch.setattr(breakdown_module.BreakdownBuilder, 'prepare', never)
+    analyzer.breakdown = Breakdown.parse('principal', log_group='/bedrock/logs')
+    analyzer.analyze([], output_dir=str(tmp_path / 'results'))
 
 
 def test_no_breakdown_keeps_the_report_as_before(analyzer, tmp_path):

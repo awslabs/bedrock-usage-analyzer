@@ -345,8 +345,11 @@ class BedrockAnalyzer:
                                        parallel=in_parallel,
                                        known_models=[m.get('model_id') for m in self._fm_list()])
             run_ids = sorted({cw_id for ids, _, _ in all_profiles_map.values() for cw_id in ids})
-            # The real clock: log records expire by it (the breakdown's end is rounded down)
-            builder.prepare(run_ids, datetime.now(timezone.utc), max(PERIOD_DAYS[p] for p in self.granularity_config))
+            if not run_ids:  # no target has a ModelId to report on: nothing to read the logs for
+                builder = None
+            else:
+                # The real clock: log records expire by it (the breakdown's end is rounded down)
+                builder.prepare(run_ids, datetime.now(timezone.utc), max(PERIOD_DAYS[p] for p in self.granularity_config))
 
         # Process each model
         for model_config in models:

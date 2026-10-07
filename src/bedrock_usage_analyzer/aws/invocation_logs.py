@@ -67,6 +67,14 @@ _MODEL_ID_PATTERN = re.compile(r'^[A-Za-z0-9_.:/-]{1,2048}\Z')
 _PRINCIPAL_PATTERN = re.compile(r'^[A-Za-z0-9_.:/=+,@-]{1,2048}\Z')
 
 UNATTRIBUTED = '(not in the invocation logs)'
+# A record whose caller could not be read (a principal is an ARN or 'role/'/'user/', never '(...)')
+UNKNOWN_CALLER = '(caller not recorded)'
+
+
+def has_tags(principal: str) -> bool:
+    """Whether IAM tags can be read for a principal: roles and users (not root, federated
+    users or a caller not recorded)."""
+    return principal.startswith(('role/', 'user/'))
 
 
 class BreakdownError(ValueError):
@@ -318,7 +326,7 @@ class InvocationLogFetcher:
         self._sleep = sleep or self._cancel.wait
 
     def coverage_start(self, start: datetime, end: datetime,
-                       now: Optional[datetime] = None) -> Optional[datetime]:
+                       now: datetime) -> Optional[datetime]:
         """The earliest time of [start, end] the log group can hold (its creation time and
         retention, counted back from now: records expire by the clock, not by the window's
         end), or None when it does not exist."""
@@ -334,7 +342,7 @@ class InvocationLogFetcher:
         retention = group.get('retentionInDays')
         if retention:
             # Up to the next minute: the minute retention cuts into may be partly deleted
-            kept_from = (now or end) - timedelta(days=retention)
+            kept_from = now - timedelta(days=retention)
             earliest = max(earliest, next_minute(kept_from))
         return min(earliest, end)
 
@@ -485,7 +493,8 @@ class InvocationLogFetcher:
 
     @staticmethod
     def _row(raw: Dict, forms: Dict[str, str], breakdown: Breakdown) -> Dict:
-        principal = normalize_principal(raw.get('principal') or '')  # 'assumed-role/<name>', 'user/...' or an ARN
+        # 'assumed-role/<name>', 'user/...' or an ARN; a record without a readable caller gets a named row
+        principal = normalize_principal(raw.get('principal') or '') or UNKNOWN_CALLER
         if breakdown.kind == SESSION:
             key = raw.get('session') or principal
         elif breakdown.kind == METADATA:
@@ -519,7 +528,7 @@ def principal_tags(iam_client, principals: Iterable[str],
         except AWS_ERRORS as e:
             return principal, None, e
 
-    names = [p for p in dict.fromkeys(principals) if p.startswith(('role/', 'user/'))]
+    names = [p for p in dict.fromkeys(principals) if has_tags(p)]
     results = parallel(read, names) if parallel else [read(p) for p in names]
     tags: Dict[str, Dict[str, str]] = {}
     errors: Dict[str, Exception] = {}
