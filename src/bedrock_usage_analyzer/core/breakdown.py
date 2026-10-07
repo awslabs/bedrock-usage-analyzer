@@ -416,8 +416,9 @@ class BreakdownBuilder:
 
 
 def _fold_small_groups(series: Dict, start: datetime, end: datetime) -> Tuple[Dict, Optional[str]]:
-    """The groups used in [start, end], the MAX_GROUPS largest (tokens, then requests) as they
-    are and the rest summed into one row, so that thousands of sessions stay a readable report.
+    """The groups used in [start, end]: up to MAX_GROUPS as they are, or, when there are more,
+    the MAX_GROUPS - 1 largest (tokens, then requests) and the rest summed into one row, so
+    that thousands of sessions stay a readable report of at most MAX_GROUPS rows.
     Returns (series, the summed row's name or None)."""
     sizes = {}
     for name, (minutes, _, _) in series.items():
