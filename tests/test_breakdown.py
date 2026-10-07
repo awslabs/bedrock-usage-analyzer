@@ -1266,6 +1266,9 @@ def test_report_renders_the_breakdown_escaped(analyzer, tmp_path, monkeypatch):
     assert 'Usage by IAM principal' in html and '<img src=x' not in html
     assert 'role/&lt;img src=x onerror=alert(1)&gt;' in html
     assert 'breakdown_tpm_1hour' in html
+    # The quota line is left out of tooltips by its mark, not its label: a caller row may be
+    # named 'Quota Limit' (a metadata or tag value)
+    assert '!tooltipItem.dataset.isQuota' in html and "dataset.label !== 'Quota Limit'" not in html
     # The breakdown's period headings end where its logs end, not at the report's end
     end = datetime.fromisoformat(data['breakdown']['coverage']['end']).astimezone(analyzer.local_tz)
     start = end - timedelta(hours=1)

@@ -10,7 +10,10 @@ can split an endpoint's per-minute tokens and requests by IAM principal, by sess
 by a requestMetadata key. Grouping by an IAM principal tag is done here from the
 principals' tags (iam:ListRoleTags / iam:ListUserTags), as the logs carry no tags.
 
-Only metadata fields are queried: prompts and completions are never read.
+Only metadata fields are returned: a record's prompt and completion bodies are scanned
+server-side (and billed) by the query, which reads the token counts and caller from the
+raw record when they come after large bodies, but they are never returned or stored.
+Metadata-only delivery keeps the bodies out of the logs altogether.
 """
 
 import logging

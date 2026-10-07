@@ -296,6 +296,19 @@ def test_an_old_boto3_says_what_it_needs(monkeypatch, caplog):
     assert 'need boto3 1.39.7' in caplog.text
 
 
+@pytest.mark.parametrize('message,old', [
+    ("'Bedrock' object has no attribute 'list_custom_model_deployments'", True),
+    ("'Bedrock' object has no attribute 'get_custom_model'", True),
+    # The tool's own typo is a bug to raise, not an old boto3
+    ("'InferenceProfileFetcher' object has no attribute 'read_custom_model_deployments'", False),
+    ("'NoneType' object has no attribute 'get'", False),
+])
+def test_only_a_missing_client_method_reads_as_an_old_boto3(message, old):
+    from bedrock_usage_analyzer.core.profile_fetcher import missing_deployment_api
+    assert missing_deployment_api(AttributeError(message)) is old
+    assert not missing_deployment_api(ValueError(message))
+
+
 def test_another_regions_deployments_are_refused_unread(monkeypatch):
     # The parallel pre-read skips them: the region check refuses them without API calls
     from bedrock_usage_analyzer.core import user_inputs as ui_module

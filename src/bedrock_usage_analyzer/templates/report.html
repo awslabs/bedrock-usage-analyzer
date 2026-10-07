@@ -747,8 +747,9 @@
                         intersect: false, 
                         axis: 'x',
                         filter: function(tooltipItem) {
-                            // Exclude quota line from tooltip
-                            return tooltipItem.dataset.label !== 'Quota Limit';
+                            // Exclude quota line from tooltip (by its mark: a caller row may be
+                            // named 'Quota Limit' too)
+                            return !tooltipItem.dataset.isQuota;
                         }
                     },
                     crosshair: { line: { color: '#999', width: 1, dashPattern: [5, 5] }, sync: { enabled: true } }
@@ -1020,7 +1021,7 @@
                 // Add quota line using chart boundaries
                 if (quotaValue && xAxisMin && xAxisMax) {
                     chartData.datasets.push({
-                        label: 'Quota Limit',
+                        label: 'Quota Limit', isQuota: true,
                         data: [
                             { x: new Date(xAxisMin).toISOString(), y: quotaValue },
                             { x: new Date(xAxisMax).toISOString(), y: quotaValue }
@@ -1110,7 +1111,7 @@
             const startMs = endMs - {{ period_ms | tojson }}[period];
             if (quotas.tpm) {
                 datasets.push({
-                    label: 'Quota Limit',
+                    label: 'Quota Limit', isQuota: true,
                     data: [{ x: new Date(startMs).toISOString(), y: quotas.tpm.value },
                            { x: new Date(endMs).toISOString(), y: quotas.tpm.value }],
                     borderColor: 'red', borderDash: [5, 5], borderWidth: 2, pointRadius: 0, fill: false, tension: 0

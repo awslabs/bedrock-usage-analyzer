@@ -4,6 +4,7 @@
 """Inference profile discovery for Bedrock models"""
 
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, FrozenSet, Iterable, List, Optional
 
@@ -33,11 +34,16 @@ TAG_WORKERS = 8
 # a network failure); anything else from the custom model deployment reads is a bug and is raised
 
 
+_MISSING_API = re.compile(
+    r"object has no attribute '(list_custom_model_deployments|get_custom_model_deployment|get_custom_model)'$")
+
+
 def missing_deployment_api(error: Exception) -> bool:
     """True for the AttributeError of a boto3 older than the custom model deployment APIs
     (pyproject requires 1.39.7; an older system boto3 can still be picked up)."""
-    return isinstance(error, AttributeError) and \
-        any(api in str(error) for api in ('custom_model_deployment', 'get_custom_model'))
+    # Exactly a missing client method, not any AttributeError that mentions custom models
+    # (a typo in the tool's own code must surface as the bug it is)
+    return isinstance(error, AttributeError) and bool(_MISSING_API.search(str(error)))
 
 
 def deployment_read_error(error: Exception) -> bool:

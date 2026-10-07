@@ -417,6 +417,16 @@ def test_manual_entry_typo_skips_model_instead_of_exiting(inputs, monkeypatch):
     assert inputs._select_model('ap-southeast-2') is None
 
 
+def test_a_model_listed_only_for_custom_quotas_points_to_deployments(inputs, monkeypatch, caplog):
+    # Not incomplete metadata: the hint alone, no ERROR and no manual model-ID prompt
+    caplog.set_level('INFO')
+    monkeypatch.setattr(inputs, '_load_fm_list', lambda region: [
+        {'model_id': 'x.y-v1:0', 'provider': 'X', 'endpoints': {'custom': {'quotas': {'tpm': None}}}}])
+    feed(monkeypatch, ['1', '1'])
+    assert inputs._select_model('ap-southeast-2') is None
+    assert 'Custom model deployments' in caplog.text and 'ERROR' not in caplog.text
+
+
 def test_system_profile_id_beats_application_profile_with_same_name(inputs, monkeypatch):
     from conftest import AU_ARNS, app_profile
     inputs.profile_fetcher.bedrock_client.application.append(app_profile('samename001', 'au.' + HAIKU, AU_ARNS))

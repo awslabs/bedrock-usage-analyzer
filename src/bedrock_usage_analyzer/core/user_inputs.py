@@ -750,6 +750,7 @@ class UserInputs:
                 logger.info(f"\n  {model_id} has no on-demand or inference profile endpoint in {region}. "
                             f"To analyze models customized from it, choose 'Custom model deployments' "
                             f"(offered when the region has an active one) or pass a deployment ARN with -m.")
+                return None  # not incomplete metadata: the manual entry's warning would be wrong
             return self._manual_model_entry()
 
         profile_prefix = self._select_profile_prefix(endpoints, inference_profiles)

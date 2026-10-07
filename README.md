@@ -767,7 +767,7 @@ If you pass a region from another partition than your credentials (for example `
 - **Quota Data**: Quota information is fetched from AWS and not hardcoded
 - **API Calls**: All Bedrock API calls use your AWS credentials
 - **Data Storage**: Analysis results are stored locally in `results/`. Refreshed metadata is stored in your user data directory (see [Metadata Storage](#metadata-storage))
-- **Invocation logs**: `--breakdown` queries only metadata fields of the model invocation logs (caller ARN, model ID, token counts, request metadata); prompt and completion bodies are never read. Reports with a breakdown contain caller ARNs, role names and IAM tags: share them like other account inventory
+- **Invocation logs**: `--breakdown` returns only metadata fields of the model invocation logs (caller ARN, model ID, token counts, request metadata). When the logs hold prompt and completion bodies, the Logs Insights query scans them server-side (and they are billed as scanned bytes), but they are never returned to or stored by the tool; metadata-only delivery keeps them out of the logs altogether. Reports with a breakdown contain caller ARNs, role names and IAM tags: share them like other account inventory
 
 ## Cost Considerations
 When using `bedrock-usage-analyzer analyze` (or `./bin/analyze-bedrock-usage`), the following cost is expected:
