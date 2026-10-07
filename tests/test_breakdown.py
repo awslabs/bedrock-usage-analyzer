@@ -638,9 +638,10 @@ def test_a_record_without_a_readable_caller_gets_a_named_row():
 
 def test_principal_tags_reads_roles_and_users_and_keeps_each_error():
     iam = FakeIam(role_tags={'OrdersService': {'team': 'orders'}}, user_tags={'alice': {'team': 'ops'}}, deny={'Locked'})
-    tags, errors = principal_tags(iam, ['role/OrdersService', 'user/ops/alice', 'role/Locked',
+    # Principals arrive normalized (an IAM path is already dropped)
+    tags, errors = principal_tags(iam, ['role/OrdersService', 'user/alice', 'role/Locked',
                                         f"arn:aws:iam::{ACCOUNT}:root", 'role/OrdersService'])
-    assert tags == {'role/OrdersService': {'team': 'orders'}, 'user/ops/alice': {'team': 'ops'}}
+    assert tags == {'role/OrdersService': {'team': 'orders'}, 'user/alice': {'team': 'ops'}}
     assert set(errors) == {'role/Locked'} and ('user', 'alice') in iam.calls and len(iam.calls) == 3
 
 
@@ -1127,6 +1128,35 @@ def test_a_log_group_newer_than_the_breakdown_end_says_why_it_is_empty():
     reason = builder.prepare([US_HAIKU], END, 1)
     assert 'holds no records from before' in reason and logs.queries == []
     assert 'holds no records' in builder.section([US_HAIKU], {}, {}, GRANULARITY, ['1hour'])['unavailable']
+
+
+def test_a_log_group_that_cannot_be_described_is_read_from_the_requested_start():
+    class Denied(FakeLogs):
+        def __init__(self, code, **kwargs):
+            super().__init__(**kwargs)
+            self.code = code
+
+        def describe_log_groups(self, logGroupNamePrefix, **_):
+            raise aws_error(self.code)
+    logs = Denied('AccessDeniedException', rows=[row(END - timedelta(minutes=5), 'assumed-role/Orders')])
+    fetcher = fetcher_for(logs)
+    start = END - timedelta(hours=1, seconds=30)
+    assert fetcher.coverage_start(start, END, END) == start.replace(second=0)
+    builder = builder_for(Breakdown(), logs)
+    assert builder.prepare([US_HAIKU], END, 1) is None and logs.queries  # the queries still run
+    with pytest.raises(ClientError):  # anything else is not a denial to work around
+        fetcher_for(Denied('ServiceUnavailableException')).coverage_start(start, END, END)
+
+
+def test_a_malformed_complete_result_counts_its_scan_once():
+    class Malformed(FakeLogs):
+        def get_query_results(self, queryId):
+            return {'status': 'Complete', 'statistics': {'bytesScanned': 1000.0}, 'results': [[{'value': 'x'}]]}
+    logs = Malformed()
+    fetcher = fetcher_for(logs)
+    with pytest.raises(KeyError):
+        fetcher.fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(minutes=30), END)
+    assert fetcher.bytes_scanned == 1000.0 and logs.stopped == ['q0']
 
 
 def test_a_given_log_group_skips_the_logging_configuration():

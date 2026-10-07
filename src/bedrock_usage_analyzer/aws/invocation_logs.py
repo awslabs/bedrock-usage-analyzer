@@ -350,10 +350,18 @@ class InvocationLogFetcher:
         """The log group's description. The name is a prefix filter, so other groups whose
         names start with it may fill the first pages: read on until the exact name."""
         pages = self.logs_client.get_paginator('describe_log_groups').paginate(logGroupNamePrefix=self.log_group)
-        for page in pages:
-            for group in page.get('logGroups') or []:
-                if group.get('logGroupName') == self.log_group:
-                    return group
+        try:
+            for page in pages:
+                for group in page.get('logGroups') or []:
+                    if group.get('logGroupName') == self.log_group:
+                        return group
+        except ClientError as e:
+            if e.response.get('Error', {}).get('Code') not in ('AccessDeniedException', 'AccessDenied'):
+                raise
+            # It only narrows the start (creation, retention): queries may still be allowed
+            logger.info(f"  Note: {self.log_group} could not be described ({e}); reading from the "
+                        f"requested start")
+            return {}
         return None
 
     def fetch(self, forms: Dict[str, str], breakdown: Breakdown, start: datetime, end: datetime) -> List[Dict]:
@@ -464,10 +472,11 @@ class InvocationLogFetcher:
                 status = result.get('status')
                 scanned = _number((result.get('statistics') or {}).get('bytesScanned')) or scanned
                 if status == 'Complete':
-                    with self._count_lock:
-                        self.bytes_scanned += scanned
-                    return [{field['field']: field.get('value') for field in row}
+                    rows = [{field['field']: field.get('value') for field in row}
                             for row in result.get('results') or []]
+                    with self._count_lock:  # after the rows: a bad row counts it once, below
+                        self.bytes_scanned += scanned
+                    return rows
                 if status == 'Timeout':
                     raise QueryTimeoutError("the Logs Insights query timed out")
                 if status in ('Failed', 'Cancelled', 'Unknown'):
@@ -517,8 +526,7 @@ def principal_tags(iam_client, principals: Iterable[str],
     tags to read.
     """
     def read(principal):
-        kind, _, name = principal.partition('/')
-        name = name.rsplit('/', 1)[-1]  # a user's path is not part of its name
+        kind, _, name = principal.partition('/')  # normalized: no IAM path
         try:
             if kind == 'role':
                 response = iam_client.list_role_tags(RoleName=name)
