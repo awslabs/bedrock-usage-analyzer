@@ -2,7 +2,7 @@
 
 All notable changes to the Bedrock Usage Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.7.0-beta] - 2026-10-07
 
 ### Added
 - **Usage by IAM principal** (`--breakdown principal|session|tag:<key>|metadata:<key>`, `--principal`,
@@ -12,11 +12,18 @@ All notable changes to the Bedrock Usage Analyzer will be documented in this fil
   Logs Insights (metadata fields only). Rows show tokens, requests, shares of the endpoint total, TPM/RPM
   (P50, P90, max) and TPD; usage the logs do not hold is its own row. Totals and quotas stay CloudWatch's.
 - **Custom model deployments**: analyze on-demand custom model deployments, picked
-  interactively or passed with `-m <custom-model-deployment ARN>`. Usage comes from CloudWatch
+  interactively or passed with `-m` (deployment ARN, ID or name). Usage comes from CloudWatch
   under the deployment ARN; limits are the base model's "(Model customization) Sum of on demand
   custom model deployment ..." quotas, mapped in the fm-list as the base model's `custom`
-  endpoint (added by `refresh fm-list` for models that support customization). A deployment
-  can also be passed by its ID or name.
+  endpoint (added by `refresh fm-list` for models that support customization). This covers
+  customized Amazon Nova models (Nova 2 Lite, Lite, Micro, Pro), whether trained in Bedrock or
+  in SageMaker AI.
+- **Imported models (Custom Model Import)**: analyze models brought in with Custom Model Import,
+  picked interactively ("Imported models", offered when the region has one) or passed with `-m`
+  as the imported model ARN, ID or name. Usage comes from CloudWatch under the imported model ARN;
+  reports show usage and throttles without limits, as imported models have no per-model token or
+  request quotas. Optional permissions: `bedrock:ListImportedModels` (picker, ID or name) and
+  `bedrock:GetImportedModel` (the name of an ARN passed with `-m`).
 
 ### Fixed
 - Quota mapping no longer gives an on-demand endpoint the latency-optimized quotas, or a model

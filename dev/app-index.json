@@ -1,7 +1,7 @@
 {
   "name": "Bedrock Usage Analyzer",
-  "version": "0.6.0-beta",
-  "description": "CLI tool to calculate token usage statistics (TPM, RPM, TPD, p50, p90) for Amazon Bedrock foundation models, with quota visualization and application inference profile aggregation across CloudWatch metrics",
+  "version": "0.7.0-beta",
+  "description": "CLI tool to calculate token usage statistics (TPM, RPM, TPD, p50, p90) for Amazon Bedrock foundation models, with quota visualization and application inference profile aggregation across CloudWatch metrics, custom model deployments and imported models, and per-caller breakdown from model invocation logs",
   "technologies": [
     "Python",
     "Bash",
@@ -16,7 +16,7 @@
   "structure": {
     "src/bedrock_usage_analyzer/": "Main Python package containing all source code",
     "src/bedrock_usage_analyzer/core/": "Core analysis logic - orchestrator, metrics fetching, output generation",
-    "src/bedrock_usage_analyzer/aws/": "AWS service integrations - Bedrock (incl. custom model deployments), CloudWatch, Service Quotas, STS",
+    "src/bedrock_usage_analyzer/aws/": "AWS service integrations - Bedrock (incl. custom model deployments and Custom Model Import models), CloudWatch, CloudWatch Logs (invocation logs), IAM tags, Service Quotas, STS",
     "src/bedrock_usage_analyzer/utils/": "Utility functions - CSV, YAML, UI helpers, path resolution with platformdirs",
     "src/bedrock_usage_analyzer/sync/": "Metadata sync/refresh code - regions, FM lists, quota mapping",
     "src/bedrock_usage_analyzer/templates/": "Jinja2 HTML templates for report generation",
@@ -255,7 +255,7 @@
     },
     {
       "path": "src/bedrock_usage_analyzer/aws/custom_models.py",
-      "summary": "On-demand custom model deployments: listing, reading, and the base model whose custom deployment quotas apply",
+      "summary": "On-demand custom model deployments and Custom Model Import models: listing, reading, and the base model whose custom deployment quotas apply",
       "methods": [
         {
           "name": "deployment_short_id",
@@ -280,6 +280,18 @@
         {
           "name": "list_deployments",
           "description": "The region's custom model deployments (summaries: arn, name, status, model_arn)."
+        },
+        {
+          "name": "is_imported",
+          "description": "True for a Custom Model Import model ARN."
+        },
+        {
+          "name": "list_imported_models",
+          "description": "The region's Custom Model Import models (summaries: arn, name)."
+        },
+        {
+          "name": "read_imported_model",
+          "description": "An imported model as list_imported_models summarizes it (arn, name), read by its ARN or name; raises the API error."
         }
       ],
       "imports_libraries": [
@@ -600,7 +612,7 @@
     },
     {
       "path": "src/bedrock_usage_analyzer/core/output_generator.py",
-      "summary": "Output generation for Bedrock usage analysis reports - generates JSON data files and HTML reports with interactive charts",
+      "summary": "Output generation for Bedrock usage analysis reports - generates JSON data files and HTML reports with interactive charts; scope labels APPLICATION_PROFILE_SCOPE, DEPLOYMENT_SCOPE, IMPORTED_SCOPE",
       "classes": [
         {
           "name": "OutputGenerator",
@@ -667,7 +679,7 @@
     },
     {
       "path": "src/bedrock_usage_analyzer/core/profile_fetcher.py",
-      "summary": "Inference profile discovery for Bedrock models - finds system-defined and application profiles based on model ID",
+      "summary": "Inference profile discovery for Bedrock models - finds system-defined and application profiles based on model ID, and lists/reads custom model deployments and imported models",
       "classes": [
         {
           "name": "InferenceProfileFetcher",
@@ -742,6 +754,14 @@
         {
           "name": "other_sources_for_model",
           "description": "Count application profiles of ``model_id`` that come from other endpoints."
+        },
+        {
+          "name": "list_imported_models",
+          "description": "The region's Custom Model Import models, listed once per run; an API error is raised again on later calls without another request."
+        },
+        {
+          "name": "read_imported_model",
+          "description": "An imported model's summary (arn, name), read by its ARN or name."
         }
       ],
       "imports_libraries": [
@@ -759,7 +779,7 @@
     },
     {
       "path": "src/bedrock_usage_analyzer/core/user_inputs.py",
-      "summary": "User input collection for Bedrock usage analysis - interactive dialog for region, model, and granularity selection",
+      "summary": "User input collection for Bedrock usage analysis - interactive dialog for region, granularity, model/profile/deployment/imported-model selection, and the caller breakdown",
       "classes": [
         {
           "name": "UserInputs",
@@ -849,11 +869,43 @@
         },
         {
           "name": "_application_profile_config",
-          "description": ""
+          "description": "Analysis target for an application inference profile (by ID, ARN or name), or for the deployment or imported model with that ID or name."
+        },
+        {
+          "name": "_custom_deployment_config",
+          "description": "Analysis target for an on-demand custom model deployment: its usage under its ARN, limits from its base model's custom deployment quotas."
+        },
+        {
+          "name": "_imported_model_config",
+          "description": "Analysis target for a Custom Model Import model: its usage under its ARN, without limits; its ID stands in for the model ID."
+        },
+        {
+          "name": "_custom_deployments",
+          "description": "The region's custom model deployments ([] when none or not listable; a listing failure is said once per session)."
+        },
+        {
+          "name": "_imported_models",
+          "description": "The region's Custom Model Import models ([] when none or not listable; a listing failure is said once per session, a bug is raised)."
+        },
+        {
+          "name": "_deployment_target",
+          "description": "The config of the custom model deployment or imported model with this ID or name, or None."
+        },
+        {
+          "name": "_pick",
+          "description": "Print a numbered list and read a selection ('1,3-4' or 'all')."
+        },
+        {
+          "name": "_select_custom_deployments",
+          "description": "Pick one or more custom model deployments by number."
+        },
+        {
+          "name": "_select_breakdown",
+          "description": "Ask whether to break usage down by caller (offered when the region logs model invocations to CloudWatch Logs)."
         },
         {
           "name": "_select_targets",
-          "description": "Ask whether to analyze a foundation model or specific application profiles."
+          "description": "Ask whether to analyze a foundation model, specific application profiles, custom model deployments or imported models."
         },
         {
           "name": "_select_application_profiles",
@@ -1600,7 +1652,7 @@
     },
     {
       "path": "tests/test_custom_models.py",
-      "summary": "On-demand custom model deployments: discovery, base models, quota mapping rules and analysis targets.",
+      "summary": "On-demand custom model deployments and Custom Model Import models: discovery, base models, quota mapping rules and analysis targets.",
       "imports_libraries": [
         "botocore",
         "conftest",
