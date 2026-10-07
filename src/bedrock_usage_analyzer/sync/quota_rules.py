@@ -13,6 +13,8 @@ it lets the mapping through.
 import re
 from typing import Optional, Set
 
+from bedrock_usage_analyzer.utils.yaml_handler import CUSTOM_ENDPOINT, QUOTA_KEYWORD_CUSTOM
+
 _VERSION_TOKEN = re.compile(r'^\d{1,2}(?:\.\d{1,2})?$')
 _LETTERS_THEN_VERSION = re.compile(r'^([a-z]+)(\d{1,2}(?:\.\d{1,2})?)$')
 _API_VERSION_TOKEN = re.compile(r'^v\d+(?:\.\d+)?$')
@@ -56,6 +58,25 @@ def model_version(model_id: str) -> Optional[str]:
     return '.'.join(run) if run else None
 
 
+def _version_inside_name(model_id: str) -> bool:
+    """True when the ID's version stands between name words, as in 'nova-2-5-sonic'.
+
+    Such a version is part of the model's name ('Nova 2 Sonic'), so a quota that names the
+    family without a version ('Amazon Nova Sonic') is another model's. A trailing version
+    ('pegasus-1-2-v1:0') or one glued to a word ('qwen3', 'kimi-k2.5') is often left out of
+    quota names, so it says nothing.
+    """
+    rest = model_id.split('.', 1)[1] if '.' in model_id else model_id
+    tokens = re.split(r'[-_]', rest.lower().split(':', 1)[0])
+    for i in range(1, len(tokens)):
+        if _VERSION_TOKEN.match(tokens[i]) and tokens[i - 1].isalpha():
+            j = i
+            while j < len(tokens) and _VERSION_TOKEN.match(tokens[j]):
+                j += 1
+            return j < len(tokens) and tokens[j].isalpha() and not _API_VERSION_TOKEN.match(tokens[j])
+    return False
+
+
 def _canonical(version: str) -> str:
     """'3.0' and '3' are the same generation."""
     return version[:-2] if version.endswith('.0') else version
@@ -85,6 +106,11 @@ def mapping_conflict(model_id: str, endpoint_type: str, quota_name: Optional[str
     # The shared tokens-per-day quota ('... (doubled for cross-region calls)') is also the
     # on-demand limit, so that note does not make it a cross-region quota
     name = quota_name.lower().replace('(doubled for cross-region calls)', '')
+    custom_quota = QUOTA_KEYWORD_CUSTOM in name
+    if endpoint_type == CUSTOM_ENDPOINT and not custom_quota:
+        return "not a custom model deployment quota for a custom model endpoint"
+    if endpoint_type != CUSTOM_ENDPOINT and custom_quota:
+        return "custom model deployment quota for a foundation model endpoint"
     if endpoint_type in regional_prefixes and 'global' in name:
         return "global quota for a regional (geographic) cross-region endpoint"
     if endpoint_type == 'base' and 'cross-region' in name:
@@ -95,11 +121,17 @@ def mapping_conflict(model_id: str, endpoint_type: str, quota_name: Optional[str
         # e.g. '... Claude Sonnet 4.5 V1 1M Context Length': a separate limit for long-context
         # requests on the same model ID; the standard quota is the one usage is measured against
         return "long-context variant quota"
+    if 'latency-optimized' in name:
+        # e.g. 'On-Demand, latency-optimized model inference tokens per minute for Amazon Nova
+        # Pro V1': a separate limit for requests made with performanceConfig latency=optimized
+        return "latency-optimized inference quota"
     version = model_version(model_id)
     version = _canonical(version) if version else None
     versions = quota_versions(quota_name)
     if version and versions and version not in versions:
         return f"quota is for version {'/'.join(sorted(versions))}, model is {version}"
+    if version and not versions and _version_inside_name(model_id):
+        return f"quota names no version, model is {version}"
     return None
 
 

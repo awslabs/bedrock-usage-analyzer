@@ -4,11 +4,12 @@
 """Inference profile discovery for Bedrock models"""
 
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, FrozenSet, Iterable, List, Optional
 
-from bedrock_usage_analyzer.core.errors import is_access_denied
-from bedrock_usage_analyzer.utils.yaml_handler import endpoint_keys
+from bedrock_usage_analyzer.core.errors import AWS_ERRORS, is_access_denied
+from bedrock_usage_analyzer.utils.yaml_handler import CUSTOM_ENDPOINT, endpoint_keys
 from bedrock_usage_analyzer.aws.bedrock import (
     endpoint_id,
     get_default_region_prefix_map,
@@ -17,6 +18,8 @@ from bedrock_usage_analyzer.aws.bedrock import (
     region_from_arn,
     region_group,
 )
+from bedrock_usage_analyzer.aws.custom_models import (
+    base_model_id, base_model_id_in_arn, deployment_short_id, is_active, list_deployments, read_deployment)
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +30,26 @@ UNKNOWN_SOURCE = 'unknown'
 # Attempts at listing application profiles per run before giving up on transient errors
 MAX_LISTING_ATTEMPTS = 2
 TAG_WORKERS = 8
+# AWS_ERRORS (from core.errors): errors of an AWS call (a missing permission, throttling,
+# a network failure); anything else from the custom model deployment reads is a bug and is raised
+
+
+_MISSING_API = re.compile(
+    r"object has no attribute '(list_custom_model_deployments|get_custom_model_deployment|get_custom_model)'$")
+
+
+def missing_deployment_api(error: Exception) -> bool:
+    """True for the AttributeError of a boto3 older than the custom model deployment APIs
+    (pyproject requires 1.39.7; an older system boto3 can still be picked up)."""
+    # Exactly a missing client method, not any AttributeError that mentions custom models
+    # (a typo in the tool's own code must surface as the bug it is)
+    return isinstance(error, AttributeError) and bool(_MISSING_API.search(str(error)))
+
+
+def deployment_read_error(error: Exception) -> bool:
+    """True when a custom model deployment read failed in a way to report and carry on
+    from (an AWS error, or a boto3 without the API); anything else is a bug to raise."""
+    return isinstance(error, AWS_ERRORS) or missing_deployment_api(error)
 
 # Regions behind the country-level Asia Pacific profiles, extended at run time from the
 # listed profiles. Used only for copies of a country profile the region does not list.
@@ -35,6 +58,14 @@ COUNTRY_PROFILE_REGIONS = {
     'au': {'ap-southeast-2', 'ap-southeast-4', 'ap-southeast-6'},
     'in': {'ap-south-1', 'ap-south-2'},
 }
+
+
+def in_parallel(fn, items) -> list:
+    """[fn(item) ...] in order; one Bedrock call per item, so several run in a thread pool."""
+    if len(items) <= 1:
+        return [fn(item) for item in items]
+    with ThreadPoolExecutor(max_workers=min(TAG_WORKERS, len(items))) as pool:
+        return list(pool.map(fn, items))
 
 
 def _model_of(arns) -> Optional[str]:
@@ -93,6 +124,121 @@ class InferenceProfileFetcher:
         self._by_model: Dict[str, List] = {}   # model ID -> [(routing set, profile IDs)]
         self._parts: Dict[str, tuple] = {}     # listed system profile ID -> (prefix, model ID)
         self._tags_cache: Dict[str, Dict[str, str]] = {}
+        self._deployments: Optional[List[Dict]] = None
+        self._deployments_error: Optional[Exception] = None
+        self._deployment_names: Dict[str, str] = {}  # deployment ARN -> name (selected ones)
+        # deployed model ARN -> base model ID, or the error reading it (raised again)
+        self._base_models: Dict[str, object] = {}
+        self._read_deployments: Dict[str, object] = {}  # identifier -> summary, or its read error
+
+    # ------------------------------------------------------------------ custom models
+
+    def list_custom_deployments(self) -> List[Dict]:
+        """The region's custom model deployments, listed once per run.
+
+        Like the profile listings, a failed listing (an API error) is retried once at once;
+        a second failure is raised again on later calls without another request. Any other
+        error is a bug and is raised as it is.
+        """
+        if self._deployments_error is not None:
+            raise self._deployments_error
+        for attempt in range(MAX_LISTING_ATTEMPTS):
+            if self._deployments is not None:
+                break
+            try:
+                self._deployments = list_deployments(self.bedrock_client)
+            except AWS_ERRORS as e:
+                if is_access_denied(e) or attempt + 1 == MAX_LISTING_ATTEMPTS:
+                    self._deployments_error = e
+                    raise
+                logger.debug(f"Listing custom model deployments failed, retrying: {e}")
+        return self._deployments
+
+    def other_deployments_of(self, base: str, deployment_arns) -> List[Dict]:
+        """Active deployments of models customized from ``base`` that are not in
+        ``deployment_arns``: they share the base model's custom deployment quotas.
+
+        Only a hint: lists the deployments once (cached; a listing error gives none). A
+        custom model ARN that names no base model ('custom-model/imported/...') is read with
+        GetCustomModel, all of them at once; one that cannot be read is left out.
+        """
+        try:
+            deployments = self.list_custom_deployments()
+        except Exception as e:
+            if not deployment_read_error(e):
+                raise
+            logger.debug(f"Could not list custom model deployments: {e}")
+            return []
+        wanted = set(deployment_arns)
+        candidates = [d for d in deployments if d['arn'] not in wanted and is_active(d)]
+        self.read_base_models([d.get('model_arn') for d in candidates
+                               if not base_model_id_in_arn(d.get('model_arn'))])
+        others = []
+        for deployment in candidates:
+            model_arn = deployment.get('model_arn') or ''
+            known = self._base_models.get(model_arn)
+            deployment_base = known if isinstance(known, str) else base_model_id_in_arn(model_arn)
+            if deployment_base == base:
+                others.append(deployment)
+        return others
+
+    @property
+    def custom_deployments_error(self) -> Optional[Exception]:
+        """The error the deployment listing gave up on, or None."""
+        return self._deployments_error
+
+    def read_custom_deployment(self, identifier: str) -> Dict:
+        """A deployment's summary (arn, name, status, model_arn), read by its ID, name or ARN
+        once per run: an API error is raised again without another request."""
+        if identifier not in self._read_deployments:
+            try:
+                self._read_deployments[identifier] = read_deployment(self.bedrock_client, identifier)
+            except AWS_ERRORS as e:
+                self._read_deployments[identifier] = e
+        result = self._read_deployments[identifier]
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    def read_custom_deployments(self, identifiers):
+        """Read several deployments and their custom models at once (in parallel), for
+        read_custom_deployment and deployment_base_model to answer from."""
+        def read(identifier):
+            try:
+                return self.read_custom_deployment(identifier).get('model_arn')
+            except AWS_ERRORS:
+                return None  # kept: read_custom_deployment raises it again for its caller
+        model_arns = in_parallel(read, [i for i in dict.fromkeys(identifiers) if i not in self._read_deployments])
+        self.read_base_models([a for a in model_arns if a])
+
+    def note_deployment_name(self, arn: str, name: str):
+        """Remember a selected deployment's name, so find_profiles need not read it again."""
+        self._deployment_names[arn] = name
+
+    def deployment_base_model(self, model_arn: Optional[str]) -> Optional[str]:
+        """Base foundation model of a deployed model, read once per model: an API error is
+        raised again for every deployment of that model without another request (a bug is
+        raised as it is, and not kept)."""
+        key = model_arn or ''
+        if key not in self._base_models:
+            try:
+                self._base_models[key] = base_model_id(self.bedrock_client, model_arn)
+            except AWS_ERRORS as e:
+                self._base_models[key] = e
+        result = self._base_models[key]
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    def read_base_models(self, model_arns):
+        """Read the base models of several deployed models at once (in parallel); their
+        results and API errors are kept for deployment_base_model."""
+        def read(model_arn):
+            try:
+                self.deployment_base_model(model_arn)
+            except AWS_ERRORS:
+                pass  # kept: deployment_base_model raises it again for its caller
+        in_parallel(read, [a for a in dict.fromkeys(model_arns) if (a or '') not in self._base_models])
 
     # ------------------------------------------------------------------ listing
 
@@ -412,6 +558,28 @@ class InferenceProfileFetcher:
             self._tags_cache[profile_arn] = tags
         return self._tags_cache[profile_arn]
 
+    def _deployment_targets(self, deployment_arns):
+        """(ARNs, names, metadata) of custom model deployments, named by their deployment name
+        and with their tags, as application profiles are."""
+        def target(arn):
+            name = self._deployment_names.get(arn)  # resolved when it was selected
+            if name is None:
+                # The name is cosmetic: the ARN still gives the metrics
+                try:
+                    name = self.read_custom_deployment(arn)['name']
+                except Exception as e:
+                    if not deployment_read_error(e):
+                        raise
+                    logger.debug(f"Could not read custom model deployment {arn}: {e}")
+            name = name or deployment_short_id(arn)
+            return name, {'id': deployment_short_id(arn), 'tags': self._get_tags(arn, name)}
+
+        arns = list(deployment_arns)
+        results = in_parallel(target, arns)  # a name and tags lookup per deployment
+        names = {arn: name for arn, (name, _) in zip(arns, results)}
+        metadata = {arn: meta for arn, (_, meta) in zip(arns, results)}
+        return arns, names, metadata
+
     def find_profiles(self, model_id, profile_prefix, application_profile_ids=None):
         """Find the endpoints to analyze for a model.
 
@@ -423,6 +591,10 @@ class InferenceProfileFetcher:
             tuple: (profiles list, profile_names dict, profile_metadata dict)
                    profile_metadata contains 'id' and 'tags' for each profile
         """
+        if profile_prefix == CUSTOM_ENDPOINT:
+            # Custom model deployments: CloudWatch reports each one under its deployment ARN
+            # (no application profiles; the base model's 'custom' quotas apply)
+            return self._deployment_targets(application_profile_ids or [])
         logger.info("  Discovering inference profiles...")
         target_endpoint = endpoint_id(model_id, profile_prefix)
 
@@ -459,9 +631,7 @@ class InferenceProfileFetcher:
             selected.append(app)
         # One ListTagsForResource per profile: in parallel, so many profiles do not add up
         todo = [a for a in selected if a['arn'] and a['arn'] not in self._tags_cache]
-        if len(todo) > 1:
-            with ThreadPoolExecutor(max_workers=min(TAG_WORKERS, len(todo))) as pool:
-                list(pool.map(lambda a: self._get_tags(a['arn'], a['id']), todo))
+        in_parallel(lambda a: self._get_tags(a['arn'], a['id']), todo)
         for app in selected:
             profile_metadata[app['id']] = {'id': app['id'], 'tags': self._get_tags(app['arn'], app['id'])}
 

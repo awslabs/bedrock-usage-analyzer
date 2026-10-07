@@ -5,6 +5,10 @@ dev/tmp/
 dev/utils/
 *.DS_Store
 __pycache__/
+.coverage
+.coverage.*
+.pytest_cache/
+.ruff_cache/
 .venv/
 .backup*/
 docs/

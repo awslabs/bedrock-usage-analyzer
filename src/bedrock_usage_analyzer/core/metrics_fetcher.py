@@ -13,6 +13,27 @@ from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
+# Length of each report period, in days
+PERIOD_DAYS = {'1hour': 1 / 24, '1day': 1, '7days': 7, '14days': 14, '30days': 30}
+
+
+TOKEN_METRICS = ('invocations', 'input_tokens', 'output_tokens')
+OTHER_METRICS = ('throttles', 'client_errors', 'server_errors', 'latency')
+ALL_METRICS = TOKEN_METRICS + OTHER_METRICS
+
+
+def failed_fetch(period, metrics=ALL_METRICS):
+    """The empty dataset of a fetch that failed (with that fetch's metrics only, so it never
+    blanks another fetch's when merged). fetch_failed: not "no usage", so the usage
+    breakdown leaves that ModelId out instead of comparing its logs with zero."""
+    return {
+        'timestamps': [],
+        'data': {key: [] for key in metrics},
+        'period': period,
+        'fetch_failed': True,
+    }
+
+
 class CloudWatchMetricsFetcher:
     """Handles CloudWatch metrics retrieval"""
     
@@ -248,8 +269,7 @@ class CloudWatchMetricsFetcher:
         end_time = self._align_to_period_boundary(end_time, 60)
         
         # Build fetch configs for token metrics (always 1-min) and other metrics (configured)
-        max_days = max({'1hour': 1/24, '1day': 1, '7days': 7, '14days': 14, '30days': 30}[tp] 
-                       for tp in granularity_config.keys())
+        max_days = max(PERIOD_DAYS[tp] for tp in granularity_config.keys())
         target_start = end_time - timedelta(days=max_days)
         
         # Config 1: Token metrics at 1-min (for TPM/RPM peak detection)
@@ -257,7 +277,7 @@ class CloudWatchMetricsFetcher:
             'start_time': target_start,
             'end_time': end_time,
             'period': 60,
-            'metrics': ['input_tokens', 'output_tokens', 'invocations']
+            'metrics': list(TOKEN_METRICS)
         }
         
         # Config 2: Other metrics at configured granularities
@@ -266,7 +286,7 @@ class CloudWatchMetricsFetcher:
         for time_period, period in granularity_config.items():
             if period not in period_ranges:
                 period_ranges[period] = []
-            days = {'1hour': 1/24, '1day': 1, '7days': 7, '14days': 14, '30days': 30}[time_period]
+            days = PERIOD_DAYS[time_period]
             period_ranges[period].append(days)
         
         for period, day_list in period_ranges.items():
@@ -275,7 +295,7 @@ class CloudWatchMetricsFetcher:
             other_metrics_configs[period] = {
                 'start_time': period_start,
                 'end_time': end_time,
-                'metrics': ['throttles', 'client_errors', 'server_errors', 'latency']
+                'metrics': list(OTHER_METRICS)
             }
         
         # Calculate total chunks for progress tracking
@@ -349,20 +369,7 @@ class CloudWatchMetricsFetcher:
                         
                 except Exception as e:
                     logger.info(f"    Warning: Failed to fetch {fetch_type} data (period={period}s) for {model_id}: {e}")
-                    # Create empty data structure
-                    empty_data = {
-                        'timestamps': [], 
-                        'data': {
-                            'invocations': [], 
-                            'input_tokens': [], 
-                            'output_tokens': [], 
-                            'throttles': [],
-                            'client_errors': [],
-                            'server_errors': [],
-                            'latency': []
-                        }, 
-                        'period': period
-                    }
+                    empty_data = failed_fetch(period, TOKEN_METRICS if fetch_type == 'token' else OTHER_METRICS)
                     if fetch_type == 'token':
                         all_fetched_data[model_id]['60_token'] = empty_data
                     else:
@@ -436,12 +443,8 @@ class CloudWatchMetricsFetcher:
             }
         except Exception as e:
             logger.info(f"    Warning: Could not fetch token metrics: {e}")
-            return {
-                'timestamps': [],
-                'data': {'invocations': [], 'input_tokens': [], 'output_tokens': []},
-                'period': period
-            }
-    
+            return failed_fetch(period, TOKEN_METRICS)
+
     def _fetch_other_metrics(self, model_id, start_time, end_time, period):
         """Fetch non-token metrics (throttles, errors, latency)
         
@@ -508,11 +511,7 @@ class CloudWatchMetricsFetcher:
             }
         except Exception as e:
             logger.info(f"    Warning: Could not fetch other metrics: {e}")
-            return {
-                'timestamps': [],
-                'data': {'throttles': [], 'client_errors': [], 'server_errors': [], 'latency': []},
-                'period': period
-            }
+            return failed_fetch(period, OTHER_METRICS)
     
     def _fetch_raw_data(self, model_id, start_time, end_time, period):
         """Fetch raw CloudWatch data for a time range"""
@@ -593,19 +592,7 @@ class CloudWatchMetricsFetcher:
             }
         except Exception as e:
             logger.info(f"    Warning: Could not fetch data: {e}")
-            return {
-                'timestamps': [], 
-                'data': {
-                    'invocations': [], 
-                    'input_tokens': [], 
-                    'output_tokens': [], 
-                    'throttles': [],
-                    'client_errors': [],
-                    'server_errors': [],
-                    'latency': []
-                }, 
-                'period': period
-            }
+            return failed_fetch(period)
     
     def slice_and_process_data(self, fetched_data, time_period, granularity_config):
         """
@@ -619,18 +606,9 @@ class CloudWatchMetricsFetcher:
         end_time = fetched_data['end_time']
         period = granularity_config[time_period]
         
-        if time_period == '1hour':
-            start_time = end_time - timedelta(hours=1)
-        elif time_period == '1day':
-            start_time = end_time - timedelta(days=1)
-        elif time_period == '7days':
-            start_time = end_time - timedelta(days=7)
-        elif time_period == '14days':
-            start_time = end_time - timedelta(days=14)
-        elif time_period == '30days':
-            start_time = end_time - timedelta(days=30)
-        else:
+        if time_period not in PERIOD_DAYS:
             return self._empty_time_series(time_period)
+        start_time = end_time - timedelta(days=PERIOD_DAYS[time_period])
         
         # Get token metrics from 1-min data
         if '60_token' not in fetched_data:
@@ -670,7 +648,7 @@ class CloudWatchMetricsFetcher:
         
         filtered_token_timestamps = [token_timestamps[i] for i in token_indices]
         filtered_token_data = {}
-        for key in ['invocations', 'input_tokens', 'output_tokens']:
+        for key in TOKEN_METRICS:
             if key in token_data and token_data[key]:
                 valid_indices = [i for i in token_indices if i < len(token_data[key])]
                 filtered_token_data[key] = [token_data[key][i] for i in valid_indices]
@@ -684,7 +662,7 @@ class CloudWatchMetricsFetcher:
             other_data = other_dataset['data']
             other_indices = [i for i, ts in enumerate(other_timestamps) if start_time <= ts <= end_time]
             
-            for key in ['throttles', 'client_errors', 'server_errors', 'latency']:
+            for key in OTHER_METRICS:
                 if key in other_data and other_data[key]:
                     valid_indices = [i for i in other_indices if i < len(other_data[key])]
                     filtered_other_data[key] = [other_data[key][i] for i in valid_indices]
@@ -692,12 +670,7 @@ class CloudWatchMetricsFetcher:
                     filtered_other_data[key] = []
         else:
             # No other metrics available
-            filtered_other_data = {
-                'throttles': [],
-                'client_errors': [],
-                'server_errors': [],
-                'latency': []
-            }
+            filtered_other_data = {key: [] for key in OTHER_METRICS}
         
         # Merge datasets: token metrics at 1-min, other metrics at configured granularity
         # Process with special handling for TPM/RPM peak aggregation

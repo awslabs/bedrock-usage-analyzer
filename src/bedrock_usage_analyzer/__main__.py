@@ -81,7 +81,8 @@ def cmd_analyze(args):
     """Run usage analysis."""
     from bedrock_usage_analyzer.core.user_inputs import UserInputs
     from bedrock_usage_analyzer.core.analyzer import BedrockAnalyzer
-    
+    from bedrock_usage_analyzer.aws.invocation_logs import PRINCIPAL, Breakdown, BreakdownError
+
     print(get_metadata_location_message())
     print()
     
@@ -94,13 +95,28 @@ def cmd_analyze(args):
             logger.error(f"Error: {e}")
             sys.exit(1)
     
+    breakdown = None
+    if args.log_group is not None and args.breakdown is None and not args.principal:
+        # Naming the log group alone does not start a (billed) Logs Insights scan
+        logger.error("Error: --log-group needs --breakdown or --principal")
+        sys.exit(1)
+    if args.breakdown is not None or args.principal:
+        try:
+            # An empty --breakdown "$BY" is an error, not "no breakdown"
+            kind = PRINCIPAL if args.breakdown is None else args.breakdown
+            breakdown = Breakdown.parse(kind, args.principal or (), args.log_group)
+        except BreakdownError as e:
+            logger.error(f"Error: {e}")
+            sys.exit(1)
+
     user_inputs = UserInputs()
     try:
         user_inputs.collect(
             region=args.region,
             model_id=args.model_id,
             granularity_config=granularity_config,
-            skip_confirm=args.yes
+            skip_confirm=args.yes,
+            breakdown=breakdown,
         )
     finally:
         # A region picked from the menu is not in args: keep it for the error hint in main(),
@@ -116,7 +132,8 @@ def cmd_analyze(args):
 
     analyzer = BedrockAnalyzer(user_inputs.region, user_inputs.granularity_config,
                                profile_fetcher=user_inputs.profile_fetcher,
-                               fm_models=user_inputs.fm_models())
+                               fm_models=user_inputs.fm_models(),
+                               breakdown=user_inputs.breakdown, account=user_inputs.account)
     analyzer.analyze(user_inputs.models, output_dir=output_dir)
     
     logger.info(f"\nCompleted! Results saved to: {output_dir}")
@@ -282,15 +299,27 @@ def main():
     p_analyze.add_argument('-r', '--region',
                           help='AWS region (e.g., us-west-2)')
     p_analyze.add_argument('-m', '--model-id', action='append',
-                          help='Model ID, system inference profile ID, or application inference profile '
-                               'ID/ARN (e.g., amazon.nova-premier-v1:0, us.amazon.nova-premier-v1:0, '
-                               'or arn:aws:bedrock:us-west-2:111122223333:application-inference-profile/abc123). '
+                          help='Model ID, system inference profile ID, application inference profile '
+                               'ID/ARN, or on-demand custom model deployment ARN/ID/name (e.g., '
+                               'amazon.nova-premier-v1:0, us.amazon.nova-premier-v1:0, '
+                               'arn:aws:bedrock:us-west-2:111122223333:application-inference-profile/abc123, or '
+                               'arn:aws:bedrock:us-east-1:111122223333:custom-model-deployment/abc123). '
                                'Repeat to analyze several.')
     p_analyze.add_argument('-g', '--granularity',
                           help='Aggregation granularity: single value (1min, 5min, 1hour) for all periods, '
                                'or JSON for per-period config (e.g., \'{"1hour":"1min","1day":"5min","7days":"1hour","14days":"1hour","30days":"1hour"}\')')
     p_analyze.add_argument('-y', '--yes', action='store_true',
                           help='Skip account confirmation prompt')
+    p_analyze.add_argument('--breakdown', metavar='BY',
+                          help='Break each report down by caller, from the model invocation logs '
+                               '(CloudWatch Logs): principal (IAM role or user), session, tag:<key> '
+                               '(an IAM principal tag, e.g. tag:team) or metadata:<key> (a requestMetadata key)')
+    p_analyze.add_argument('--principal', action='append', metavar='PRINCIPAL',
+                          help='Limit the breakdown to this caller: role/<name>, user/<name> or an IAM ARN. '
+                               'Repeat for several; implies --breakdown principal')
+    p_analyze.add_argument('--log-group',
+                          help='With --breakdown or --principal: the invocation log group to read '
+                               '(default: the region\'s model invocation logging destination)')
     p_analyze.set_defaults(func=cmd_analyze)
     
     # refresh

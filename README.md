@@ -14,6 +14,7 @@ This CLI tool can help answers:
 3. What project/application tags contribute the most to my usage of that model? (provided that you tag the application inference profile appropriately)
 4. When did the throttling occur for this model and which project/application contributed the most for that?
 5. How far is my current TPM against the quota?
+6. Which service (IAM role or user, or IAM principal tag) uses how much of a shared endpoint, when services do not have their own application inference profiles? See [Attributing usage to IAM principals](#attributing-usage-to-iam-principals).
 
 This tool works by calling AWS APIs from your local machine, including CloudWatch [Get Metric Data](https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_GetMetricData.html) and Bedrock [List Inference Profiles](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_ListInferenceProfiles.html). It then generates a JSON and HTML output file per model/system inference profile being analyzed inside `results` folder. The tool uses bundled metadata files to obtain the list of available regions and FMs and to map each FM into the AWS service quotas L code (L-xxx). 
 
@@ -68,26 +69,46 @@ This tool requires different IAM permissions depending on which features you use
       "Action": [
         "sts:GetCallerIdentity",
         "bedrock:ListInferenceProfiles",
+        "bedrock:ListCustomModelDeployments",
+        "bedrock:GetCustomModelDeployment",
+        "bedrock:GetCustomModel",
         "bedrock:ListTagsForResource",
         "cloudwatch:GetMetricData",
         "servicequotas:GetServiceQuota",
         "servicequotas:GetAWSDefaultServiceQuota",
-        "servicequotas:ListServiceQuotas"
+        "servicequotas:ListServiceQuotas",
+        "bedrock:GetModelInvocationLoggingConfiguration",
+        "logs:DescribeLogGroups",
+        "logs:GetQueryResults",
+        "logs:StopQuery",
+        "iam:ListRoleTags",
+        "iam:ListUserTags"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "QueryInvocationLogs",
+      "Effect": "Allow",
+      "Action": "logs:StartQuery",
+      "Resource": "arn:aws:logs:<region>:<account-id>:log-group:<invocation-log-group>:*"
     }
   ]
 }
 ```
 
+Replace the placeholders in the `QueryInvocationLogs` statement with the invocation log group of each analyzed Region (or drop the statement if you do not use `--breakdown`). In AWS GovCloud (US), write its ARN with the `aws-us-gov` partition (`arn:aws-us-gov:logs:...`).
+
 **What this allows:**
 - `sts:GetCallerIdentity` - Get your AWS account ID
 - `bedrock:ListInferenceProfiles` - Discover inference profiles for selected models
-- `bedrock:ListTagsForResource` - Retrieve tags for inference profiles (for metadata display)
+- `bedrock:ListTagsForResource` - Retrieve tags for inference profiles and custom model deployments (for metadata display)
+- `bedrock:ListCustomModelDeployments`, `bedrock:GetCustomModelDeployment`, `bedrock:GetCustomModel` - Optional: analyze on-demand custom model deployments (their base model gives the quotas)
 - `cloudwatch:GetMetricData` - Fetch CloudWatch metrics for token usage (TPM, RPM, TPD, throttles)
 - `servicequotas:GetServiceQuota` - Retrieve service quota limits for visualization
 - `servicequotas:GetAWSDefaultServiceQuota` - Read the default value of a quota that has no applied value (GetServiceQuota does not return those)
 - `servicequotas:ListServiceQuotas` - Optional: when many quota codes are analyzed in one run, read them in one listing (without it, each code is looked up separately)
+- `bedrock:GetModelInvocationLoggingConfiguration`, `logs:DescribeLogGroups`, `logs:StartQuery`, `logs:GetQueryResults`, `logs:StopQuery` - Optional: the [breakdown by IAM principal](#attributing-usage-to-iam-principals) (`--breakdown`) reads the model invocation logs with CloudWatch Logs Insights. `logs:StartQuery` can be scoped to the invocation log group's ARN; `logs:GetQueryResults`, `logs:StopQuery` and `logs:DescribeLogGroups` take no log group resource and need `"Resource": "*"`
+- `iam:ListRoleTags`, `iam:ListUserTags` - Optional: show the callers' IAM tags, and group by an IAM principal tag (`--breakdown tag:<key>`)
 
 **Note:** This option uses the bundled metadata files that come with the package.
 
@@ -107,12 +128,27 @@ Note: You need to replace some part with your own account ID and the region used
       "Action": [
         "sts:GetCallerIdentity",
         "bedrock:ListInferenceProfiles",
+        "bedrock:ListCustomModelDeployments",
+        "bedrock:GetCustomModelDeployment",
+        "bedrock:GetCustomModel",
         "bedrock:ListTagsForResource",
         "cloudwatch:GetMetricData",
         "servicequotas:GetServiceQuota",
-        "servicequotas:GetAWSDefaultServiceQuota"
+        "servicequotas:GetAWSDefaultServiceQuota",
+        "bedrock:GetModelInvocationLoggingConfiguration",
+        "logs:DescribeLogGroups",
+        "logs:GetQueryResults",
+        "logs:StopQuery",
+        "iam:ListRoleTags",
+        "iam:ListUserTags"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "QueryInvocationLogs",
+      "Effect": "Allow",
+      "Action": "logs:StartQuery",
+      "Resource": "arn:aws:logs:<region>:<account-id>:log-group:<invocation-log-group>:*"
     },
     {
       "Sid": "MetadataManagement",
@@ -294,6 +330,45 @@ bedrock-usage-analyzer analyze -r ap-southeast-2 -y -g 5min -o ./results \
 ```
 
 If you analyze an endpoint that has no application profiles while the account has profiles for the same model under another endpoint, the tool prints which endpoint they are on.
+
+### Analyzing custom model deployments
+
+[On-demand custom model deployments](https://docs.aws.amazon.com/bedrock/latest/userguide/deploy-custom-model-on-demand.html) are analyzed like any other endpoint. Choose "Custom model deployments" at step 3 (shown when the region has an active one), or pass the deployment ARN, ID or name with `--model-id`:
+
+```bash
+bedrock-usage-analyzer analyze -r us-east-1 -y -g 5min -o ./results \
+  -m arn:aws:bedrock:us-east-1:111122223333:custom-model-deployment/dep0example1
+```
+
+The report shows the deployment's usage (CloudWatch records it under the deployment ARN) against the custom model deployment quotas of its base model, for example "(Model customization) Sum of on demand custom model deployment tokens per minute for Amazon Nova Lite". These quotas are mapped in the fm-list as the base model's `custom` endpoint. They are account-wide sums over every deployment of models customized from that base model, so select all of them (`all` in the list, or one `-m` per deployment) for one aggregated report; the tool names the ones left out. A deployment whose custom model names no foundation base model shows usage without limits; so does a deployment whose details cannot be read (without the optional permissions above, a deployment ARN still gives its usage).
+
+### Attributing usage to IAM principals
+
+Many teams no longer create one application inference profile per service: [Amazon Bedrock cost allocation by IAM principal](https://docs.aws.amazon.com/bedrock/latest/userguide/cost-mgmt-iam-principal-tracking.html) attributes cost to the calling IAM role or user and its tags. CloudWatch's Bedrock metrics, however, have only the `ModelId` dimension, so every service that calls the same endpoint (for example `eu.anthropic.claude-sonnet-5`) shares one series. Billing data is daily, so it cannot show who drives a per-minute TPM or RPM peak.
+
+The [model invocation logs](https://docs.aws.amazon.com/bedrock/latest/userguide/model-invocation-logging.html) record each request's caller (`identity.arn`), model or profile, and token counts. With `--breakdown`, each report adds a **Usage by ...** section read from those logs with CloudWatch Logs Insights:
+
+```bash
+# By IAM principal: each role (all its sessions together) or user
+bua analyze -r eu-west-1 -m eu.anthropic.claude-sonnet-5 -g 5min -y --breakdown principal
+# By an IAM principal tag, the same tags you activate as iamPrincipal/<key> cost allocation tags
+bua analyze -r eu-west-1 -m eu.anthropic.claude-sonnet-5 -g 5min -y --breakdown tag:team
+# By role session, or by a requestMetadata key the callers send (Converse requestMetadata)
+bua analyze -r us-east-1 -m us.amazon.nova-lite-v1:0 -y --breakdown session
+bua analyze -r us-east-1 -m us.amazon.nova-lite-v1:0 -y --breakdown metadata:app
+# Only some callers (the rest are one "(other principals)" row)
+bua analyze -r us-east-1 -m us.amazon.nova-lite-v1:0 -y --principal role/OrdersService
+```
+
+When you pick the models interactively (no `-m`), the tool asks whether to break usage down once the region logs invocations to CloudWatch Logs. With `-m`, pass `--breakdown` (or `--principal`).
+
+- **What a row shows:** a caller's tokens and requests and its share of the endpoint's total, TPM and RPM (P50, P90, max per minute), and TPD, for each period, plus a TPM chart against the quota. The JSON report's `breakdown.time_series` holds each row's TPM and RPM series per period (the HTML chart draws TPM). "Via" lists the profiles or deployments it called; for session, tag and metadata rows, the IAM principals in the group. With `principal`, the callers' IAM tags are shown.
+- **Totals and quotas stay CloudWatch's.** Quotas are per account, Region and model, shared by all callers. Usage CloudWatch counted that the logs do not hold (logging was off, records not delivered) is shown as **(not in the invocation logs)**, so the shares add up.
+- **Setup:** enable model invocation logging in each analyzed Region with a CloudWatch Logs destination. Turn off text, image, embedding and video data delivery to log metadata only (the tool reads only metadata fields, never prompts or completions). Periods older than the log group's retention are marked as partly covered. S3-only logging is not read; add a CloudWatch Logs destination. `--log-group` reads another log group.
+- **Cost:** Logs Insights charges per GB scanned. The tool scans the log group once per run, for all reports, over the longest period, up to 15 days; it prints the number of queries and the GB scanned. A run over very many profiles (a model ID list longer than one 10,000-character query) scans once per batch of them, and a day with more than 100,000 per-minute result rows (for example very many sessions with `--breakdown session`) is queried again in quarter-day windows (10,000 rows with an SDK whose StartQuery is capped at 10,000, such as botocore before 1.43). Metadata-only logging keeps the logs small.
+- **Window:** the breakdown ends 5 minutes before the run started, as invocation log records arrive seconds to minutes after the call; its periods end there. It reaches back at most 15 days, as far as CloudWatch keeps the 1-minute data it is compared with, so the 30-day period is marked partly covered. Failed calls (logged with an `errorCode`) are not counted, as CloudWatch's `Invocations` counts only successful ones.
+- **Many callers:** each period shows its 29 largest groups as rows and chart lines; the rest are summed into one "(N smaller groups)" row.
+- **Limits:** IAM principal tags come from `iam:ListRoleTags`/`iam:ListUserTags` (current tags, not historical ones); STS session tags are not in the logs. Calls through the `bedrock-mantle` endpoints are not in the invocation logs. A role shared by several services needs distinct session names (`--breakdown session`) or `requestMetadata` to tell them apart.
 
 ### Step 4b: Scripted/Non-Interactive Usage
 
@@ -692,12 +767,14 @@ If you pass a region from another partition than your credentials (for example `
 - **Quota Data**: Quota information is fetched from AWS and not hardcoded
 - **API Calls**: All Bedrock API calls use your AWS credentials
 - **Data Storage**: Analysis results are stored locally in `results/`. Refreshed metadata is stored in your user data directory (see [Metadata Storage](#metadata-storage))
+- **Invocation logs**: `--breakdown` returns only metadata fields of the model invocation logs (caller ARN, model ID, token counts, request metadata). When the logs hold prompt and completion bodies, the Logs Insights query scans them server-side (and they are billed as scanned bytes), but they are never returned to or stored by the tool; metadata-only delivery keeps them out of the logs altogether. Reports with a breakdown contain caller ARNs, role names and IAM tags: share them like other account inventory
 
 ## Cost Considerations
 When using `bedrock-usage-analyzer analyze` (or `./bin/analyze-bedrock-usage`), the following cost is expected:
 - CloudWatch GetMetricData that is measured on the number of metrics requested
   - Refer to [CloudWatch pricing page](https://aws.amazon.com/cloudwatch/pricing/) to view the unit price per region.
   - The total cost of this component depends on the number of metrics being requested, that also depends on how many FMs are included in the query and how many times this tool is run
+- With `--breakdown`: CloudWatch Logs Insights queries, charged per GB of the invocation log group scanned (once per run, over up to 15 days; a day with more than 100,000 per-minute result rows is queried again in smaller windows; the run prints the queries and GB scanned). Model invocation logging itself is charged as CloudWatch Logs ingestion and storage.
 
 When running `bedrock-usage-analyzer refresh fm-quotas` (or `./bin/refresh-fm-quotas-mapping`) to refresh the mapping between FM metric and the quotas, the following additional cost will apply:
 - Bedrock model invocation cost that is based on the total tokens used.

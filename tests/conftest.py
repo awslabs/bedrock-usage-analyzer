@@ -48,12 +48,17 @@ def arn(region, model_id, partition_name='aws'):
 class FakeBedrock:
     """Minimal Bedrock control-plane client for inference profile listing."""
 
-    def __init__(self, system=(), application=(), tags=None, page_size=2):
+    def __init__(self, system=(), application=(), tags=None, page_size=2, logging_config=None):
         self.system = list(system)
         self.application = list(application)
         self.tags = tags or {}
         self.page_size = page_size
+        self.logging_config = logging_config  # model invocation logging (None: not enabled)
         self.calls = []
+
+    def get_model_invocation_logging_configuration(self):
+        self.calls.append(('get_model_invocation_logging_configuration',))
+        return {'loggingConfig': self.logging_config} if self.logging_config else {}
 
     def list_inference_profiles(self, maxResults=1000, typeEquals='SYSTEM_DEFINED', nextToken=None):
         self.calls.append(('list_inference_profiles', typeEquals, nextToken))

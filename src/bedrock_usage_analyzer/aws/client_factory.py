@@ -23,20 +23,28 @@ DEFAULT_MAX_POOL_CONNECTIONS = 50
 # Bedrock control-plane calls made while the user answers prompts, uses the standard
 # policy with up to 4 attempts (max_attempts counts retries), a 10 s connect timeout and a
 # 20 s read timeout per attempt, so a bad network fails in about a minute rather than many.
-_BULK_SERVICES = {'cloudwatch', 'service-quotas', 'bedrock-runtime'}
+# iam: the breakdown reads the tags of up to hundreds of principals, several at a time,
+# against IAM's low per-account request rate
+_BULK_SERVICES = {'cloudwatch', 'service-quotas', 'bedrock-runtime', 'logs', 'iam'}
 
 
 def create_client(service: str, region: Optional[str] = None,
-                  max_pool_connections: int = DEFAULT_MAX_POOL_CONNECTIONS, probe: bool = False):
+                  max_pool_connections: int = DEFAULT_MAX_POOL_CONNECTIONS, probe: bool = False,
+                  single_attempt: bool = False):
     """Create a boto3 client for ``service`` in ``region``.
 
     ``probe=True`` is for best-effort checks (e.g. asking another partition's STS whose
     credentials these are): one attempt and short timeouts, so a blocked endpoint
-    cannot delay the real error message.
+    cannot delay the real error message. ``single_attempt=True`` is for calls that are
+    not idempotent (Logs Insights StartQuery): botocore never retries them, as a retry
+    after a lost reply would start a second, unseen query; the caller retries throttling.
     """
     if probe:
         config = Config(retries={'total_max_attempts': 1, 'mode': 'standard'},
                         connect_timeout=3, read_timeout=5)
+    elif single_attempt:
+        config = Config(retries={'total_max_attempts': 1, 'mode': 'standard'},
+                        max_pool_connections=max_pool_connections, connect_timeout=10, read_timeout=20)
     else:
         if service in _BULK_SERVICES:
             retries = {'max_attempts': 8, 'mode': 'adaptive'}

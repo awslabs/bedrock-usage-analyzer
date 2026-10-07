@@ -16,7 +16,7 @@
   "structure": {
     "src/bedrock_usage_analyzer/": "Main Python package containing all source code",
     "src/bedrock_usage_analyzer/core/": "Core analysis logic - orchestrator, metrics fetching, output generation",
-    "src/bedrock_usage_analyzer/aws/": "AWS service integrations - Bedrock, CloudWatch, Service Quotas, STS",
+    "src/bedrock_usage_analyzer/aws/": "AWS service integrations - Bedrock (incl. custom model deployments), CloudWatch, Service Quotas, STS",
     "src/bedrock_usage_analyzer/utils/": "Utility functions - CSV, YAML, UI helpers, path resolution with platformdirs",
     "src/bedrock_usage_analyzer/sync/": "Metadata sync/refresh code - regions, FM lists, quota mapping",
     "src/bedrock_usage_analyzer/templates/": "Jinja2 HTML templates for report generation",
@@ -85,6 +85,7 @@
         "traceback"
       ],
       "imports_files": [
+        "bedrock_usage_analyzer.aws.invocation_logs",
         "bedrock_usage_analyzer.core.analyzer",
         "bedrock_usage_analyzer.core.errors",
         "bedrock_usage_analyzer.core.user_inputs",
@@ -208,6 +209,7 @@
       ],
       "imports_files": [
         "bedrock_usage_analyzer.aws.client_factory",
+        "bedrock_usage_analyzer.core.errors",
         "bedrock_usage_analyzer.utils.partition",
         "bedrock_usage_analyzer.utils.paths",
         "bedrock_usage_analyzer.utils.yaml_handler"
@@ -250,6 +252,58 @@
         "typing"
       ],
       "imports_files": []
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/aws/custom_models.py",
+      "summary": "On-demand custom model deployments: listing, reading, and the base model whose custom deployment quotas apply",
+      "methods": [
+        {
+          "name": "deployment_short_id",
+          "description": "The ID part of a deployment ARN (for labels and file names)."
+        },
+        {
+          "name": "base_model_id_in_arn",
+          "description": "The base model ID a custom model ARN names (fallback when GetCustomModel is denied)."
+        },
+        {
+          "name": "base_model_id",
+          "description": "The foundation model a deployed model was trained from, following custom-model bases."
+        },
+        {
+          "name": "read_deployment",
+          "description": "A deployment as list_deployments summarizes it (arn, name, status, model_arn)."
+        },
+        {
+          "name": "is_active",
+          "description": "True for a deployment that serves traffic (status Active)."
+        },
+        {
+          "name": "list_deployments",
+          "description": "The region's custom model deployments (summaries: arn, name, status, model_arn)."
+        }
+      ],
+      "imports_libraries": [
+        "logging",
+        "typing"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.aws.bedrock"
+      ]
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/aws/invocation_logs.py",
+      "summary": "Usage per caller from Bedrock model invocation logs: breakdown options, principal normalization, modelId spellings, Logs Insights query building and chunked fetching, IAM principal tags",
+      "methods": [
+        {"name": "Breakdown.parse", "description": "Parse principal | session | tag:<key> | metadata:<key>, principal filters and a log group."},
+        {"name": "normalize_principal", "description": "Caller ARN to 'role/<name>' (all sessions of a role) or 'user/<name>' (IAM paths dropped); other callers keep their ARN."},
+        {"name": "logging_destination", "description": "The region's invocation log group, or why there is none."},
+        {"name": "model_id_forms", "description": "Every modelId spelling the logs may record for each CloudWatch ModelId value."},
+        {"name": "build_query", "description": "Logs Insights query of per-minute tokens and requests by modelId and caller."},
+        {"name": "InvocationLogFetcher", "description": "Runs the query in day-long windows, a few at a time, splitting full windows."},
+        {"name": "principal_tags", "description": "IAM tags of role and user principals (ListRoleTags / ListUserTags)."}
+      ],
+      "imports_libraries": ["botocore", "concurrent", "dataclasses", "datetime", "logging", "re", "threading", "time", "typing"],
+      "imports_files": ["bedrock_usage_analyzer.aws.bedrock", "bedrock_usage_analyzer.core.errors", "bedrock_usage_analyzer.utils.partition"]
     },
     {
       "path": "src/bedrock_usage_analyzer/aws/servicequotas.py",
@@ -385,9 +439,12 @@
         "traceback"
       ],
       "imports_files": [
+        "bedrock_usage_analyzer.__main__",
         "bedrock_usage_analyzer.aws.bedrock",
         "bedrock_usage_analyzer.aws.client_factory",
+        "bedrock_usage_analyzer.aws.custom_models",
         "bedrock_usage_analyzer.aws.servicequotas",
+        "bedrock_usage_analyzer.core.breakdown",
         "bedrock_usage_analyzer.core.metrics_fetcher",
         "bedrock_usage_analyzer.core.output_generator",
         "bedrock_usage_analyzer.core.profile_fetcher",
@@ -395,6 +452,16 @@
         "bedrock_usage_analyzer.utils.partition",
         "bedrock_usage_analyzer.utils.yaml_handler"
       ]
+    },
+    {
+      "path": "src/bedrock_usage_analyzer/core/breakdown.py",
+      "summary": "Builds each report's 'Usage by ...' section from the run's invocation-log rows: grouping by principal, session, tag or metadata key, per-period stats, shares of the CloudWatch totals and the not-logged remainder",
+      "methods": [
+        {"name": "BreakdownBuilder.prepare", "description": "Resolve the log group and query the logs once for every ModelId of the run."},
+        {"name": "BreakdownBuilder.section", "description": "One report's breakdown rows and TPM/RPM series per period."}
+      ],
+      "imports_libraries": ["collections", "datetime", "logging", "typing"],
+      "imports_files": ["bedrock_usage_analyzer.aws.client_factory", "bedrock_usage_analyzer.aws.invocation_logs", "bedrock_usage_analyzer.aws.sts", "bedrock_usage_analyzer.core.errors", "bedrock_usage_analyzer.core.metrics_fetcher"]
     },
     {
       "path": "src/bedrock_usage_analyzer/core/errors.py",
@@ -585,6 +652,7 @@
       "imports_libraries": [
         "copy",
         "datetime",
+        "functools",
         "jinja2",
         "json",
         "logging",
@@ -592,6 +660,8 @@
         "re"
       ],
       "imports_files": [
+        "bedrock_usage_analyzer.aws.invocation_logs",
+        "bedrock_usage_analyzer.core.metrics_fetcher",
         "bedrock_usage_analyzer.utils.partition"
       ]
     },
@@ -675,12 +745,16 @@
         }
       ],
       "imports_libraries": [
+        "concurrent",
         "logging",
+        "re",
         "typing"
       ],
       "imports_files": [
         "bedrock_usage_analyzer.aws.bedrock",
-        "bedrock_usage_analyzer.core.errors"
+        "bedrock_usage_analyzer.aws.custom_models",
+        "bedrock_usage_analyzer.core.errors",
+        "bedrock_usage_analyzer.utils.yaml_handler"
       ]
     },
     {
@@ -843,6 +917,9 @@
       "imports_files": [
         "bedrock_usage_analyzer.aws.bedrock",
         "bedrock_usage_analyzer.aws.client_factory",
+        "bedrock_usage_analyzer.aws.custom_models",
+        "bedrock_usage_analyzer.aws.invocation_logs",
+        "bedrock_usage_analyzer.core.breakdown",
         "bedrock_usage_analyzer.core.errors",
         "bedrock_usage_analyzer.core.profile_fetcher",
         "bedrock_usage_analyzer.sync.regions",
@@ -1088,7 +1165,7 @@
         "re",
         "typing"
       ],
-      "imports_files": []
+      "imports_files": ["bedrock_usage_analyzer.utils.yaml_handler"]
     },
     {
       "path": "src/bedrock_usage_analyzer/sync/regions.py",
@@ -1161,6 +1238,7 @@
       "imports_files": [
         "bedrock_usage_analyzer.__main__",
         "bedrock_usage_analyzer.aws.client_factory",
+        "bedrock_usage_analyzer.core.errors",
         "bedrock_usage_analyzer.utils.partition",
         "bedrock_usage_analyzer.utils.paths",
         "bedrock_usage_analyzer.utils.yaml_handler"
@@ -1489,6 +1567,12 @@
       ]
     },
     {
+      "path": "tests/test_breakdown.py",
+      "summary": "Usage breakdown by caller: parsing, principal normalization, modelId spellings, chunked Logs Insights queries (FakeLogs), IAM tags (FakeIam), grouping, remainder rows, report, CLI and interactive paths.",
+      "imports_libraries": ["botocore", "conftest", "datetime", "json", "os", "pytest"],
+      "imports_files": ["bedrock_usage_analyzer.aws.invocation_logs", "bedrock_usage_analyzer.core.breakdown", "bedrock_usage_analyzer.core.metrics_fetcher"]
+    },
+    {
       "path": "tests/test_cli_and_sync.py",
       "summary": "CLI argument handling, error hints, and metadata sync behaviour.",
       "imports_libraries": [
@@ -1511,6 +1595,25 @@
         "bedrock_usage_analyzer.utils.partition",
         "bedrock_usage_analyzer.utils.paths",
         "bedrock_usage_analyzer.utils.ui",
+        "bedrock_usage_analyzer.utils.yaml_handler"
+      ]
+    },
+    {
+      "path": "tests/test_custom_models.py",
+      "summary": "On-demand custom model deployments: discovery, base models, quota mapping rules and analysis targets.",
+      "imports_libraries": [
+        "botocore",
+        "conftest",
+        "pytest"
+      ],
+      "imports_files": [
+        "bedrock_usage_analyzer.aws",
+        "bedrock_usage_analyzer.aws.custom_models",
+        "bedrock_usage_analyzer.core",
+        "bedrock_usage_analyzer.core.analyzer",
+        "bedrock_usage_analyzer.core.profile_fetcher",
+        "bedrock_usage_analyzer.sync",
+        "bedrock_usage_analyzer.sync.quota_rules",
         "bedrock_usage_analyzer.utils.yaml_handler"
       ]
     },

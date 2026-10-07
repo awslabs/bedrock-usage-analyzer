@@ -51,13 +51,15 @@
         .graph-container { background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
         .graph-container canvas { max-height: 350px; }
         .na { background-color: #f0f0f0; color: #666; }
+        .breakdown-section { margin: 30px 0; }
+        .breakdown-note { font-size: 0.9em; color: #555; }
     </style>
 </head>
 <body>
     <h1>Bedrock Model Usage Statistics</h1>
     <h2>Model: {{ model_id }}</h2>
     {% if endpoint and endpoint != model_id %}<p><strong>Endpoint:</strong> {{ endpoint }}</p>{% endif %}
-    {% if application_profile_scope %}<p><strong>Application inference profiles analyzed:</strong> {{ application_profile_scope | join(', ') }}</p>{% endif %}
+    {% if application_profile_scope %}<p><strong>{{ scope_label }}:</strong> {{ application_profile_scope | join(', ') }}</p>{% endif %}
     <p><strong>Region:</strong> {{ region }}{% if region_info and region_info.display_name and region_info.display_name != region %} ({{ region_info.display_name }}){% endif %}
         {% if region_info and region_info.partition and region_info.partition != 'aws' %}<span style="color: #666; font-size: 0.9em;"> &middot; {{ region_info.partition_name }}</span>{% endif %}
     </p>
@@ -207,6 +209,62 @@
         </table>
     </div>
     
+    {% if breakdown %}
+    <div class="breakdown-section">
+        <h3>Usage by {{ breakdown.label }}</h3>
+        {% if breakdown.unavailable %}
+        <p class="breakdown-note">Not available: {{ breakdown.unavailable }}</p>
+        {% else %}
+        <p class="breakdown-note">From the model invocation logs in {{ breakdown.log_group }}
+            ({{ local_time(breakdown.coverage.start) }} to {{ local_time(breakdown.coverage.end) }}). Shares are of the endpoint's
+            CloudWatch totals over the covered time; "{{ unattributed_label }}" is usage CloudWatch counted
+            that the logs do not hold. Quotas are shared by all callers.
+            {% if breakdown.principal_filter %}Selected principals: {{ breakdown.principal_filter | join(', ') }}.{% endif %}</p>
+        {% for note in breakdown.notes %}<p class="breakdown-note">Note: {{ note }}</p>{% endfor %}
+        {% for period in period_ms %}
+        {% set section = breakdown.periods.get(period) %}
+        {% if section and section.rows %}
+        <button class="collapsible">{{ breakdown_period_names.get(period, period) }}{% if section.partial %} (covers {{ local_time(section.covered_from) }} to {{ local_time(section.covered_to) }}: {% if section.partial_reason == 'cloudwatch' %}CloudWatch keeps 1-minute data for 15 days{% else %}the invocation logs start later{% endif %}){% endif %}</button>
+        <div class="collapsible-content">
+            <div class="contribution-table">
+                <table>
+                    <tr>
+                        <th>{{ breakdown.label }}</th>
+                        {% if breakdown.kind != 'principal' %}<th>IAM principals</th>{% else %}<th>Tags (summed row: its principals)</th>{% endif %}
+                        <th>Via</th>
+                        <th>Share of tokens</th>
+                        <th>Share of requests</th>
+                        <th>Tokens</th>
+                        <th>Requests</th>
+                        <th>TPM P50</th><th>TPM P90</th><th>TPM max</th>
+                        <th>RPM P50</th><th>RPM P90</th><th>RPM max</th>
+                        {% if period != '1hour' %}<th>TPD avg</th><th>TPD max</th>{% endif %}
+                    </tr>
+                    {% for row in section.rows %}
+                    <tr>
+                        <td>{{ row.name }}</td>
+                        {% if breakdown.kind != 'principal' %}<td>{{ row.principals | join(', ') }}</td>
+                        {% else %}<td>{% if row.principals %}{{ row.principals | join(', ') }}{% elif row.tags %}{% for key, value in row.tags.items() %}{{ key }}={{ value }}<br>{% endfor %}{% else %}N/A{% endif %}</td>{% endif %}
+                        <td>{{ row.via | join(', ') }}</td>
+                        <td>{% if row.share_tokens is not none %}{{ "{:.1%}".format(row.share_tokens) }}{% else %}N/A{% endif %}</td>
+                        <td>{% if row.share_requests is not none %}{{ "{:.1%}".format(row.share_requests) }}{% else %}N/A{% endif %}</td>
+                        <td>{{ "{:,.0f}".format(row.tokens) }}</td>
+                        <td>{{ "{:,.0f}".format(row.requests) }}</td>
+                        <td>{{ "{:,.0f}".format(row.tpm_p50) }}</td><td>{{ "{:,.0f}".format(row.tpm_p90) }}</td><td>{{ "{:,.0f}".format(row.tpm_max) }}</td>
+                        <td>{{ "{:,.1f}".format(row.rpm_p50) }}</td><td>{{ "{:,.1f}".format(row.rpm_p90) }}</td><td>{{ "{:,.1f}".format(row.rpm_max) }}</td>
+                        {% if period != '1hour' %}<td>{{ "{:,.0f}".format(row.tpd_avg) }}</td><td>{{ "{:,.0f}".format(row.tpd_max) }}</td>{% endif %}
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+            <div class="graph-container"><h5>TPM by {{ breakdown.label }}</h5><canvas id="breakdown_tpm_{{ period }}"></canvas></div>
+        </div>
+        {% endif %}
+        {% endfor %}
+        {% endif %}
+    </div>
+    {% endif %}
+
     <div class="graphs-section">
         <h3>Time Series Graphs</h3>
         
@@ -689,8 +747,9 @@
                         intersect: false, 
                         axis: 'x',
                         filter: function(tooltipItem) {
-                            // Exclude quota line from tooltip
-                            return tooltipItem.dataset.label !== 'Quota Limit';
+                            // Exclude quota line from tooltip (by its mark: a caller row may be
+                            // named 'Quota Limit' too)
+                            return !tooltipItem.dataset.isQuota;
                         }
                     },
                     crosshair: { line: { color: '#999', width: 1, dashPattern: [5, 5] }, sync: { enabled: true } }
@@ -751,7 +810,18 @@
         const quotas = {{ quotas | tojson }};
         const profileNames = {{ profile_names | tojson }};
         const colors = ['#4285F4', '#EA4335', '#FBBC04', '#34A853', '#FF6D00', '#46BDC6', '#7BAAF7', '#F07B72', '#FDD663', '#81C995'];
-        
+        // 6-digit hex (no '#'), so that an alpha suffix can be appended like the palette's
+        function hslToHex(h, s, l) {
+            s /= 100; l /= 100;
+            const a = s * Math.min(l, 1 - l);
+            const f = n => {
+                const k = (n + h / 30) % 12;
+                const c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+                return Math.round(c * 255).toString(16).padStart(2, '0');
+            };
+            return f(0) + f(8) + f(4);
+        }
+
         // Create consistent color mapping for all profiles across all charts
         const profileColorMap = {};
         let nextColorIndex = 0;
@@ -940,13 +1010,7 @@
                 };
                 
                 // Calculate X-axis boundaries based on time period and actual end time
-                const periodDurations = {
-                    '1hour': 60 * 60 * 1000,
-                    '1day': 24 * 60 * 60 * 1000,
-                    '7days': 7 * 24 * 60 * 60 * 1000,
-                    '14days': 14 * 24 * 60 * 60 * 1000,
-                    '30days': 30 * 24 * 60 * 60 * 1000
-                };
+                const periodDurations = {{ period_ms | tojson }};
                 const timePeriod = '{{ time_period }}';
                 const duration = periodDurations[timePeriod];
                 const endTimeIso = {{ end_time_iso | tojson }};
@@ -957,7 +1021,7 @@
                 // Add quota line using chart boundaries
                 if (quotaValue && xAxisMin && xAxisMax) {
                     chartData.datasets.push({
-                        label: 'Quota Limit',
+                        label: 'Quota Limit', isQuota: true,
                         data: [
                             { x: new Date(xAxisMin).toISOString(), y: quotaValue },
                             { x: new Date(xAxisMax).toISOString(), y: quotaValue }
@@ -1009,8 +1073,67 @@
         });
         
         {% endfor %}
+
+        // Usage by caller: one TPM line per breakdown row, against the endpoint's quota
+        // [[period, [[caller, TPM series], ...]], ...]: caller names are never object keys
+        const breakdownSeries = {{ breakdown_tpm | tojson }};
+        // One color per caller in every period's chart; past the palette, evenly spread hues
+        const callerColorMap = new Map();
+        // The summed row's name carries its per-period count: one color for it in every period
+        // (marked folded; a caller value of that form is quoted, so it never takes this key)
+        const colorKey = (name, folded) => folded ? '(smaller groups)' : name;
+        for (const [, rows] of breakdownSeries) {
+            for (const [name, , folded] of rows) {
+                const key = colorKey(name, folded);
+                if (callerColorMap.has(key)) continue;
+                const n = callerColorMap.size;
+                callerColorMap.set(key, n < colors.length ? colors[n]
+                    : '#' + hslToHex((n * 137.508) % 360, 65, 45));
+            }
+        }
+        for (const [period, rows] of breakdownSeries) {
+            const canvas = document.getElementById('breakdown_tpm_' + period);
+            if (!canvas) continue;
+            const datasets = [];
+            for (const [name, tpm, folded] of rows) {
+                if (!tpm.timestamps.length) continue;
+                const color = callerColorMap.get(colorKey(name, folded));
+                datasets.push({
+                    label: name,
+                    data: tpm.timestamps.map((ts, i) => ({ x: ts, y: tpm.values[i] })),
+                    borderColor: color, backgroundColor: color + '20',
+                    borderWidth: 0.8, pointRadius: 0.5, tension: 0.1, spanGaps: false
+                });
+            }
+            if (!datasets.length) continue;
+            // The breakdown's periods end where the invocation logs were read up to
+            const endMs = new Date({{ (breakdown.coverage.end if breakdown and breakdown.coverage else end_time_iso) | tojson }}).getTime();
+            const startMs = endMs - {{ period_ms | tojson }}[period];
+            if (quotas.tpm) {
+                datasets.push({
+                    label: 'Quota Limit', isQuota: true,
+                    data: [{ x: new Date(startMs).toISOString(), y: quotas.tpm.value },
+                           { x: new Date(endMs).toISOString(), y: quotas.tpm.value }],
+                    borderColor: 'red', borderDash: [5, 5], borderWidth: 2, pointRadius: 0, fill: false, tension: 0
+                });
+            }
+            try {
+                new Chart(canvas, { ...chartConfig, data: { datasets: datasets }, options: {
+                    ...chartConfig.options,
+                    scales: { ...chartConfig.options.scales, x: { ...chartConfig.options.scales.x, min: startMs, max: endMs } },
+                    plugins: {
+                        ...chartConfig.options.plugins,
+                        // Its own crosshair group per period, no zoom (as the per-period charts)
+                        crosshair: { line: { color: '#999', width: 1, dashPattern: [5, 5] },
+                                     sync: { enabled: true, group: 'breakdown_' + period }, zoom: { enabled: false } }
+                    }
+                } });
+            } catch (error) {
+                console.error('Error creating breakdown chart for ' + period, error);
+            }
+        }
     </script>
-    
+
     <script>
         // Collapsible sections functionality
         var coll = document.getElementsByClassName("collapsible");

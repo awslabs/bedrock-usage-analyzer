@@ -1,5 +1,16 @@
 models:
 - endpoints:
+    base:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+  inference_types:
+  - ON_DEMAND
+  model_id: amazon.nova-2-5-sonic
+  provider: Amazon
+- endpoints:
     global:
       quotas:
         concurrent: null
@@ -479,7 +490,10 @@ models:
         concurrent: null
         rpm: null
         tpd: null
-        tpm: null
+        tpm:
+          code: L-31AB82D0
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Sonnet 5.5
   inference_profiles:
   - global
   inference_types:
@@ -1050,8 +1064,13 @@ models:
       quotas:
         concurrent: null
         rpm: null
-        tpd: null
-        tpm: null
+        tpd:
+          code: L-5ABF5878
+          name: Global cross-region model inference tokens per day for GPT-6.1 Sol
+        tpm:
+          code: L-B5C023CA
+          name: Global cross-region model inference tokens per minute for GPT-6.1
+            Sol
   inference_profiles:
   - global
   inference_types:
@@ -1297,7 +1316,9 @@ models:
         concurrent: null
         rpm: null
         tpd: null
-        tpm: null
+        tpm:
+          code: L-A4F73742
+          name: Global cross-region model inference tokens per minute for Grok 4.7
   inference_profiles:
   - global
   inference_types:

@@ -8,12 +8,17 @@ import sys
 import logging
 from typing import Dict, List, Optional, Sequence, Union
 
-from ..aws.bedrock import endpoint_id, region_from_arn, split_profile_id
+from ..aws.bedrock import arn_resource, endpoint_id, region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
-from ..core.errors import troubleshooting_hint
-from ..core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
+from ..aws.custom_models import DEPLOYMENT_KIND, base_model_id_in_arn, deployment_short_id, is_active
+from ..aws.invocation_logs import (
+    METADATA, PRINCIPAL, SESSION, TAG, Breakdown, BreakdownError, logging_destination)
+from ..core.breakdown import CONFIG_DENIED_HINT, ENABLE_HINT
+from ..core.errors import AWS_ERRORS, is_access_denied, troubleshooting_hint
+from ..core.profile_fetcher import (
+    UNKNOWN_SOURCE, InferenceProfileFetcher, deployment_read_error, missing_deployment_api)
 from ..sync.regions import load_region_names
-from ..utils.yaml_handler import endpoint_keys, fm_endpoints, has_endpoint, load_fm_list, profile_endpoints
+from ..utils.yaml_handler import CUSTOM_ENDPOINT, endpoint_keys, fm_endpoints, has_endpoint, invokable_endpoint_keys, load_fm_list, profile_endpoints
 from ..utils.ui import require_credentials_partition, select_from_list
 from ..utils.partition import (
     filter_regions_by_partition,
@@ -103,6 +108,9 @@ class UserInputs:
         self._region_given = False  # set by _get_current_account: a region was passed in
         self.models = []
         self.profile_fetcher: Optional[InferenceProfileFetcher] = None
+        self._inactive_deployments_noted = False
+        self.breakdown: Optional[Breakdown] = None
+        self._deployment_listing_noted = False
         self._fm_lists: Dict[str, Optional[List[Dict]]] = {}  # None: the region has no fm-list
         self.granularity_config = {  # The aggregation granularity for different metrics window/period
             '1hour': 300,   # 5 minutes
@@ -113,7 +121,7 @@ class UserInputs:
         }
 
     def collect(self, region=None, model_id: Union[None, str, Sequence[str]] = None,
-                granularity_config=None, skip_confirm=False):
+                granularity_config=None, skip_confirm=False, breakdown=None):
         """Interactive dialog to collect user inputs, skipping prompts for provided values.
 
         Args:
@@ -159,6 +167,17 @@ class UserInputs:
         # Model selection (skip if provided via CLI)
         if model_id:
             values = [model_id] if isinstance(model_id, str) else list(model_id)
+            # Deployment ARNs and their custom models are read all at once, in parallel
+            # (only those of the region: another region's ARN is refused below, unread)
+            deployment_arns = [v.strip() for v in values if f":{DEPLOYMENT_KIND}/" in v and v.strip().startswith('arn:')
+                               and region_from_arn(v.strip()) == self.region]
+            fetcher = self._get_profile_fetcher() if len(deployment_arns) > 1 else None
+            if isinstance(fetcher, InferenceProfileFetcher):
+                try:
+                    fetcher.read_custom_deployments(deployment_arns)
+                except AttributeError as e:
+                    if not missing_deployment_api(e):
+                        raise  # the per-ARN read says what boto3 is needed
             configs = []
             for value in values:
                 configs.append(self._parse_model_id(value))
@@ -174,6 +193,64 @@ class UserInputs:
                     break
             # Profiles of one endpoint picked in different rounds become one report, as with -m
             self.models = merge_application_configs(self.models)
+
+        # Breakdown by caller (from the CLI; asked only in an interactive session)
+        self.breakdown = breakdown
+        if breakdown is None and not model_id and self.models:
+            self.breakdown = self._select_breakdown()
+
+    def _select_breakdown(self) -> Optional[Breakdown]:
+        """Ask whether to break usage down by caller, when the region logs invocations to
+        CloudWatch Logs (the only per-caller source of tokens and requests)."""
+        fetcher = self._get_profile_fetcher()
+        if not isinstance(fetcher, InferenceProfileFetcher):  # an API caller's own fetcher
+            return None
+        try:
+            group, reason = logging_destination(fetcher.bedrock_client)
+        except AWS_ERRORS as e:
+            if is_access_denied(e):
+                # Logging may well be on: the fix is the permission, or naming the group
+                fix = CONFIG_DENIED_HINT
+            else:  # throttled, unreachable, expired credentials: not a permission to add
+                fix = troubleshooting_hint(e, self.region) or "Run again to be offered it."
+            logger.info(f"\nUsage by caller (IAM principal) is not offered: the model invocation logging "
+                        f"configuration could not be read ({e}). {fix}")
+            return None
+        if not group:
+            logger.info(f"\nUsage by caller (IAM principal) is not available: {reason}. {ENABLE_HINT}")
+            return None
+        choices = ['No breakdown',
+                   'By IAM principal (role or user; sessions of a role together)',
+                   'By IAM principal session',
+                   'By an IAM principal tag (e.g. team)',
+                   'By a request metadata key (requestMetadata)']
+        choice = select_from_list(
+            f"\nBreak usage down by caller? (from the model invocation logs in {group}; "
+            f"Logs Insights is charged per GB scanned)", choices, allow_cancel=False,
+            input_prompt=f"\nSelect (1-{len(choices)}): ")
+        kind = {choices[1]: PRINCIPAL, choices[2]: SESSION, choices[3]: TAG, choices[4]: METADATA}.get(choice)
+        if kind is None:
+            return None
+        try:
+            Breakdown.parse(PRINCIPAL, log_group=group)
+        except BreakdownError as e:  # the log group: nothing the user types can fix it
+            print(f"  {e}")
+            return None
+        # Without the group itself: the report reads it from the logging configuration again,
+        # and so says what to fix there (not --log-group, never passed) if the group is gone
+        if kind == PRINCIPAL:
+            return Breakdown.parse(PRINCIPAL)
+        while True:
+            if kind in (TAG, METADATA):
+                key = input(f"{'Tag' if kind == TAG else 'Metadata'} key (Enter for no breakdown): ").strip()
+                if not key:  # a way out for a choice made by mistake, or a key not known
+                    return None
+            else:
+                key = ''
+            try:
+                return Breakdown.parse(f"{kind}:{key}" if key else kind)
+            except BreakdownError as e:  # only the key is left to be wrong
+                print(f"  {e}")
 
     def _add_models(self, configs):
         for config in configs or []:
@@ -289,6 +366,7 @@ class UserInputs:
           or its ARN
         - Application inference profile: its ID (e.g. 'tqab5jqtywp7') or ARN; only
           that profile is analyzed
+        - On-demand custom model deployment: its ARN, ID or name
 
         The prefix (us, eu, apac, global, etc.) indicates cross-region inference profile.
         Provider names (amazon, anthropic, meta, etc.) are NOT prefixes.
@@ -303,7 +381,7 @@ class UserInputs:
         value = model_id.strip()
 
         if value.startswith('arn:'):
-            resource = value.split(':', 5)[-1] if value.count(':') >= 5 else ''
+            resource = arn_resource(value)
             kind, _, ident = resource.partition('/')
             arn_region = region_from_arn(value)
             if arn_region and self.region and arn_region != self.region:
@@ -311,6 +389,8 @@ class UserInputs:
                 sys.exit(1)
             if kind == 'application-inference-profile':
                 return self._application_profile_config(value)
+            if kind == DEPLOYMENT_KIND and ident:
+                return self._custom_deployment_config(value)
             if kind in ('inference-profile', 'foundation-model') and ident:
                 value = ident
             else:
@@ -342,6 +422,13 @@ class UserInputs:
             options = ', '.join(endpoint_id(base_model_id, p) for p in profile_only)
             logger.warning(f"  WARNING: {value} has no on-demand endpoint in {self.region}; its "
                            f"usage is under its inference profiles: {options}")
+        elif not known_model and not prefix and \
+                CUSTOM_ENDPOINT in (fm_endpoints(self._load_fm_list(self.region), base_model_id) or set()):
+            # Listed only for its custom deployment quotas (customizable, or no longer listed by
+            # Bedrock): still analyzed, as other unknown endpoints are, but not silently
+            logger.warning(f"  WARNING: {value} has no on-demand endpoint in {self.region}; the usage of "
+                           f"models customized from it is under their custom model deployments (pass a "
+                           f"deployment ARN, ID or name with -m, or choose 'Custom model deployments')")
         elif not known_model and self.region and prefix and self._is_system_profile(value):
             # Listed by Bedrock, only the model list is older: no reason to doubt the ID
             logger.info(f"  Note: {value} is listed in {self.region} but not in its model list; "
@@ -401,6 +488,61 @@ class UserInputs:
         fetcher = self.profile_fetcher
         return fetcher.failed_listing() if isinstance(fetcher, InferenceProfileFetcher) else 'application'
 
+    def _custom_deployment_config(self, deployment_arn, summary=None):
+        """Analysis target for an on-demand custom model deployment.
+
+        Its usage is reported under the deployment ARN; its limits are the base model's
+        custom model deployment quotas (the fm-list's 'custom' endpoint of that model).
+        ``summary`` is its list_deployments entry; without it the deployment (passed by ARN)
+        is read. When that fails (no permission, or a deleted deployment whose usage CloudWatch
+        still keeps), the listing may still have it, and otherwise its ARN still gives the
+        metrics, so it is analyzed without limits. Its base model only gives the limits: when
+        that cannot be read, the base model ID in the custom model ARN is used, or none.
+        """
+        fetcher = self._get_profile_fetcher()
+        base, reason = None, None
+        if summary is None:
+            try:
+                summary = fetcher.read_custom_deployment(deployment_arn)
+            except Exception as e:
+                if missing_deployment_api(e):
+                    logger.error(f"Custom model deployments need boto3 1.39.7 or later: {e}")
+                    sys.exit(1)
+                if not isinstance(e, AWS_ERRORS):
+                    raise
+                # The listing may still have it (same ARN: a name may equal another's ID)
+                summary = next((d for d in self._custom_deployments() if d['arn'] == deployment_arn), None)
+                if summary is None:
+                    hint = troubleshooting_hint(e, self.region) if is_access_denied(e) else None
+                    if hint:
+                        logger.warning(f"  Hint: {hint}")
+                    summary = {'arn': deployment_arn, 'name': deployment_short_id(deployment_arn), 'model_arn': None}
+                    reason = (f"could not be read ({e}); if it was deleted, the report still shows the usage "
+                              f"CloudWatch keeps for it")
+        arn, name = summary['arn'], summary['name']
+        fetcher.note_deployment_name(arn, name)
+        if summary.get('status') and not is_active(summary):
+            logger.warning(f"  WARNING: custom model deployment {name} is {summary['status']}, not Active; "
+                           f"it serves no traffic, so its report may show no usage")
+        if reason is None:
+            try:
+                base = fetcher.deployment_base_model(summary.get('model_arn'))
+                # GetCustomModel names no base model, or the deployment names no custom model
+                reason = "has no foundation base model" if summary.get('model_arn') else "names no custom model"
+            except AWS_ERRORS as e:
+                base = base_model_id_in_arn(summary.get('model_arn'))
+                reason = f"has a custom model that could not be read ({e})"
+                if base:
+                    logger.info(f"  Could not read the custom model of deployment {name} ({e}); "
+                                f"using the base model its ARN names")
+        if base:
+            logger.info(f"  Custom model deployment {name} ({deployment_short_id(arn)}) is based on {base}")
+        else:
+            logger.warning(f"  WARNING: custom model deployment {name} {reason}; "
+                           f"the report shows its usage without limits")
+            base = deployment_short_id(arn)
+        return {'model_id': base, 'profile_prefix': CUSTOM_ENDPOINT, 'application_profile_ids': [arn]}
+
     def _application_profile_config(self, identifier, profile=None):
         if profile is None:
             try:
@@ -408,9 +550,14 @@ class UserInputs:
             except Exception as e:
                 if not self._listing_error():
                     raise  # a bug, not missing permissions
+                # The ID or name of a custom model deployment needs no profile listing
+                config = self._deployment_target(identifier)
+                if config:
+                    return config
                 # An application profile ID or ARN cannot be analyzed without the listings
                 logger.error(f"Could not list {self._failed_listing()} inference profiles in {self.region}, "
                              f"so {identifier} cannot be resolved: {e}")
+                self._report_deployment_listing_error(identifier)
                 sys.exit(1)
         if profile is None:
             fetcher = self.profile_fetcher
@@ -418,8 +565,12 @@ class UserInputs:
                 # It exists (e.g. a copy of a custom model): say why it cannot be analyzed
                 logger.error(f"Application inference profile {identifier} routes to no foundation model; "
                              f"this tool has no metrics or quotas for it")
-            else:
-                logger.error(f"Application inference profile not found in {self.region}: {identifier}")
+                sys.exit(1)
+            config = self._deployment_target(identifier)
+            if config:
+                return config
+            logger.error(f"Application inference profile not found in {self.region}: {identifier}")
+            self._report_deployment_listing_error(identifier)
             sys.exit(1)
         logger.info(f"  Application inference profile {profile['name']} ({profile['id']}) "
                     f"is based on {profile['source'] or 'an unknown endpoint'}")
@@ -435,24 +586,107 @@ class UserInputs:
             logger.info(f"  Could not list {self._failed_listing()} inference profiles: {e}")
             app_profiles = []
 
+        # Only active deployments serve traffic: a Creating or Failed one has no usage to report
+        listed = self._custom_deployments()
+        deployments = [d for d in listed if is_active(d)]
+        if len(deployments) < len(listed) and not self._inactive_deployments_noted:
+            self._inactive_deployments_noted = True  # once per session: the listing is cached
+            logger.info(f"  {len(listed) - len(deployments)} custom model deployment(s) in {region} are not "
+                        f"active (Creating or Failed) and are not offered")
+        modes = ['A foundation model (includes the application inference profiles created from it)']
         if app_profiles:
-            mode = select_from_list(
-                "What do you want to analyze?",
-                ['A foundation model (includes the application inference profiles created from it)',
-                 f'Specific application inference profiles ({len(app_profiles)} in {region})'],
-                allow_cancel=False,
-                input_prompt="\nSelect (1-2): "
-            )
+            modes.append(f'Specific application inference profiles ({len(app_profiles)} in {region})')
+        if deployments:
+            modes.append(f'Custom model deployments ({len(deployments)} in {region})')
+        if len(modes) > 1:
+            mode = select_from_list("What do you want to analyze?", modes, allow_cancel=False,
+                                    input_prompt=f"\nSelect (1-{len(modes)}): ")
             if mode.startswith('Specific'):
                 return self._select_application_profiles(app_profiles)
+            if mode.startswith('Custom'):
+                return self._select_custom_deployments(deployments)
 
         config = self._select_model(region)
         return [config] if config else []
 
+    def _custom_deployments(self) -> List[Dict]:
+        """The region's custom model deployments ([] when there are none or they cannot be listed).
+
+        A listing failure (API or network error, or a boto3 without the API) only hides the
+        choice, and is said once per session; a bug is raised.
+        """
+        fetcher = self._get_profile_fetcher()
+        if not isinstance(fetcher, InferenceProfileFetcher):
+            return []  # another fetcher (an API caller's) knows no deployments
+        try:
+            return fetcher.list_custom_deployments()
+        except Exception as e:
+            if not deployment_read_error(e):
+                raise
+            if not self._deployment_listing_noted:
+                self._deployment_listing_noted = True
+                need = "need boto3 1.39.7 or later" if missing_deployment_api(e) else f"could not be listed ({e})"
+                logger.info(f"  Custom model deployments {need}; they are not offered")
+            return []
+
+    def _deployment_target(self, identifier) -> Optional[Dict]:
+        """The config of the custom model deployment with this ID or name (the ones the
+        deployment list shows), or None. Without the listing it is read directly, as
+        GetCustomModelDeployment also takes an ID or name."""
+        deployment = self._find_custom_deployment(identifier)
+        fetcher = self._get_profile_fetcher()
+        if deployment is None and not identifier.startswith('arn:') and \
+                isinstance(fetcher, InferenceProfileFetcher) and fetcher.custom_deployments_error is not None:
+            try:
+                deployment = fetcher.read_custom_deployment(identifier)
+            except AWS_ERRORS as e:
+                logger.debug(f"{identifier} is not a readable custom model deployment either: {e}")
+        return self._custom_deployment_config(deployment['arn'], deployment) if deployment else None
+
+    def _report_deployment_listing_error(self, identifier):
+        """Say so when ``identifier`` may be a deployment that could not be listed."""
+        fetcher = self._get_profile_fetcher()
+        error = fetcher.custom_deployments_error if isinstance(fetcher, InferenceProfileFetcher) else None
+        if error is not None and not identifier.startswith('arn:'):
+            logger.error(f"  (Custom model deployments could not be listed either, so it may be one: {error})")
+
+    def _find_custom_deployment(self, identifier) -> Optional[Dict]:
+        """The region's custom model deployment with this ID or name, or None (an ARN needs
+        no listing: deployment ARNs are read directly)."""
+        if identifier.startswith('arn:'):
+            return None
+        return next((d for d in self._custom_deployments()
+                     if identifier in (deployment_short_id(d['arn']), d['name'])), None)
+
+    @staticmethod
+    def _pick(title: str, lines: List[str], what: str) -> List[int]:
+        """Print a numbered list and read a selection ('1,3-4' or 'all'): the chosen indices."""
+        print(f"\n{title}:")
+        for i, line in enumerate(lines, 1):
+            print(f"  {i}. {line}")
+        while True:
+            try:
+                return parse_selection(input(f"\nSelect {what} (e.g. 1,3-4 or all): "), len(lines))
+            except ValueError as e:
+                print(f"Please enter valid numbers: {e}")
+
+    def _select_custom_deployments(self, deployments) -> List[Dict]:
+        """Pick one or more custom model deployments by number."""
+        indices = self._pick("Custom model deployments", [
+            f"{d['name']} ({deployment_short_id(d['arn'])}) - {d['status']}" for d in deployments], 'deployments')
+        chosen = [deployments[i] for i in indices]
+        # One base-model read per custom model, in parallel (results and errors are kept)
+        fetcher = self._get_profile_fetcher()
+        if isinstance(fetcher, InferenceProfileFetcher):
+            fetcher.read_base_models([d.get('model_arn') for d in chosen])
+        # Listed: no read can fail and end the session (a base model that cannot be read only
+        # leaves out the limits)
+        return [self._custom_deployment_config(d['arn'], d) for d in chosen]
+
     def _select_application_profiles(self, app_profiles) -> List[Dict]:
         """Pick one or more application inference profiles by number."""
-        print("\nApplication inference profiles:")
-        for i, app in enumerate(app_profiles, 1):
+        lines = []
+        for app in app_profiles:
             # A guessed source the region no longer lists is marked here, before it is picked
             if app['profile_prefix'] is None:
                 # A base-model copy of a model the fm-list knows without an on-demand endpoint
@@ -462,14 +696,8 @@ class UserInputs:
                 retired = app['profile_prefix'] != UNKNOWN_SOURCE and app['source'] and \
                     not self._is_system_profile(app['source'])
             note = f" (not offered in {self.region} any more)" if retired else ""
-            print(f"  {i}. {app['name']} ({app['id']}) - based on {app['source'] or 'an unknown endpoint'}{note}")
-        while True:
-            try:
-                text = input(f"\nSelect profiles (e.g. 1,3-4 or all): ")
-                indices = parse_selection(text, len(app_profiles))
-                break
-            except ValueError as e:
-                print(f"Please enter valid numbers: {e}")
+            lines.append(f"{app['name']} ({app['id']}) - based on {app['source'] or 'an unknown endpoint'}{note}")
+        indices = self._pick("Application inference profiles", lines, 'profiles')
         return group_application_profiles([app_profiles[i] for i in indices])
 
     def _select_model(self, region):
@@ -510,12 +738,19 @@ class UserInputs:
 
         # Get endpoints for selected model
         # Endpoint keys, a legacy entry's 'base' included (as -m and the analyzer read it)
-        endpoints = endpoint_keys(selected_model)
+        # (not 'custom', custom model deployment quotas: deployments are picked on their own)
+        endpoints = invokable_endpoint_keys(selected_model)
 
         # Derive inference profiles from endpoints (exclude 'base')
         inference_profiles = sorted(k for k in endpoints if k != 'base')
 
         if not endpoints:
+            if CUSTOM_ENDPOINT in endpoint_keys(selected_model):
+                # Listed for its custom deployment quotas: its usage is under the deployments
+                logger.info(f"\n  {model_id} has no on-demand or inference profile endpoint in {region}. "
+                            f"To analyze models customized from it, choose 'Custom model deployments' "
+                            f"(offered when the region has an active one) or pass a deployment ARN with -m.")
+                return None  # not incomplete metadata: the manual entry's warning would be wrong
             return self._manual_model_entry()
 
         profile_prefix = self._select_profile_prefix(endpoints, inference_profiles)

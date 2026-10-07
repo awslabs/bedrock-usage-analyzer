@@ -5,14 +5,21 @@
 
 import os
 import re
+import functools
 import json
 import logging
 from datetime import datetime, timedelta
 from jinja2 import Environment, PackageLoader, select_autoescape
 
+from bedrock_usage_analyzer.aws.invocation_logs import UNATTRIBUTED
+from bedrock_usage_analyzer.core.metrics_fetcher import PERIOD_DAYS
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quotas_console_url
 
 logger = logging.getLogger(__name__)
+
+# What the names in a report's application_profile_scope are
+APPLICATION_PROFILE_SCOPE = 'Application inference profiles analyzed'
+DEPLOYMENT_SCOPE = 'Custom model deployments analyzed'
 
 
 def safe_filename(label: str) -> str:
@@ -24,6 +31,28 @@ def https_url(value) -> str:
     """Template filter: keep only https:// links (no javascript: or data: URIs in href)."""
     text = str(value or '')
     return text if text.startswith('https://') else ''
+
+
+def _local_time(value, tz=None) -> str:
+    """Template helper: an ISO time from the breakdown in the report's timezone, as the
+    period headings are (the value as given if it is not an ISO time)."""
+    try:
+        return datetime.fromisoformat(value).astimezone(tz).strftime('%Y-%m-%d %H:%M %Z')
+    except (TypeError, ValueError):
+        return '' if value is None else str(value)
+
+
+def _breakdown_tpm(breakdown) -> list:
+    """The breakdown chart's data: [[period, [[caller, TPM series, folded], ...]], ...].
+    Lists, not objects, as callers are names chosen by whoever calls Bedrock (an object key
+    such as "__proto__" would be dropped by the script); TPM only, the one series it draws;
+    folded marks the '(N smaller groups)' row, whose name changes with N."""
+    breakdown = breakdown or {}
+    series = breakdown.get('time_series') or {}
+    periods = breakdown.get('periods') or {}
+    folded = {period: {r['name'] for r in (p.get('rows') or []) if r.get('folded')} for period, p in periods.items()}
+    return [[period, [[name, s['TPM'], name in folded.get(period, ())] for name, s in rows.items() if s.get('TPM')]]
+            for period, rows in series.items()]
 
 
 class OutputGenerator:
@@ -114,6 +143,8 @@ class OutputGenerator:
             'model_id': model_id,
             'endpoint': data.get('endpoint', model_id),
             'application_profile_scope': data.get('application_profile_scope', []),
+            # What the scope names are: application inference profiles or custom model deployments
+            'scope_label': data.get('scope_label') or APPLICATION_PROFILE_SCOPE,
             'region': data.get('region', 'N/A'),
             'region_info': self._region_info(data),
             'generated_at': formatted_timestamp,
@@ -126,6 +157,8 @@ class OutputGenerator:
             'granularity_config': data.get('granularity_config', {}),
             'profile_names': data.get('profile_names', {}),
             'contributions': data.get('contributions', {}),
+            # Usage by caller from the model invocation logs (None: no breakdown asked for)
+            'breakdown': data.get('breakdown'),
             'period_names': period_names
         }
         
@@ -190,27 +223,25 @@ class OutputGenerator:
         if end_time is None:
             end_time = datetime.now().astimezone()
         names = {}
-        for period in ['1hour', '1day', '7days', '14days', '30days']:
-            if period == '1hour':
-                start = end_time - timedelta(hours=1)
-                names[period] = f"Last 1 hour ({start.strftime('%H:%M')}-{end_time.strftime('%H:%M')})"
-            elif period == '1day':
-                start = end_time - timedelta(days=1)
-                names[period] = f"Last 1 day ({start.strftime('%a %H:%M')}-{end_time.strftime('%a %H:%M')})"
-            elif period == '7days':
-                start = end_time - timedelta(days=7)
-                names[period] = f"Last 7 days ({start.strftime('%d %b')}-{end_time.strftime('%d %b')})"
-            elif period == '14days':
-                start = end_time - timedelta(days=14)
-                names[period] = f"Last 14 days ({start.strftime('%d %b')}-{end_time.strftime('%d %b')})"
-            elif period == '30days':
-                start = end_time - timedelta(days=30)
-                names[period] = f"Last 30 days ({start.strftime('%d %b')}-{end_time.strftime('%d %b')})"
+        for period, days in PERIOD_DAYS.items():  # the one period table
+            start = end_time - timedelta(days=days)
+            if days < 1:
+                label, fmt = f"{round(days * 24)} hour", '%H:%M'
+            else:
+                label, fmt = f"{days:g} day{'s' if days != 1 else ''}", '%a %H:%M' if days == 1 else '%d %b'
+            names[period] = f"Last {label} ({start.strftime(fmt)}-{end_time.strftime(fmt)})"
         return names
     
     def _generate_html(self, filename, model_id, timestamp, data):
         """Generate HTML output with interactive graphs"""
         period_names = self._generate_period_names(data.get('end_time'), data.get('tz_offset', '+00:00'))
+        # The breakdown's periods end where the logs were read up to, before the report's end
+        breakdown_end = ((data.get('breakdown') or {}).get('coverage') or {}).get('end')
+        breakdown_period_names = period_names
+        local = data.get('end_time').tzinfo if data.get('end_time') else None
+        if breakdown_end:
+            breakdown_period_names = self._generate_period_names(
+                datetime.fromisoformat(breakdown_end).astimezone(local), data.get('tz_offset', '+00:00'))
 
         # Format timestamp for display
         end_time = data.get('end_time')
@@ -231,6 +262,7 @@ class OutputGenerator:
                 model_id=model_id,
                 endpoint=data.get('endpoint', model_id),
                 application_profile_scope=data.get('application_profile_scope', []),
+                scope_label=data.get('scope_label') or APPLICATION_PROFILE_SCOPE,
                 timestamp=formatted_timestamp,
                 region=region_name,
                 region_info=self._region_info(data),
@@ -239,8 +271,14 @@ class OutputGenerator:
                 quotas=data.get('quotas', {}),
                 profile_names=data.get('profile_names', {}),
                 contributions=data.get('contributions', {}),
+                breakdown=data.get('breakdown'),
+                breakdown_tpm=_breakdown_tpm(data.get('breakdown')),
+                unattributed_label=UNATTRIBUTED,
+                period_ms={period: days * 86400 * 1000 for period, days in PERIOD_DAYS.items()},
                 granularity_config=data.get('granularity_config', {}),
                 period_names=period_names,
+                breakdown_period_names=breakdown_period_names,
+                local_time=functools.partial(_local_time, tz=local),
                 end_time_iso=end_time.isoformat() if end_time else None,
                 service_quotas_console_url=get_service_quotas_console_url(
                     region_name if region_name != 'N/A' else None),

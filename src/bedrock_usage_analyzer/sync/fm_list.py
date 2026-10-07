@@ -6,7 +6,8 @@
 import logging
 from typing import List, Dict
 
-from bedrock_usage_analyzer.utils.yaml_handler import load_fm_list, load_yaml, model_endpoints, save_yaml, valid_models
+from bedrock_usage_analyzer.utils.yaml_handler import (
+    CUSTOM_ENDPOINT, load_fm_list, load_yaml, model_endpoints, quota_slots, save_yaml, valid_models)
 from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.bedrock import (
     fetch_foundation_models,
@@ -63,6 +64,12 @@ def save_models(filepath: str, models: List[Dict]):
 def _empty_endpoint() -> Dict:
     """A new endpoint entry: every quota slot, unmapped (fm-quotas fills them in)."""
     return {'quotas': {'concurrent': None, 'rpm': None, 'tpd': None, 'tpm': None}}
+
+
+def _has_mapped_quota(endpoint) -> bool:
+    """True when a saved endpoint entry maps at least one quota code (the same guarded walk
+    as every other reader of mapped quotas)."""
+    return any(quota_slots([{'model_id': '', 'endpoints': {CUSTOM_ENDPOINT: endpoint}}]))
 
 
 def refresh_region(region: str, update_bundle: bool = False):
@@ -199,10 +206,17 @@ def refresh_region(region: str, update_bundle: bool = False):
             endpoints.pop('base', None)
         if profiles_listed:
             listed = set(profile_map.get(model_id, []))
-            for prefix in [p for p in endpoints if p != 'base' and p not in listed]:
+            for prefix in [p for p in endpoints if p not in ('base', CUSTOM_ENDPOINT) and p not in listed]:
                 del endpoints[prefix]
         if 'ON_DEMAND' in model.get('inference_types', []):
             endpoints.setdefault('base', _empty_endpoint())
+        # 'custom': quotas of the model's on-demand custom model deployments, while the region
+        # lets the model be customized. Mapped ones stay when customization ends: deployments
+        # of earlier custom models keep running against them.
+        if model.get('customizations'):
+            endpoints.setdefault(CUSTOM_ENDPOINT, _empty_endpoint())
+        elif not _has_mapped_quota(endpoints.get(CUSTOM_ENDPOINT)):
+            endpoints.pop(CUSTOM_ENDPOINT, None)
         
         # Add inference profiles if available
         if model_id in profile_map:
@@ -213,7 +227,16 @@ def refresh_region(region: str, update_bundle: bool = False):
                 endpoints.setdefault(prefix, _empty_endpoint())
         
         updated_models.append(model)
-    
+
+    # A base model no longer listed keeps its mapped custom deployment quotas: deployments of
+    # models fine-tuned from it keep running against them
+    listed_ids = {m['model_id'] for m in updated_models}
+    for model_id, saved in existing_models.items():
+        custom = model_endpoints(saved).get(CUSTOM_ENDPOINT)
+        if model_id not in listed_ids and _has_mapped_quota(custom):
+            updated_models.append({'model_id': model_id, 'provider': saved.get('provider') or '',
+                                   'inference_types': [], 'endpoints': {CUSTOM_ENDPOINT: custom}})
+
     # Save updated models
     models_data = {'models': sorted(updated_models, key=lambda x: (x['provider'], x['model_id']))}
     if checkout_file:

@@ -34,6 +34,17 @@ models:
   model_id: ai21.jamba-1-5-mini-v1:0
   provider: AI21 Labs
 - endpoints:
+    base:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+  inference_types:
+  - ON_DEMAND
+  model_id: amazon.nova-2-5-sonic
+  provider: Amazon
+- endpoints:
     global:
       quotas:
         concurrent: null
@@ -70,7 +81,24 @@ models:
   - INFERENCE_PROFILE
   model_id: amazon.nova-2-lite-v1:0
   provider: Amazon
-- endpoints: {}
+- customizations:
+  - FINE_TUNING
+  endpoints:
+    custom:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-3AE9B770
+          name: (Model customization) Sum of on demand custom model deployment requests
+            per minute for Amazon Nova 2 Lite
+        tpd:
+          code: L-88A6D90B
+          name: (Model customization) Sum of on demand custom model deployment tokens
+            per day for Amazon Nova 2 Lite
+        tpm:
+          code: L-0704A05C
+          name: (Model customization) Sum of on demand custom model deployment tokens
+            per minute for Amazon Nova 2 Lite
   inference_types:
   - PROVISIONED
   model_id: amazon.nova-2-lite-v1:0:256k
@@ -144,7 +172,25 @@ models:
   - PROVISIONED
   model_id: amazon.nova-lite-v1:0:24k
   provider: Amazon
-- endpoints: {}
+- customizations:
+  - FINE_TUNING
+  - DISTILLATION
+  endpoints:
+    custom:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-7374C882
+          name: (Model customization) Sum of on demand custom model deployment requests
+            per minute for Amazon Nova Lite
+        tpd:
+          code: L-B706E06A
+          name: (Model customization) Sum of on demand custom model deployment tokens
+            per day for Amazon Nova Lite
+        tpm:
+          code: L-153ADCCB
+          name: (Model customization) Sum of on demand custom model deployment tokens
+            per minute for Amazon Nova Lite
   inference_types:
   - PROVISIONED
   model_id: amazon.nova-lite-v1:0:300k
@@ -183,7 +229,25 @@ models:
   - INFERENCE_PROFILE
   model_id: amazon.nova-micro-v1:0
   provider: Amazon
-- endpoints: {}
+- customizations:
+  - FINE_TUNING
+  - DISTILLATION
+  endpoints:
+    custom:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-531AA149
+          name: (Model customization) Sum of on demand custom model deployment requests
+            per minute for Amazon Nova Micro
+        tpd:
+          code: L-FB6C5C02
+          name: (Model customization) Sum of on demand custom model deployment tokens
+            per day for Amazon Nova Micro
+        tpm:
+          code: L-AA71BFED
+          name: (Model customization) Sum of on demand custom model deployment tokens
+            per minute for Amazon Nova Micro
   inference_types:
   - PROVISIONED
   model_id: amazon.nova-micro-v1:0:128k
@@ -232,7 +296,26 @@ models:
   - PROVISIONED
   model_id: amazon.nova-pro-v1:0:24k
   provider: Amazon
-- endpoints: {}
+- customizations:
+  - FINE_TUNING
+  - DISTILLATION
+  - PREFERENCE_FINE_TUNING
+  endpoints:
+    custom:
+      quotas:
+        concurrent: null
+        rpm:
+          code: L-81D9AFEF
+          name: (Model customization) Sum of on demand custom model deployment requests
+            per minute for Amazon Nova Pro
+        tpd:
+          code: L-D5E3ED5D
+          name: (Model customization) Sum of on demand custom model deployment tokens
+            per day for Amazon Nova Pro
+        tpm:
+          code: L-03EBF703
+          name: (Model customization) Sum of on demand custom model deployment tokens
+            per minute for Amazon Nova Pro
   inference_types:
   - PROVISIONED
   model_id: amazon.nova-pro-v1:0:300k
@@ -271,7 +354,15 @@ models:
   - ON_DEMAND
   model_id: amazon.titan-embed-image-v1
   provider: Amazon
-- endpoints: {}
+- customizations:
+  - FINE_TUNING
+  endpoints:
+    custom:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
   inference_types:
   - PROVISIONED
   model_id: amazon.titan-embed-image-v1:0
@@ -706,9 +797,22 @@ models:
         concurrent: null
         rpm: null
         tpd: null
-        tpm: null
+        tpm:
+          code: L-31AB82D0
+          name: Global cross-region model inference tokens per minute for Anthropic
+            Claude Sonnet 5.5
+    us:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm:
+          code: L-94A31E46
+          name: Cross-region model inference tokens per minute for Anthropic Claude
+            Sonnet 5.5
   inference_profiles:
   - global
+  - us
   inference_types:
   - INFERENCE_PROFILE
   model_id: anthropic.claude-sonnet-5-5
@@ -1609,14 +1713,24 @@ models:
       quotas:
         concurrent: null
         rpm: null
-        tpd: null
-        tpm: null
+        tpd:
+          code: L-5ABF5878
+          name: Global cross-region model inference tokens per day for GPT-6.1 Sol
+        tpm:
+          code: L-B5C023CA
+          name: Global cross-region model inference tokens per minute for GPT-6.1
+            Sol
     us:
       quotas:
         concurrent: null
         rpm: null
-        tpd: null
-        tpm: null
+        tpd:
+          code: L-02B3D3B6
+          name: Model invocation max tokens per day for GPT-6.1 Sol (doubled for cross-region
+            calls)
+        tpm:
+          code: L-8C5F762B
+          name: Cross-region model inference tokens per minute for GPT-6.1 Sol
   inference_profiles:
   - global
   - us
@@ -2177,13 +2291,17 @@ models:
         concurrent: null
         rpm: null
         tpd: null
-        tpm: null
+        tpm:
+          code: L-A4F73742
+          name: Global cross-region model inference tokens per minute for Grok 4.7
     us:
       quotas:
         concurrent: null
         rpm: null
         tpd: null
-        tpm: null
+        tpm:
+          code: L-5DAEA81C
+          name: Cross-region model inference tokens per minute for Grok 4.7
   inference_profiles:
   - global
   - us

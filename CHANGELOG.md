@@ -2,6 +2,31 @@
 
 All notable changes to the Bedrock Usage Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Usage by IAM principal** (`--breakdown principal|session|tag:<key>|metadata:<key>`, `--principal`,
+  or the interactive question; `--log-group` names another log group): for services that share an endpoint instead of having their
+  own application inference profiles, each report breaks its usage down by calling IAM role or user, role
+  session, IAM principal tag or `requestMetadata` key, read from the model invocation logs with CloudWatch
+  Logs Insights (metadata fields only). Rows show tokens, requests, shares of the endpoint total, TPM/RPM
+  (P50, P90, max) and TPD; usage the logs do not hold is its own row. Totals and quotas stay CloudWatch's.
+- **Custom model deployments**: analyze on-demand custom model deployments, picked
+  interactively or passed with `-m <custom-model-deployment ARN>`. Usage comes from CloudWatch
+  under the deployment ARN; limits are the base model's "(Model customization) Sum of on demand
+  custom model deployment ..." quotas, mapped in the fm-list as the base model's `custom`
+  endpoint (added by `refresh fm-list` for models that support customization). A deployment
+  can also be passed by its ID or name.
+
+### Fixed
+- Quota mapping no longer gives an on-demand endpoint the latency-optimized quotas, or a model
+  whose version is part of its name (Nova 2.5 Sonic) the quota of the unversioned family.
+
+### Changed
+- Refreshed bundled fm-lists and quota mappings (adds `amazon.nova-2-5-sonic` and new
+  inference profile endpoints).
+- Requires boto3 1.39.7 or later (custom model deployment APIs).
+
 ## [0.6.0-beta] - 2026-09-30
 
 Combines the AWS GovCloud work from #5 and #6 into one partition layer and fixes #7.

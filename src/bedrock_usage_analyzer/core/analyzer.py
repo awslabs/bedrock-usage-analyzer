@@ -8,18 +8,21 @@ import numpy as np
 import logging
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 
-from bedrock_usage_analyzer.core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher
+from bedrock_usage_analyzer.core.breakdown import BreakdownBuilder
+from bedrock_usage_analyzer.core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher, in_parallel
 from bedrock_usage_analyzer.sync.quota_rules import scrub_conflicting
-from bedrock_usage_analyzer.core.metrics_fetcher import CloudWatchMetricsFetcher
-from bedrock_usage_analyzer.core.output_generator import OutputGenerator
-from bedrock_usage_analyzer.aws.bedrock import endpoint_id, get_endpoint_quota_keywords, get_regional_profile_prefixes
+from bedrock_usage_analyzer.core.metrics_fetcher import PERIOD_DAYS, CloudWatchMetricsFetcher
+from bedrock_usage_analyzer.core.output_generator import APPLICATION_PROFILE_SCOPE, DEPLOYMENT_SCOPE, OutputGenerator
+from bedrock_usage_analyzer.aws.bedrock import (
+    endpoint_id, get_endpoint_quota_keywords, get_regional_profile_prefixes)
+from bedrock_usage_analyzer.aws.custom_models import deployment_short_id
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.servicequotas import (
     QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK, list_quota_codes, lookup_quota)
 from bedrock_usage_analyzer.utils.yaml_handler import (
-    endpoint_quotas, fm_endpoints, has_endpoint, load_fm_list, profile_endpoints)
+    CUSTOM_ENDPOINT, endpoint_quotas, fm_endpoints, has_endpoint, load_fm_list, profile_endpoints)
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
 
 logger = logging.getLogger(__name__)
@@ -29,14 +32,24 @@ logger = logging.getLogger(__name__)
 # beats parallel per-code lookups (4 at a time) for a few dozen codes
 QUOTA_LISTING_THRESHOLD = 40
 
+
+def _base_unknown(model_id, deployment_arns) -> bool:
+    """True for a deployment target without a known base model: its deployment ID stands in
+    for the model ID (UserInputs._custom_deployment_config)."""
+    return model_id in {deployment_short_id(a) for a in deployment_arns}
+
 class BedrockAnalyzer:
     """Main orchestrator for Bedrock token usage analysis"""
     
     TIME_PERIODS = ["1hour", "1day", "7days", "14days", "30days"]
     
-    def __init__(self, region, granularity_config, profile_fetcher=None, fm_models=None):
+    def __init__(self, region, granularity_config, profile_fetcher=None, fm_models=None,
+                 breakdown=None, account=None):
         self.region = region
         self.granularity_config = granularity_config
+        # Optional usage breakdown by caller, from the model invocation logs (core/breakdown.py)
+        self.breakdown = breakdown
+        self.account = account
 
         # Get local timezone - use system's local timezone
         local_dt = datetime.now().astimezone()
@@ -249,6 +262,20 @@ class BedrockAnalyzer:
         app_ids = tuple(sorted(model_config.get('application_profile_ids') or ()))
         return (model_config['model_id'], model_config.get('profile_prefix'), app_ids)
 
+    def _warn_other_deployments(self, base, deployment_arns):
+        """Tell the user when other active deployments share the base model's custom
+        deployment quotas: those limits are account-wide sums, so this report's
+        utilization leaves their usage out."""
+        fetcher = self.profile_fetcher
+        if not isinstance(fetcher, InferenceProfileFetcher) or _base_unknown(base, deployment_arns):
+            return  # no base model: no shared quotas
+        others = fetcher.other_deployments_of(base, deployment_arns)
+        if others:
+            names = ', '.join(f"{d['name']} ({deployment_short_id(d['arn'])})" for d in others)
+            logger.info(f"  Note: {len(others)} other active custom model deployment(s) of {base} share its "
+                        f"custom deployment quotas, so the utilization shown leaves their usage out: {names}. "
+                        f"Select them too (e.g. 'all' under 'Custom model deployments') for the account-wide view.")
+
     def _warn_other_sources(self, model_id, profile_prefix, final_model_ids):
         """Tell the user when their application profiles sit under a different endpoint."""
         if len(final_model_ids) > 1:
@@ -292,6 +319,8 @@ class BedrockAnalyzer:
             logger.info(f"  {model_id} ({profile_prefix or 'base'}): {len(final_model_ids)} profile(s) - {', '.join(profile_list)}")
             if not app_ids:
                 self._warn_other_sources(model_id, profile_prefix, final_model_ids)
+            elif profile_prefix == CUSTOM_ENDPOINT:
+                self._warn_other_deployments(model_id, app_ids)
 
         logger.info(f"Profile discovery complete.\n")
 
@@ -307,6 +336,20 @@ class BedrockAnalyzer:
 
         region_info = get_region_info(self.region)
         processed = set()
+        builder = None
+        if self.breakdown is not None:
+            # One set of Logs Insights queries for every target of the run: the log group is
+            # scanned once, whatever the number of reports
+            builder = BreakdownBuilder(self.breakdown, self.region, self.bedrock_client, self.metrics_fetcher,
+                                       self._calculate_stats_from_time_series, self.account,
+                                       parallel=in_parallel,
+                                       known_models=[m.get('model_id') for m in self._fm_list()])
+            run_ids = sorted({cw_id for ids, _, _ in all_profiles_map.values() for cw_id in ids})
+            if not run_ids:  # no target has a ModelId to report on: nothing to read the logs for
+                builder = None
+            else:
+                # The real clock: log records expire by it (the breakdown's end is rounded down)
+                builder.prepare(run_ids, datetime.now(timezone.utc), max(PERIOD_DAYS[p] for p in self.granularity_config))
 
         # Process each model
         for model_config in models:
@@ -329,7 +372,7 @@ class BedrockAnalyzer:
 
             # Step 2: Fetch quotas
             quota_codes = self._load_quota_codes(model_id, profile_prefix)
-            retired = profile_prefix not in (None, UNKNOWN_SOURCE) and \
+            retired = profile_prefix not in (None, UNKNOWN_SOURCE, CUSTOM_ENDPOINT) and \
                 not self._system_profile_listed(endpoint_id(model_id, profile_prefix))
             if profile_prefix is None and app_ids:
                 # A base-model copy of a model the fm-list knows without an on-demand endpoint:
@@ -342,6 +385,20 @@ class BedrockAnalyzer:
                     else "the report will show usage without limits"
                 logger.info(f"  {endpoint_id(model_id, profile_prefix)} is not offered in "
                             f"{self.region}; {ending}")
+            elif not any(quota_codes.values()) and profile_prefix == CUSTOM_ENDPOINT:
+                if _base_unknown(model_id, app_ids):
+                    # No base model: the deployment ID stands in for it (said when it was
+                    # selected), so no refresh can map limits
+                    fix = ""
+                elif self._endpoint_listed(model_id, profile_prefix):
+                    # fm-quotas maps them only where Service Quotas lists custom deployment quotas
+                    fix = (f" If Service Quotas lists custom model deployment quotas for it in {self.region}, "
+                           f"bua refresh fm-quotas {self.region} maps them")
+                else:
+                    # A model list from before custom model deployments were mapped
+                    fix = f" To map them: bua refresh fm-list {self.region}, then bua refresh fm-quotas {self.region}"
+                logger.info(f"  No custom model deployment quotas are known for {model_id} in "
+                            f"{self.region}; the report will show usage without limits.{fix}")
             elif not any(quota_codes.values()) and profile_prefix != UNKNOWN_SOURCE:
                 profiles = profile_endpoints(self._fm_list(), model_id)
                 if (profile_prefix or 'base') not in get_endpoint_quota_keywords():
@@ -354,6 +411,9 @@ class BedrockAnalyzer:
                     # No on-demand endpoint: refreshing cannot add one, its profiles have the limits
                     fix = "analyze one of its inference profiles instead: " + \
                         ', '.join(endpoint_id(model_id, p) for p in profiles)
+                elif profile_prefix is None and fm_endpoints(self._fm_list(), model_id) == {CUSTOM_ENDPOINT}:
+                    # Listed only for customization: no refresh adds an on-demand endpoint
+                    fix = "analyze the custom model deployments of models customized from it instead"
                 else:
                     # fm-quotas only maps endpoints already in the model list
                     fix = f"bua refresh fm-list {self.region}, then bua refresh fm-quotas {self.region}"
@@ -423,14 +483,26 @@ class BedrockAnalyzer:
 
             # Step 5: Calculate contributions
             contributions = self._calculate_contributions(model_results, time_series_data, profile_names, profile_metadata)
+            breakdown_section = None
+            if builder is not None:
+                logger.info(f"  Breaking usage down by {self.breakdown.label}...")
+                breakdown_section = builder.section(final_model_ids, profile_names, fetched_data_all_profiles,
+                                                    self.granularity_config, self.TIME_PERIODS)
 
             # Step 6: Generate output
             logger.info(f"  Generating output files...")
             end_time_local = datetime.now(self.local_tz)
-            if profile_prefix == UNKNOWN_SOURCE:
-                endpoint = f"{model_id} (source endpoint unknown)"
+            scope_label = APPLICATION_PROFILE_SCOPE
+            if profile_prefix == CUSTOM_ENDPOINT:
+                endpoint = f"{model_id} (custom model deployment)"
+                scope_label = DEPLOYMENT_SCOPE
+                # Deployment IDs, not their ARNs, in the file name
+                file_label = self._file_label(f"custom-deployment.{model_id}",
+                                              [deployment_short_id(a) for a in app_ids], marker='deployment')
             else:
-                endpoint = endpoint_id(model_id, profile_prefix)
+                endpoint = f"{model_id} (source endpoint unknown)" if profile_prefix == UNKNOWN_SOURCE \
+                    else endpoint_id(model_id, profile_prefix)
+                file_label = self._file_label(endpoint, app_ids)
             scope = [profile_names.get(pid, pid) for pid in final_model_ids] if app_ids else []
 
             self.output_generator.generate({
@@ -447,19 +519,25 @@ class BedrockAnalyzer:
                     'region_info': region_info,
                     'endpoint': endpoint,
                     'application_profile_scope': scope,
-                    'file_label': self._file_label(endpoint, app_ids),
+                    'scope_label': scope_label,
+                    'file_label': file_label,
+                    'breakdown': breakdown_section,
                 }
             })
 
     @staticmethod
-    def _file_label(endpoint, app_ids):
-        """Distinct output name per target, so two endpoints of one model do not overwrite each other."""
+    def _file_label(endpoint, app_ids, marker='app'):
+        """Distinct output name per target, so two endpoints of one model do not overwrite each other.
+
+        ``marker`` names what the IDs are: 'app' (application profiles) or 'deployment'.
+        """
         if app_ids:
             if len(app_ids) <= 3:
-                return f"{endpoint}-app-{'-'.join(app_ids)}"
-            # Many profiles: a short digest of the sorted IDs keeps different sets apart
+                return f"{endpoint}-{marker}-{'-'.join(app_ids)}"
+            # Many targets: a short digest of the sorted IDs keeps different sets apart
             digest = hashlib.sha256('\n'.join(sorted(app_ids)).encode()).hexdigest()[:8]
-            return f"{endpoint}-app-{len(app_ids)}profiles-{digest}"
+            kind = 'profiles' if marker == 'app' else 'deployments'
+            return f"{endpoint}-{marker}-{len(app_ids)}{kind}-{digest}"
         return endpoint
 
 
