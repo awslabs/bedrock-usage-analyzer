@@ -7,7 +7,7 @@ import logging
 from typing import List, Dict
 
 from bedrock_usage_analyzer.utils.yaml_handler import (
-    CUSTOM_ENDPOINT, load_fm_list, load_yaml, model_endpoints, save_yaml, valid_models)
+    CUSTOM_ENDPOINT, load_fm_list, load_yaml, model_endpoints, quota_slots, save_yaml, valid_models)
 from bedrock_usage_analyzer.utils.paths import get_writable_path, get_bundle_path
 from bedrock_usage_analyzer.aws.bedrock import (
     fetch_foundation_models,
@@ -67,9 +67,9 @@ def _empty_endpoint() -> Dict:
 
 
 def _has_mapped_quota(endpoint) -> bool:
-    """True when a saved endpoint entry maps at least one quota code."""
-    quotas = endpoint.get('quotas') if isinstance(endpoint, dict) else None
-    return isinstance(quotas, dict) and any(isinstance(q, dict) and q.get('code') for q in quotas.values())
+    """True when a saved endpoint entry maps at least one quota code (the same guarded walk
+    as every other reader of mapped quotas)."""
+    return any(quota_slots([{'model_id': '', 'endpoints': {CUSTOM_ENDPOINT: endpoint}}]))
 
 
 def refresh_region(region: str, update_bundle: bool = False):

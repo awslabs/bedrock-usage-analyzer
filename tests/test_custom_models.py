@@ -460,6 +460,15 @@ def test_selected_deployments_read_each_custom_model_once(monkeypatch):
     assert client.calls.count('GetCustomModel') == 1
 
 
+@pytest.mark.parametrize('endpoint,mapped', [
+    (None, False), ('TODO', False), ({'quotas': 'x'}, False), ({'quotas': {'tpm': None}}, False),
+    ({'quotas': {'tpm': {'name': 'n'}}}, False), ({'quotas': {'tpm': {'code': 'L-1'}}}, True),
+])
+def test_a_custom_endpoint_counts_as_mapped_as_every_quota_reader_sees_it(endpoint, mapped):
+    from bedrock_usage_analyzer.sync.fm_list import _has_mapped_quota
+    assert _has_mapped_quota(endpoint) is mapped
+
+
 def test_fm_list_keeps_mapped_custom_quotas_of_a_model_no_longer_listed(monkeypatch, tmp_path):
     from bedrock_usage_analyzer.sync import fm_list
     (tmp_path / 'data').mkdir(exist_ok=True)

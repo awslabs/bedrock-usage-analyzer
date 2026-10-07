@@ -208,11 +208,14 @@ class UserInputs:
         try:
             group, reason = logging_destination(fetcher.bedrock_client)
         except AWS_ERRORS as e:
-            # Logging may well be on: the fix is the permission, or naming the group
+            if is_access_denied(e):
+                # Logging may well be on: the fix is the permission, or naming the group
+                fix = ("Allow bedrock:GetModelInvocationLoggingConfiguration, or pass --breakdown with "
+                       "--log-group <invocation log group>.")
+            else:  # throttled, unreachable, expired credentials: not a permission to add
+                fix = troubleshooting_hint(e, self.region) or "Run again to be offered it."
             logger.info(f"\nUsage by caller (IAM principal) is not offered: the model invocation logging "
-                        f"configuration could not be read ({e}). Allow "
-                        f"bedrock:GetModelInvocationLoggingConfiguration, or pass --breakdown with "
-                        f"--log-group <invocation log group>.")
+                        f"configuration could not be read ({e}). {fix}")
             return None
         if not group:
             logger.info(f"\nUsage by caller (IAM principal) is not available: {reason}. {ENABLE_HINT}")

@@ -1455,3 +1455,12 @@ def test_interactive_breakdown_is_not_offered_without_logging(monkeypatch, caplo
     assert inputs._select_breakdown() is None and 'could not be read' in caplog.text
     # The advice is the missing permission (logging may well be on), not to enable logging
     assert 'bedrock:GetModelInvocationLoggingConfiguration' in caplog.text and 'enable model' not in caplog.text
+
+    # Throttled (or unreachable): no permission to add, so none is suggested
+    class Throttled(FakeBedrock):
+        def get_model_invocation_logging_configuration(self):
+            raise aws_error('ThrottlingException', 'GetModelInvocationLoggingConfiguration')
+    inputs = inputs_with(monkeypatch, Throttled(), [])
+    caplog.clear()
+    assert inputs._select_breakdown() is None and 'could not be read' in caplog.text
+    assert 'Allow bedrock:' not in caplog.text
