@@ -293,14 +293,14 @@
       "summary": "Usage per caller from Bedrock model invocation logs: breakdown options, principal normalization, modelId spellings, Logs Insights query building and chunked fetching, IAM principal tags",
       "methods": [
         {"name": "Breakdown.parse", "description": "Parse principal | session | tag:<key> | metadata:<key>, principal filters and a log group."},
-        {"name": "normalize_principal", "description": "Caller ARN to 'role/<name>' (all sessions of a role) or 'user/<path/name>'."},
+        {"name": "normalize_principal", "description": "Caller ARN to 'role/<name>' (all sessions of a role) or 'user/<name>' (IAM paths dropped); other callers keep their ARN."},
         {"name": "logging_destination", "description": "The region's invocation log group, or why there is none."},
         {"name": "model_id_forms", "description": "Every modelId spelling the logs may record for each CloudWatch ModelId value."},
         {"name": "build_query", "description": "Logs Insights query of per-minute tokens and requests by modelId and caller."},
         {"name": "InvocationLogFetcher", "description": "Runs the query in day-long windows, a few at a time, splitting full windows."},
         {"name": "principal_tags", "description": "IAM tags of role and user principals (ListRoleTags / ListUserTags)."}
       ],
-      "imports_libraries": ["botocore", "concurrent", "dataclasses", "datetime", "logging", "re", "time", "typing"],
+      "imports_libraries": ["botocore", "concurrent", "dataclasses", "datetime", "logging", "re", "threading", "time", "typing"],
       "imports_files": ["bedrock_usage_analyzer.aws.bedrock", "bedrock_usage_analyzer.core.errors", "bedrock_usage_analyzer.utils.partition"]
     },
     {
