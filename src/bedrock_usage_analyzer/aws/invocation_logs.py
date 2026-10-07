@@ -356,7 +356,7 @@ class InvocationLogFetcher:
                     if group.get('logGroupName') == self.log_group:
                         return group
         except ClientError as e:
-            if e.response.get('Error', {}).get('Code') not in ('AccessDeniedException', 'AccessDenied'):
+            if not is_access_denied(e):
                 raise
             # It only narrows the start (creation, retention): queries may still be allowed
             logger.info(f"  Note: {self.log_group} could not be described ({e}); reading from the "

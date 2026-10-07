@@ -385,6 +385,10 @@ def test_the_report_says_when_the_tool_cut_a_window_at_the_row_limit(monkeypatch
     # A cut window that starts before this report's coverage is quoted from the coverage start
     start = END - timedelta(days=2) + timedelta(minutes=3)
     assert f"between {start:%Y-%m-%d %H:%M} and" in builder._notes(set(), start, [], [US_HAIKU])[0]
+    # Windows of several query batches: the latest end, not the end of the latest start
+    ids = frozenset({US_HAIKU})
+    builder._truncated = [(T1 - timedelta(minutes=2), T3, ids), (T1, T2, ids)]
+    assert f"and {T3:%Y-%m-%d %H:%M} UTC" in builder._notes(set(), END - timedelta(hours=1), [], [US_HAIKU])[0]
 
 
 @pytest.mark.parametrize('status', ['Failed', 'Cancelled', 'Timeout'])
@@ -1130,6 +1134,20 @@ def test_a_log_group_newer_than_the_breakdown_end_says_why_it_is_empty():
     assert 'holds no records' in builder.section([US_HAIKU], {}, {}, GRANULARITY, ['1hour'])['unavailable']
 
 
+def test_a_denied_logging_configuration_points_to_log_group():
+    class Denied(FakeBedrock):
+        def __init__(self, code):
+            super().__init__()
+            self.code = code
+
+        def get_model_invocation_logging_configuration(self):
+            raise aws_error(self.code, 'GetModelInvocationLoggingConfiguration')
+    reason = builder_for(Breakdown(), FakeLogs(), bedrock=Denied('AccessDeniedException')).prepare([US_HAIKU], END, 1)
+    assert '--log-group' in reason and 'GetModelInvocationLoggingConfiguration' in reason
+    reason = builder_for(Breakdown(), FakeLogs(), bedrock=Denied('ThrottlingException')).prepare([US_HAIKU], END, 1)
+    assert 'could not read' in reason and '--log-group' not in reason
+
+
 def test_a_log_group_that_cannot_be_described_is_read_from_the_requested_start():
     class Denied(FakeLogs):
         def __init__(self, code, **kwargs):
@@ -1344,8 +1362,8 @@ def test_interactive_breakdown_choice(monkeypatch, answers, expected):
     inputs = inputs_with(monkeypatch, FakeBedrock(logging_config=LOGGING), answers)
     chosen = inputs._select_breakdown()
     assert (None if chosen is None else (chosen.kind, chosen.key)) == expected
-    if chosen:
-        assert chosen.log_group == '/bedrock/logs'
+    if chosen:  # the report reads the group from the logging configuration itself
+        assert chosen.log_group is None
 
 
 @pytest.mark.parametrize('answers', [['2'], ['3'], ['4']])

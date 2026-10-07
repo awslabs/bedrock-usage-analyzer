@@ -230,12 +230,14 @@ class UserInputs:
         if kind is None:
             return None
         try:
-            breakdown = Breakdown.parse(PRINCIPAL, log_group=group)
+            Breakdown.parse(PRINCIPAL, log_group=group)
         except BreakdownError as e:  # the log group: nothing the user types can fix it
             print(f"  {e}")
             return None
+        # Without the group itself: the report reads it from the logging configuration again,
+        # and so says what to fix there (not --log-group, never passed) if the group is gone
         if kind == PRINCIPAL:
-            return breakdown
+            return Breakdown.parse(PRINCIPAL)
         while True:
             if kind in (TAG, METADATA):
                 key = input(f"{'Tag' if kind == TAG else 'Metadata'} key (Enter for no breakdown): ").strip()
@@ -244,7 +246,7 @@ class UserInputs:
             else:
                 key = ''
             try:
-                return Breakdown.parse(f"{kind}:{key}" if key else kind, log_group=group)
+                return Breakdown.parse(f"{kind}:{key}" if key else kind)
             except BreakdownError as e:  # only the key is left to be wrong
                 print(f"  {e}")
 

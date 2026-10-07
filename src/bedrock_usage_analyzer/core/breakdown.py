@@ -20,7 +20,7 @@ from bedrock_usage_analyzer.aws.sts import get_account_id
 from bedrock_usage_analyzer.aws.invocation_logs import (
     MAX_ROWS, METADATA, PRINCIPAL, SESSION, TAG, UNATTRIBUTED, UNKNOWN_CALLER, Breakdown, InvocationLogFetcher,
     LogsQueryError, has_tags, logging_destination, main_error, model_id_forms, next_minute, principal_tags)
-from bedrock_usage_analyzer.core.errors import AWS_ERRORS, troubleshooting_hint
+from bedrock_usage_analyzer.core.errors import AWS_ERRORS, is_access_denied, troubleshooting_hint
 from bedrock_usage_analyzer.core.metrics_fetcher import PERIOD_DAYS
 
 logger = logging.getLogger(__name__)
@@ -92,7 +92,15 @@ class BreakdownBuilder:
         end = (now - LOG_DELIVERY_DELAY).replace(second=0, microsecond=0)
         try:
             if not self.log_group:
-                self.log_group, reason = logging_destination(self.bedrock_client)
+                try:
+                    self.log_group, reason = logging_destination(self.bedrock_client)
+                except AWS_ERRORS as e:
+                    if not is_access_denied(e):
+                        raise
+                    # Logging may well be on: naming the group skips this call
+                    return self._give_up(f"the model invocation logging configuration could not be read "
+                                         f"({e}); allow bedrock:GetModelInvocationLoggingConfiguration, or "
+                                         f"pass --log-group <invocation log group>")
                 if not self.log_group:
                     return self._give_up(f"{reason}. {ENABLE_HINT}")
             if self.account is None:
@@ -174,7 +182,7 @@ class BreakdownBuilder:
             # The tool cut these, not the logs: say so, or the remainder row would blame logging
             shortest = min(b - a for a, b in cut)
             notes.append(f"{len(cut)} invocation-log query window(s) between {max(cut[0][0], start):%Y-%m-%d %H:%M} and "
-                         f"{cut[-1][1]:%Y-%m-%d %H:%M} UTC returned the Logs Insights limit of {MAX_ROWS} rows "
+                         f"{max(b for _, b in cut):%Y-%m-%d %H:%M} UTC returned the Logs Insights limit of {MAX_ROWS} rows "
                          f"even when split down to {int(shortest.total_seconds() // 60)} minutes; the usage "
                          f"of callers left out there is counted in '{UNATTRIBUTED}'")
         if no_cloudwatch:
