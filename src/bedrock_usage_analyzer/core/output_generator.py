@@ -146,6 +146,8 @@ class OutputGenerator:
             'application_profile_scope': data.get('application_profile_scope', []),
             # What the scope names are: application inference profiles or custom model deployments
             'scope_label': data.get('scope_label') or APPLICATION_PROFILE_SCOPE,
+            # Custom Model Import models: reported without limits (they have no quotas)
+            'imported': bool(data.get('imported')),
             'region': data.get('region', 'N/A'),
             'region_info': self._region_info(data),
             'generated_at': formatted_timestamp,
@@ -264,7 +266,7 @@ class OutputGenerator:
                 endpoint=data.get('endpoint', model_id),
                 application_profile_scope=data.get('application_profile_scope', []),
                 scope_label=data.get('scope_label') or APPLICATION_PROFILE_SCOPE,
-                imported=data.get('scope_label') == IMPORTED_SCOPE,
+                imported=bool(data.get('imported')),
                 timestamp=formatted_timestamp,
                 region=region_name,
                 region_info=self._region_info(data),

@@ -551,6 +551,7 @@ class BedrockAnalyzer:
                     'endpoint': endpoint,
                     'application_profile_scope': scope,
                     'scope_label': scope_label,
+                    'imported': imported,
                     'file_label': file_label,
                     'breakdown': breakdown_section,
                 }

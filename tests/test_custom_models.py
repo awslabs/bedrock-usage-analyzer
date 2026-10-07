@@ -281,6 +281,14 @@ def test_a_failed_deployment_listing_is_requested_once_and_reported(monkeypatch,
     with pytest.raises(SystemExit):
         inputs._parse_model_id('zzzzzzzzzzzz')
     assert client.calls.count('ListCustomModelDeployments') == 1
+    # The direct read said there is no such deployment: no 'it may be one'
+    assert 'Custom model deployments could not be listed either' not in caplog.text
+
+    class Throttled(NoListing):
+        def get_custom_model_deployment(self, customModelDeploymentIdentifier):
+            raise aws_error('ThrottlingException', 'GetCustomModelDeployment')
+    with pytest.raises(SystemExit):
+        _inputs(monkeypatch, Throttled())._parse_model_id('zzzzzzzzzzzz')
     assert 'Custom model deployments could not be listed either' in caplog.text
     # A deployment name still resolves without the listing: GetCustomModelDeployment takes it
     assert inputs._parse_model_id('my-lite')['application_profile_ids'] == [DEPLOYMENT]
@@ -629,6 +637,17 @@ def test_an_imported_model_name_is_read_when_the_listing_fails(monkeypatch, capl
         _inputs(monkeypatch, NotFound())._parse_model_id('nothing-by-that-name')
     assert 'Imported models could not be listed either' not in caplog.text
 
+    # A throttled read says nothing about whether it exists: it may be one
+    caplog.clear()
+
+    class Throttled(NoList):
+        def get_imported_model(self, modelIdentifier):
+            raise aws_error('ThrottlingException', 'GetImportedModel')
+    with pytest.raises(SystemExit):
+        _inputs(monkeypatch, Throttled())._parse_model_id('nothing-by-that-name')
+    assert 'Imported models could not be listed either' in caplog.text
+    caplog.clear()
+
     # Not readable either: it may be one
     class Neither(NoList):
         def get_imported_model(self, modelIdentifier):
@@ -636,6 +655,8 @@ def test_an_imported_model_name_is_read_when_the_listing_fails(monkeypatch, capl
     with pytest.raises(SystemExit):
         _inputs(monkeypatch, Neither())._parse_model_id('nothing-by-that-name')
     assert 'Imported models could not be listed either' in caplog.text
+    # A denied listing is also what a region without Custom Model Import answers
+    assert 'if us-east-1 offers Custom Model Import, it may be one' in caplog.text
 
 
 def test_imported_models_are_offered_in_the_picker(monkeypatch):
@@ -657,7 +678,9 @@ def test_a_failed_imported_model_listing_hides_the_choice_once(monkeypatch, capl
     inputs = _inputs(monkeypatch, client)
     assert inputs._imported_models() == [] and inputs._imported_models() == []
     assert client.calls.count('ListImportedModels') == 1
-    assert caplog.text.count('Imported models could not be listed') == 1
+    # Denied is also what a region without Custom Model Import answers: said as either, once
+    assert caplog.text.count('Custom Model Import is not available in us-east-1') == 1
+    assert 'AccessDeniedException' not in caplog.text
     # Without the API (an older boto3) the choice is hidden too, and the boto3 needed is named
     assert _inputs(monkeypatch, FakeCustom())._imported_models() == []
     assert 'Imported models need boto3 1.39.7 or later' in caplog.text
@@ -684,4 +707,8 @@ def test_an_imported_model_target_keeps_its_noted_name(monkeypatch):
     # Not noted: named by its ID, with no deployment read
     other = IMPORTED.replace('imp0000001', 'imp2')
     assert InferenceProfileFetcher(client).find_profiles('imp2', 'imported', [other])[1] == {other: 'imp2'}
+    # Not noted but listed (an API caller that listed them): named from the listing
+    listed = InferenceProfileFetcher(client)
+    listed.list_imported_models()
+    assert listed.find_profiles('imp0000001', 'imported', [IMPORTED])[1] == {IMPORTED: 'my-qwen'}
     assert 'GetCustomModelDeployment' not in client.calls

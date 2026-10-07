@@ -945,8 +945,9 @@
                 }
             }
             
-            // Add max_tokens throttling disclaimer for TPM and TPD charts
-            if (metricType === 'TPM' || metricType === 'TPD') {
+            // Add max_tokens throttling disclaimer for TPM and TPD charts (imported models have
+            // no token quotas: their note above says what their throttles mean)
+            if ((metricType === 'TPM' || metricType === 'TPD') && !{{ imported | tojson }}) {
                 const existingThrottleDisclaimer = Array.from(canvasElement.parentNode.querySelectorAll('.throttle-disclaimer'));
                 if (existingThrottleDisclaimer.length === 0) {
                     const throttleDisclaimer = document.createElement('p');

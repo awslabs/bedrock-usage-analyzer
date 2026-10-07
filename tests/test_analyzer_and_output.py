@@ -167,8 +167,11 @@ def test_several_imported_models_in_one_report_are_named_by_their_ids(analyzer, 
                      output_dir=str(out))
     files = reports(out)
     assert files[0].startswith('imported-models-model-4models-')
-    assert json.loads((out / files[1]).read_text())['endpoint'] == '4 imported models'
-    assert 'no token or request quotas' in (out / files[0]).read_text()
+    data = json.loads((out / files[1]).read_text())
+    assert data['endpoint'] == '4 imported models' and data['imported'] is True
+    html = (out / files[0]).read_text()
+    # Its own note, and the per-chart max_tokens note switched off
+    assert 'no token or request quotas' in html and '&& !true)' in html
 
 
 def test_two_endpoints_of_one_model_do_not_overwrite(analyzer, tmp_path):

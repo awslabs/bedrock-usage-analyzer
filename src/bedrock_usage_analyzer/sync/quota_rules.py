@@ -24,13 +24,17 @@ _NAME_VERSION = re.compile(r'(?<![\w.])(\d{1,2}(?:\.\d{1,2})?)(?![\w.])')
 # The API version of a model ID ('-v2:0', '-v1') and of a quota name ('Claude 3.5 Sonnet V2';
 # not 'Marengo Embed V2.7', which is the model's generation)
 _ID_API_VERSION = re.compile(r'-v(\d+)(?::\d+)?$')
-_NAME_API_VERSION = re.compile(r'(?<![\w.])V(\d+)(?![\w.])')
+_NAME_API_VERSION = re.compile(r'(?<![\w.])[Vv](\d+)(?![\w.])')
 # Models whose quotas differ from a sibling's only by words the rules above cannot tell apart:
 # each quota of the model names these words ('... Claude 3.5 Sonnet' is the V1 model's quota,
 # '... Nemotron Nano 2' the 9B model's)
 _NAME_MUST_SAY = {
     'anthropic.claude-3-5-sonnet-20241022-v2:0': 'claude 3.5 sonnet v2',
     'nvidia.nemotron-nano-12b-v2': 'nemotron nano 2 vl',
+}
+# ... and the other way: the sibling's words never name this model's quota
+_NAME_MUST_NOT_SAY = {
+    'nvidia.nemotron-nano-9b-v2': 'nemotron nano 2 vl',
 }
 
 
@@ -154,8 +158,12 @@ def mapping_conflict(model_id: str, endpoint_type: str, quota_name: Optional[str
         # 'Claude 3.5 Sonnet V2' is the quota of claude-3-5-sonnet-20241022-v2:0, not of -v1:0
         return f"quota is for V{'/V'.join(sorted(name_api))}, model is v{id_api.group(1)}"
     must_say = _NAME_MUST_SAY.get(model_id)
-    if must_say and must_say not in ' '.join(name.split()):
+    words = ' '.join(name.split())
+    if must_say and must_say not in words:
         return f"quota is not for {must_say} (a sibling model's)"
+    must_not_say = _NAME_MUST_NOT_SAY.get(model_id)
+    if must_not_say and must_not_say in words:
+        return f"quota is for {must_not_say} (a sibling model's)"
     return None
 
 

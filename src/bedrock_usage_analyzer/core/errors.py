@@ -47,6 +47,12 @@ def _error_code(error: Exception) -> Optional[str]:
     return None
 
 
+def is_not_found(error: Exception) -> bool:
+    """True when the API answered that the resource does not exist (or that the identifier
+    cannot name one), not for a throttle, network or permission error."""
+    return _error_code(error) in ('ResourceNotFoundException', 'ValidationException')
+
+
 def is_access_denied(error: Exception) -> bool:
     """True for permission errors, which do not go away when the call is retried."""
     if _error_code(error) in _ACCESS_CODES:

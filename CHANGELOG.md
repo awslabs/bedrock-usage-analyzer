@@ -32,8 +32,7 @@ All notable changes to the Bedrock Usage Analyzer will be documented in this fil
   whose version is part of its name (Nova 2.5 Sonic) the quota of the unversioned family, a
   model a quota that names another API version (a "... Claude 3.5 Sonnet V2" quota for
   `anthropic.claude-3-5-sonnet-20240620-v1:0`), or Claude 3.5 Sonnet V2 and Nemotron Nano 12B v2
-  the quotas of their sibling models (Claude 3.5 Sonnet, Nemotron Nano 2), so a refresh cannot
-  bring those mappings back.
+  and 9B v2 the quotas of their sibling models, so a refresh cannot bring those mappings back.
 - Bundled quota mappings: `nvidia.nemotron-nano-12b-v2` now uses the "NVIDIA Nemotron Nano 2 VL"
   quotas (it had the 9B model's "Nemotron Nano 2" ones, 10 regions); the `us` profiles of
   Stable Image Outpaint, Search and Recolor and Style Transfer (us-east-1, us-east-2, us-west-2)

@@ -296,6 +296,11 @@ def test_a_quota_of_another_api_version_is_rejected():
     assert 'sibling' in mapping_conflict('nvidia.nemotron-nano-12b-v2', 'base', nano, REGIONAL)
     assert mapping_conflict('nvidia.nemotron-nano-12b-v2', 'base', nano + ' VL', REGIONAL) is None
     assert mapping_conflict('nvidia.nemotron-nano-9b-v2', 'base', nano, REGIONAL) is None
+    assert 'sibling' in mapping_conflict('nvidia.nemotron-nano-9b-v2', 'base', nano + ' VL', REGIONAL)
+    # The API version written in lowercase
+    assert mapping_conflict('anthropic.claude-3-5-sonnet-20240620-v1:0', 'apac',
+                            'Cross-region model inference requests per minute for Anthropic Claude 3.5 Sonnet v2',
+                            REGIONAL) == 'quota is for V2, model is v1'
     # A 'V3' that is the model's generation, as its ID says
     assert mapping_conflict('deepseek.v3-v1:0', 'base',
                             'On-demand model inference tokens per minute for DeepSeek V3', REGIONAL) is None

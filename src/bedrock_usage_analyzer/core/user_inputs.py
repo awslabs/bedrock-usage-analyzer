@@ -14,7 +14,7 @@ from ..aws.custom_models import DEPLOYMENT_KIND, IMPORTED_KIND, base_model_id_in
 from ..aws.invocation_logs import (
     METADATA, PRINCIPAL, SESSION, TAG, Breakdown, BreakdownError, logging_destination)
 from ..core.breakdown import CONFIG_DENIED_HINT, ENABLE_HINT
-from ..core.errors import AWS_ERRORS, is_access_denied, troubleshooting_hint
+from ..core.errors import AWS_ERRORS, is_access_denied, is_not_found, troubleshooting_hint
 from ..core.profile_fetcher import (
     UNKNOWN_SOURCE, InferenceProfileFetcher, deployment_read_error, missing_deployment_api)
 from ..sync.regions import load_region_names
@@ -113,7 +113,8 @@ class UserInputs:
         self.breakdown: Optional[Breakdown] = None
         self._deployment_listing_noted = False
         self._imported_listing_noted = False
-        self._not_imported = set()  # identifiers GetImportedModel found to be no imported model
+        # Identifiers a direct read found to be no deployment / no imported model
+        self._not_found = {'deployment': set(), 'imported': set()}
         self._fm_lists: Dict[str, Optional[List[Dict]]] = {}  # None: the region has no fm-list
         self.granularity_config = {  # The aggregation granularity for different metrics window/period
             '1hour': 300,   # 5 minutes
@@ -693,6 +694,8 @@ class UserInputs:
             try:
                 deployment = fetcher.read_custom_deployment(identifier)
             except AWS_ERRORS as e:
+                if is_not_found(e):
+                    self._not_found['deployment'].add(identifier)  # read: no such deployment
                 logger.debug(f"{identifier} is not a readable custom model deployment either: {e}")
         if deployment:
             return self._custom_deployment_config(deployment['arn'], deployment)
@@ -705,7 +708,7 @@ class UserInputs:
             candidates = [identifier]
             if self.account:
                 candidates.append(build_arn('bedrock', self.region, self.account, f"{IMPORTED_KIND}/{identifier}"))
-            denied = False
+            answers = []
             for candidate in candidates:
                 try:
                     imported = fetcher.read_imported_model(candidate)
@@ -713,10 +716,10 @@ class UserInputs:
                 except Exception as e:
                     if not deployment_read_error(e):
                         raise
-                    denied = denied or is_access_denied(e) or missing_deployment_api(e)
+                    answers.append(is_not_found(e))
                     logger.debug(f"{candidate} is not a readable imported model either: {e}")
-            if imported is None and not denied:
-                self._not_imported.add(identifier)  # read and not found: it is not one
+            if imported is None and answers and all(answers):
+                self._not_found['imported'].add(identifier)  # every read said no such model
         return self._imported_model_config(imported['arn'], imported) if imported else None
 
     def _imported_models(self, quiet=False) -> List[Dict]:
@@ -735,8 +738,15 @@ class UserInputs:
                 logger.debug(f"Could not list imported models: {e}")
             elif not self._imported_listing_noted:
                 self._imported_listing_noted = True
-                need = "need boto3 1.39.7 or later" if missing_deployment_api(e) else f"could not be listed ({e})"
-                logger.info(f"  Imported models {need}; they are not offered")
+                if missing_deployment_api(e):
+                    logger.info("  Imported models need boto3 1.39.7 or later; they are not offered")
+                elif is_access_denied(e):
+                    # Also what a region without Custom Model Import answers
+                    logger.info(f"  Imported models are not offered: listing them was denied (Custom Model Import "
+                                f"is not available in {self.region}, or bedrock:ListImportedModels is not allowed)")
+                    logger.debug(f"ListImportedModels: {e}")
+                else:
+                    logger.info(f"  Imported models could not be listed ({e}); they are not offered")
             return []
 
     def _report_deployment_listing_error(self, identifier):
@@ -744,10 +754,16 @@ class UserInputs:
         fetcher = self._get_profile_fetcher()
         if not isinstance(fetcher, InferenceProfileFetcher) or identifier.startswith('arn:'):
             return
-        imported_error = None if identifier in self._not_imported else fetcher.imported_models_error
-        for what, error in (("Custom model deployments", fetcher.custom_deployments_error),
-                            ("Imported models", imported_error)):
-            if error is not None:
+        for what, kind, error in (("Custom model deployments", 'deployment', fetcher.custom_deployments_error),
+                                  ("Imported models", 'imported', fetcher.imported_models_error)):
+            # Not when a direct read already said there is no such resource
+            if error is None or identifier in self._not_found[kind]:
+                continue
+            if kind == 'imported' and is_access_denied(error):
+                # A region without Custom Model Import denies the listing too
+                logger.error(f"  (Imported models could not be listed either: if {self.region} offers Custom Model "
+                             f"Import, it may be one; allow bedrock:ListImportedModels to check)")
+            else:
                 logger.error(f"  ({what} could not be listed either, so it may be one: {error})")
 
     def _find_custom_deployment(self, identifier) -> Optional[Dict]:

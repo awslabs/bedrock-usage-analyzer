@@ -603,7 +603,10 @@ class InferenceProfileFetcher:
         their name and with their tags, as application profiles are."""
         def target(arn):
             name = self._deployment_names.get(arn)  # resolved when it was selected
-            if name is None and not imported:  # an imported model is named when selected
+            if name is None and imported:
+                # Not selected through UserInputs (an API caller): the listing, if one was made
+                name = next((m['name'] for m in self._imported or [] if m['arn'] == arn), None)
+            elif name is None:
                 # The name is cosmetic: the ARN still gives the metrics
                 try:
                     name = self.read_custom_deployment(arn)['name']
