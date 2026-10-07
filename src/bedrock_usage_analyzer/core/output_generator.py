@@ -5,6 +5,7 @@
 
 import os
 import re
+import functools
 import json
 import logging
 from datetime import datetime, timedelta
@@ -30,6 +31,15 @@ def https_url(value) -> str:
     """Template filter: keep only https:// links (no javascript: or data: URIs in href)."""
     text = str(value or '')
     return text if text.startswith('https://') else ''
+
+
+def _local_time(value, tz=None) -> str:
+    """Template helper: an ISO time from the breakdown in the report's timezone, as the
+    period headings are (the value as given if it is not an ISO time)."""
+    try:
+        return datetime.fromisoformat(value).astimezone(tz).strftime('%Y-%m-%d %H:%M %Z')
+    except (TypeError, ValueError):
+        return '' if value is None else str(value)
 
 
 def _breakdown_tpm(breakdown) -> list:
@@ -237,8 +247,8 @@ class OutputGenerator:
         # The breakdown's periods end where the logs were read up to, before the report's end
         breakdown_end = ((data.get('breakdown') or {}).get('coverage') or {}).get('end')
         breakdown_period_names = period_names
+        local = data.get('end_time').tzinfo if data.get('end_time') else None
         if breakdown_end:
-            local = data.get('end_time').tzinfo if data.get('end_time') else None
             breakdown_period_names = self._generate_period_names(
                 datetime.fromisoformat(breakdown_end).astimezone(local), data.get('tz_offset', '+00:00'))
 
@@ -277,6 +287,7 @@ class OutputGenerator:
                 granularity_config=data.get('granularity_config', {}),
                 period_names=period_names,
                 breakdown_period_names=breakdown_period_names,
+                local_time=functools.partial(_local_time, tz=local),
                 end_time_iso=end_time.isoformat() if end_time else None,
                 service_quotas_console_url=get_service_quotas_console_url(
                     region_name if region_name != 'N/A' else None),

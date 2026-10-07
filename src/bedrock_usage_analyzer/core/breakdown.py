@@ -111,7 +111,9 @@ class BreakdownBuilder:
             start = now - timedelta(days=min(days, CLOUDWATCH_MINUTE_DAYS))
             covered_from = fetcher.coverage_start(start, end, now)
             if covered_from is None:
-                return self._give_up(f"log group {self.log_group} does not exist in {self.region}. {ENABLE_HINT}")
+                hint = (ENABLE_HINT if self.breakdown.log_group is None
+                        else "Check the --log-group name (the logging configuration names the group).")
+                return self._give_up(f"log group {self.log_group} does not exist in {self.region}. {hint}")
             if covered_from >= end:
                 # Created after the breakdown's end: nothing to read yet
                 return self._give_up(f"log group {self.log_group} holds no records from before "

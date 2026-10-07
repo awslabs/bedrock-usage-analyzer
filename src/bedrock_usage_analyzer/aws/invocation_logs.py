@@ -93,7 +93,7 @@ class Breakdown:
     @classmethod
     def parse(cls, value: str, principals: Iterable[str] = (), log_group: Optional[str] = None) -> 'Breakdown':
         """'principal', 'session', 'tag:<key>' or 'metadata:<key>' (raises BreakdownError)."""
-        kind, _, key = (value or '').strip().partition(':')
+        kind, sep, key = (value or '').strip().partition(':')
         kind, key = kind.strip().lower(), key.strip()  # spaces around the separator
         if kind not in KINDS:
             raise BreakdownError(f"unknown breakdown '{value}': use principal, session, tag:<key> or metadata:<key>")
@@ -104,7 +104,7 @@ class Breakdown:
             if not _KEY_PATTERN.match(key):
                 raise BreakdownError(f"'{value}' needs a key of letters, digits, spaces and :_@$#=/+,-. "
                                      f"(e.g. metadata:team)")
-        elif key:
+        elif sep:  # 'session:' too, as 'tag:' with no key is an error
             raise BreakdownError(f"'{kind}' takes no key: '{value}'")
         principals = tuple(principals)
         if any(not (p or '').strip() for p in principals):

@@ -142,7 +142,8 @@ def test_breakdown_parsing(value, kind, key):
 
 
 @pytest.mark.parametrize('value', ['owner', 'tag', 'tag:', 'tag:a"b', 'tag:   ', 'metadata:x|z', 'metadata:a`b',
-                                   'metadata:' + 'k' * 257, 'principal:x', 'session:y'])
+                                   'metadata:' + 'k' * 257, 'principal:x', 'session:y', 'session:',
+                                   'principal: '])
 def test_invalid_breakdowns_are_refused(value):
     with pytest.raises(BreakdownError):
         Breakdown.parse(value)
@@ -1160,6 +1161,20 @@ def test_report_renders_the_breakdown_escaped(analyzer, tmp_path, monkeypatch):
     end = datetime.fromisoformat(data['breakdown']['coverage']['end']).astimezone(analyzer.local_tz)
     start = end - timedelta(hours=1)
     assert f"Last 1 hour ({start:%H:%M}-{end:%H:%M})" in html
+    # Its coverage is shown in that same timezone, not as UTC ISO strings
+    assert f"to {end:%Y-%m-%d %H:%M %Z}). Shares" in html
+
+
+def test_report_times_fall_back_to_the_value_when_it_is_not_an_iso_time():
+    from bedrock_usage_analyzer.core.output_generator import _local_time
+    assert _local_time(None) == '' and _local_time('soon') == 'soon'
+    assert _local_time('2026-10-07T02:55:00+00:00', timezone(timedelta(hours=8))) == '2026-10-07 10:55 UTC+08:00'
+
+
+def test_a_missing_given_log_group_asks_to_check_its_name():
+    builder = builder_for(Breakdown.parse('principal', log_group='/bedrock/typo'), FakeLogs(groups=[]))
+    reason = builder.prepare([US_HAIKU], END, 1)
+    assert 'Check the --log-group name' in reason and 'enable model invocation logging' not in reason
 
 
 def test_the_chart_gets_tpm_pairs_so_no_caller_name_is_an_object_key():
