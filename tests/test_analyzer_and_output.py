@@ -120,7 +120,7 @@ def test_an_imported_model_report(analyzer, tmp_path, caplog):
     analyzer.profile_fetcher.note_deployment_name(imported, 'my-qwen')
     caplog.set_level('INFO')
     out = tmp_path / 'results'
-    analyzer.analyze([{'model_id': 'imp0000001', 'profile_prefix': 'custom', 'application_profile_ids': [imported]}],
+    analyzer.analyze([{'model_id': 'imp0000001', 'profile_prefix': 'imported', 'application_profile_ids': [imported]}],
                      output_dir=str(out))
     files = reports(out)
     assert set(analyzer.cw.dimensions) == {imported}
@@ -140,19 +140,35 @@ def test_an_imported_model_gets_no_quotas_whatever_its_model_id(analyzer, tmp_pa
     monkeypatch.setattr(analyzer, '_warn_other_deployments', lambda *a: pytest.fail('deployment note'))
     out = tmp_path / 'results'
     # An API caller naming a base model: still no limits
-    analyzer.analyze([{'model_id': HAIKU, 'profile_prefix': 'custom', 'application_profile_ids': [imported]}],
+    analyzer.analyze([{'model_id': HAIKU, 'profile_prefix': 'imported', 'application_profile_ids': [imported]}],
                      output_dir=str(out))
     data = json.loads((out / reports(out)[1]).read_text())
     assert data['scope_label'] == 'Imported models analyzed' and not any(data['quotas'].values())
 
 
-def test_a_target_mixing_imported_models_and_deployments_is_refused(analyzer, tmp_path):
+def test_imported_models_must_be_their_own_targets(analyzer, tmp_path):
     imported = 'arn:aws:bedrock:ap-southeast-2:111122223333:imported-model/imp0000001'
     deployment = 'arn:aws:bedrock:ap-southeast-2:111122223333:custom-model-deployment/dep0000001'
-    with pytest.raises(ValueError, match='mixes imported models and custom model deployments'):
-        analyzer.analyze([{'model_id': HAIKU, 'profile_prefix': 'custom',
-                           'application_profile_ids': [deployment, imported]}], output_dir=str(tmp_path / 'r'))
+    for prefix, ids, message in (('custom', [deployment, imported], "with profile_prefix 'imported'"),
+                                 ('imported', [deployment, imported], 'needs imported model ARNs'),
+                                 ('imported', [], 'needs imported model ARNs')):
+        with pytest.raises(ValueError, match=message):
+            analyzer.analyze([{'model_id': HAIKU, 'profile_prefix': prefix, 'application_profile_ids': ids}],
+                             output_dir=str(tmp_path / 'r'))
     assert not analyzer.cw.dimensions  # refused before any metric is read
+
+
+def test_several_imported_models_in_one_report_are_named_by_their_ids(analyzer, tmp_path):
+    ids = [f'arn:aws:bedrock:ap-southeast-2:111122223333:imported-model/imp{i}' for i in range(4)]
+    for arn in ids:
+        analyzer.cw.per_model[arn] = (1, 10, 5)
+    out = tmp_path / 'results'
+    analyzer.analyze([{'model_id': HAIKU, 'profile_prefix': 'imported', 'application_profile_ids': ids}],
+                     output_dir=str(out))
+    files = reports(out)
+    assert files[0].startswith('imported-models-model-4models-')
+    assert json.loads((out / files[1]).read_text())['endpoint'] == '4 imported models'
+    assert 'no token or request quotas' in (out / files[0]).read_text()
 
 
 def test_two_endpoints_of_one_model_do_not_overwrite(analyzer, tmp_path):

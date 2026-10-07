@@ -433,7 +433,7 @@
         },
         {
           "name": "_imported_target",
-          "description": "True when a target is Custom Model Import models (reported without limits); raises ValueError for a target mixing them with custom model deployments."
+          "description": "True when a target is Custom Model Import models (profile_prefix 'imported', reported without limits); raises ValueError for imported ARNs under another kind or other ARNs under 'imported'."
         },
         {
           "name": "_warn_other_sources",
@@ -897,7 +897,7 @@
         },
         {
           "name": "_imported_models",
-          "description": "The region's Custom Model Import models ([] when none or not listable; a listing failure is said once per session, a bug is raised)."
+          "description": "The region's Custom Model Import models ([] when none or not listable; for the picker a listing failure is said once per session, quiet when resolving -m; a bug is raised)."
         },
         {
           "name": "_deployment_target",

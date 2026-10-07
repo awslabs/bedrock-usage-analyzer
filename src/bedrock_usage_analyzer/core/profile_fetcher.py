@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, FrozenSet, Iterable, List, Optional
 
 from bedrock_usage_analyzer.core.errors import AWS_ERRORS, is_access_denied
-from bedrock_usage_analyzer.utils.yaml_handler import CUSTOM_ENDPOINT, endpoint_keys
+from bedrock_usage_analyzer.utils.yaml_handler import CUSTOM_ENDPOINT, IMPORTED_ENDPOINT, endpoint_keys
 from bedrock_usage_analyzer.aws.bedrock import (
     endpoint_id,
     get_default_region_prefix_map,
@@ -19,7 +19,7 @@ from bedrock_usage_analyzer.aws.bedrock import (
     region_group,
 )
 from bedrock_usage_analyzer.aws.custom_models import (
-    base_model_id, base_model_id_in_arn, deployment_short_id, is_active, is_imported, list_deployments,
+    base_model_id, base_model_id_in_arn, deployment_short_id, is_active, list_deployments,
     list_imported_models, read_deployment, read_imported_model)
 
 logger = logging.getLogger(__name__)
@@ -598,12 +598,12 @@ class InferenceProfileFetcher:
             self._tags_cache[profile_arn] = tags
         return self._tags_cache[profile_arn]
 
-    def _deployment_targets(self, deployment_arns):
-        """(ARNs, names, metadata) of custom model deployments, named by their deployment name
-        and with their tags, as application profiles are."""
+    def _deployment_targets(self, deployment_arns, imported=False):
+        """(ARNs, names, metadata) of custom model deployments (or imported models), named by
+        their name and with their tags, as application profiles are."""
         def target(arn):
             name = self._deployment_names.get(arn)  # resolved when it was selected
-            if name is None and not is_imported(arn):  # an imported model is named when selected
+            if name is None and not imported:  # an imported model is named when selected
                 # The name is cosmetic: the ARN still gives the metrics
                 try:
                     name = self.read_custom_deployment(arn)['name']
@@ -631,10 +631,12 @@ class InferenceProfileFetcher:
             tuple: (profiles list, profile_names dict, profile_metadata dict)
                    profile_metadata contains 'id' and 'tags' for each profile
         """
-        if profile_prefix == CUSTOM_ENDPOINT:
-            # Custom model deployments: CloudWatch reports each one under its deployment ARN
-            # (no application profiles; the base model's 'custom' quotas apply)
-            return self._deployment_targets(application_profile_ids or [])
+        if profile_prefix in (CUSTOM_ENDPOINT, IMPORTED_ENDPOINT):
+            # Custom model deployments and imported models: CloudWatch reports each one under
+            # its ARN (no application profiles; for deployments the base model's 'custom'
+            # quotas apply, imported models have none)
+            return self._deployment_targets(application_profile_ids or [],
+                                            imported=profile_prefix == IMPORTED_ENDPOINT)
         logger.info("  Discovering inference profiles...")
         target_endpoint = endpoint_id(model_id, profile_prefix)
 

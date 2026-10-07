@@ -289,6 +289,13 @@ def test_a_quota_of_another_api_version_is_rejected():
     assert mapping_conflict('anthropic.claude-3-5-sonnet-20240620-v1:0', 'apac',
                             'Cross-region model inference requests per minute for Anthropic Claude 3.5 Sonnet',
                             REGIONAL) is None
+    # Sibling models the version rules cannot tell apart are pinned to their names
+    v1 = 'On-demand model inference tokens per minute for Anthropic Claude 3.5 Sonnet'
+    assert 'sibling' in mapping_conflict('anthropic.claude-3-5-sonnet-20241022-v2:0', 'base', v1, REGIONAL)
+    nano = 'On-demand model inference tokens per minute for NVIDIA Nemotron Nano 2'
+    assert 'sibling' in mapping_conflict('nvidia.nemotron-nano-12b-v2', 'base', nano, REGIONAL)
+    assert mapping_conflict('nvidia.nemotron-nano-12b-v2', 'base', nano + ' VL', REGIONAL) is None
+    assert mapping_conflict('nvidia.nemotron-nano-9b-v2', 'base', nano, REGIONAL) is None
     # A 'V3' that is the model's generation, as its ID says
     assert mapping_conflict('deepseek.v3-v1:0', 'base',
                             'On-demand model inference tokens per minute for DeepSeek V3', REGIONAL) is None

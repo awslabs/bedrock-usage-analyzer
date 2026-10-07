@@ -193,7 +193,7 @@ def model_id_forms(cw_ids: Iterable[str], region: str, account: Optional[str],
     for cw_id in cw_ids:
         forms[cw_id] = cw_id
         if cw_id.startswith('arn:'):
-            continue  # a deployment ARN is recorded as it is
+            continue  # a deployment or imported model ARN is recorded as it is
         model_id, prefix = split_profile_id(cw_id)
         if '.' not in cw_id and ':' not in cw_id:
             # An application inference profile ID

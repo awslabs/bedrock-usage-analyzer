@@ -18,7 +18,7 @@ from ..core.errors import AWS_ERRORS, is_access_denied, troubleshooting_hint
 from ..core.profile_fetcher import (
     UNKNOWN_SOURCE, InferenceProfileFetcher, deployment_read_error, missing_deployment_api)
 from ..sync.regions import load_region_names
-from ..utils.yaml_handler import CUSTOM_ENDPOINT, endpoint_keys, fm_endpoints, has_endpoint, invokable_endpoint_keys, load_fm_list, profile_endpoints
+from ..utils.yaml_handler import CUSTOM_ENDPOINT, IMPORTED_ENDPOINT, endpoint_keys, fm_endpoints, has_endpoint, invokable_endpoint_keys, load_fm_list, profile_endpoints
 from ..utils.ui import require_credentials_partition, select_from_list
 from ..utils.partition import (
     build_arn,
@@ -113,6 +113,7 @@ class UserInputs:
         self.breakdown: Optional[Breakdown] = None
         self._deployment_listing_noted = False
         self._imported_listing_noted = False
+        self._not_imported = set()  # identifiers GetImportedModel found to be no imported model
         self._fm_lists: Dict[str, Optional[List[Dict]]] = {}  # None: the region has no fm-list
         self.granularity_config = {  # The aggregation granularity for different metrics window/period
             '1hour': 300,   # 5 minutes
@@ -563,24 +564,24 @@ class UserInputs:
         logger.info(f"  Imported model {name} ({deployment_short_id(arn)}): Custom Model Import models have no "
                     f"per-model token or request quotas (Bedrock scales the model copies that serve them), "
                     f"so the report shows its usage without limits")
-        return {'model_id': deployment_short_id(arn), 'profile_prefix': CUSTOM_ENDPOINT, 'application_profile_ids': [arn]}
+        return {'model_id': deployment_short_id(arn), 'profile_prefix': IMPORTED_ENDPOINT, 'application_profile_ids': [arn]}
 
     def _imported_summary(self, fetcher, arn) -> Optional[Dict]:
         """An imported model passed by ARN as the listing has it, else as read; None when
         neither works (the name is cosmetic: the ARN still gives the metrics)."""
-        try:  # quietly: a failed listing does not mean this model is not analyzed
-            summary = next((m for m in fetcher.list_imported_models() if m['arn'] == arn), None)
-            if summary:
-                return summary
-        except Exception as e:
-            if not deployment_read_error(e):
-                raise
-            logger.debug(f"Could not list imported models to name {arn}: {e}")
+        # Quietly: a failed listing does not mean this model is not analyzed
+        summary = next((m for m in self._imported_models(quiet=True) if m['arn'] == arn), None)
+        if summary:
+            return summary
         try:
             return fetcher.read_imported_model(arn)
         except Exception as e:
             if not deployment_read_error(e):
                 raise
+            if missing_deployment_api(e):
+                logger.warning(f"  Imported model names need boto3 1.39.7 or later; the report names "
+                               f"{deployment_short_id(arn)} by its ID")
+                return None
             hint = troubleshooting_hint(e, self.region) if is_access_denied(e) else None
             if hint:
                 logger.warning(f"  Hint: {hint}")
@@ -697,13 +698,14 @@ class UserInputs:
             return self._custom_deployment_config(deployment['arn'], deployment)
         if identifier.startswith('arn:'):
             return None
-        imported = next(
-            (m for m in self._imported_models() if identifier in (deployment_short_id(m['arn']), m['name'])), None)
+        imported = next((m for m in self._imported_models(quiet=True)
+                         if identifier in (deployment_short_id(m['arn']), m['name'])), None)
         if imported is None and isinstance(fetcher, InferenceProfileFetcher) and fetcher.imported_models_error is not None:
             # GetImportedModel takes a name or an ARN: an ID is read by the ARN it would have
             candidates = [identifier]
             if self.account:
                 candidates.append(build_arn('bedrock', self.region, self.account, f"{IMPORTED_KIND}/{identifier}"))
+            denied = False
             for candidate in candidates:
                 try:
                     imported = fetcher.read_imported_model(candidate)
@@ -711,12 +713,16 @@ class UserInputs:
                 except Exception as e:
                     if not deployment_read_error(e):
                         raise
+                    denied = denied or is_access_denied(e) or missing_deployment_api(e)
                     logger.debug(f"{candidate} is not a readable imported model either: {e}")
+            if imported is None and not denied:
+                self._not_imported.add(identifier)  # read and not found: it is not one
         return self._imported_model_config(imported['arn'], imported) if imported else None
 
-    def _imported_models(self) -> List[Dict]:
+    def _imported_models(self, quiet=False) -> List[Dict]:
         """The region's Custom Model Import models ([] when there are none or they cannot be
-        listed; a listing failure is said once per session, a bug is raised)."""
+        listed; a bug is raised). For the picker a listing failure is said once per session;
+        ``quiet`` (resolving a model passed with -m, which is read instead) only logs it at debug."""
         fetcher = self._get_profile_fetcher()
         if not isinstance(fetcher, InferenceProfileFetcher):
             return []
@@ -725,9 +731,12 @@ class UserInputs:
         except Exception as e:
             if not deployment_read_error(e):
                 raise
-            if not self._imported_listing_noted:
+            if quiet:
+                logger.debug(f"Could not list imported models: {e}")
+            elif not self._imported_listing_noted:
                 self._imported_listing_noted = True
-                logger.info(f"  Imported models could not be listed ({e}); they are not offered")
+                need = "need boto3 1.39.7 or later" if missing_deployment_api(e) else f"could not be listed ({e})"
+                logger.info(f"  Imported models {need}; they are not offered")
             return []
 
     def _report_deployment_listing_error(self, identifier):
@@ -735,8 +744,9 @@ class UserInputs:
         fetcher = self._get_profile_fetcher()
         if not isinstance(fetcher, InferenceProfileFetcher) or identifier.startswith('arn:'):
             return
+        imported_error = None if identifier in self._not_imported else fetcher.imported_models_error
         for what, error in (("Custom model deployments", fetcher.custom_deployments_error),
-                            ("Imported models", fetcher.imported_models_error)):
+                            ("Imported models", imported_error)):
             if error is not None:
                 logger.error(f"  ({what} could not be listed either, so it may be one: {error})")
 

@@ -264,6 +264,7 @@ class OutputGenerator:
                 endpoint=data.get('endpoint', model_id),
                 application_profile_scope=data.get('application_profile_scope', []),
                 scope_label=data.get('scope_label') or APPLICATION_PROFILE_SCOPE,
+                imported=data.get('scope_label') == IMPORTED_SCOPE,
                 timestamp=formatted_timestamp,
                 region=region_name,
                 region_info=self._region_info(data),

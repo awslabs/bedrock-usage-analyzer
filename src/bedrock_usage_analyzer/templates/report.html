@@ -79,10 +79,17 @@
     </div>
     {% endif %}
     
+    {% if imported %}
+    <div class="disclaimer-section" style="background-color: #f0f8ff; padding: 15px; margin-bottom: 20px; border-radius: 5px; border-left: 4px solid #4285F4;">
+        <h4 style="margin-top: 0;">Imported models have no token or request quotas</h4>
+        <p style="margin-bottom: 0;">Custom Model Import models have no per-model TPM, RPM or TPD quotas, so this report shows usage without limits. Bedrock scales the model copies that serve an imported model with its traffic; throttles mean requests arrived faster than copies were added. See <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/model-customization-import-model.html" target="_blank" rel="noopener noreferrer">Custom Model Import</a> for details.</p>
+    </div>
+    {% else %}
     <div class="disclaimer-section" style="background-color: #f0f8ff; padding: 15px; margin-bottom: 20px; border-radius: 5px; border-left: 4px solid #4285F4;">
         <h4 style="margin-top: 0;">⚠️ Important: Understanding Token-Based Throttling</h4>
         <p style="margin-bottom: 0;">Low TPM/TPD values in this report do not rule out token-based throttling. Bedrock reserves <code>input_tokens + max_tokens</code> from your quota at request start, but CloudWatch only records actual tokens used after completion. If <code>max_tokens</code> is set high (e.g., 64K) but actual output is low, you may hit throttling limits that are invisible in these metrics. To diagnose, check your <code>max_tokens</code> settings and enable <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/model-invocation-logging.html" target="_blank">model invocation logging</a>. See <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/quotas-token-burndown.html" target="_blank">How tokens are counted in Amazon Bedrock</a> for details.</p>
     </div>
+    {% endif %}
     
     <div class="merged-table">
         <h3>Statistics Summary</h3>
@@ -218,7 +225,7 @@
         <p class="breakdown-note">From the model invocation logs in {{ breakdown.log_group }}
             ({{ local_time(breakdown.coverage.start) }} to {{ local_time(breakdown.coverage.end) }}). Shares are of the endpoint's
             CloudWatch totals over the covered time; "{{ unattributed_label }}" is usage CloudWatch counted
-            that the logs do not hold. Quotas are shared by all callers.
+            that the logs do not hold.{% if not imported %} Quotas are shared by all callers.{% endif %}
             {% if breakdown.principal_filter %}Selected principals: {{ breakdown.principal_filter | join(', ') }}.{% endif %}</p>
         {% for note in breakdown.notes %}<p class="breakdown-note">Note: {{ note }}</p>{% endfor %}
         {% for period in period_ms %}

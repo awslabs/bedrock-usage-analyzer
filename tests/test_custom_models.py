@@ -542,7 +542,7 @@ def test_imported_models_are_listed_and_read():
 
 def test_an_imported_model_is_analyzed_by_arn_id_or_name_without_limits(monkeypatch, caplog):
     caplog.set_level('INFO')
-    expected = {'model_id': 'imp0000001', 'profile_prefix': 'custom', 'application_profile_ids': [IMPORTED]}
+    expected = {'model_id': 'imp0000001', 'profile_prefix': 'imported', 'application_profile_ids': [IMPORTED]}
     for value in (IMPORTED, 'imp0000001', 'my-qwen'):
         inputs = _inputs(monkeypatch, FakeImported())
         assert inputs._parse_model_id(value) == expected
@@ -614,18 +614,27 @@ def test_an_imported_model_name_is_read_when_the_listing_fails(monkeypatch, capl
     inputs = _inputs(monkeypatch, ByArnOnly())
     inputs.account = '111122223333'
     assert inputs._parse_model_id('imp0000001')['application_profile_ids'] == [IMPORTED]
-    # An ARN is analyzed without a 'not offered' note from the failed listing
+    # An ARN, ID or name is analyzed without a 'not offered' note from the failed listing
     caplog.clear()
     caplog.set_level('INFO')
     assert _inputs(monkeypatch, NoList())._parse_model_id(IMPORTED)['application_profile_ids'] == [IMPORTED]
+    assert _inputs(monkeypatch, NoList())._parse_model_id('my-qwen')['application_profile_ids'] == [IMPORTED]
     assert 'not offered' not in caplog.text
 
+    # Read and not found: it is no imported model, so the error does not say it may be one
+    class NotFound(NoList):
+        def get_imported_model(self, modelIdentifier):
+            raise aws_error('ResourceNotFoundException', 'GetImportedModel')
+    with pytest.raises(SystemExit):
+        _inputs(monkeypatch, NotFound())._parse_model_id('nothing-by-that-name')
+    assert 'Imported models could not be listed either' not in caplog.text
+
+    # Not readable either: it may be one
     class Neither(NoList):
         def get_imported_model(self, modelIdentifier):
-            raise aws_error('ValidationException', 'GetImportedModel')
-    inputs = _inputs(monkeypatch, Neither())
+            raise aws_error('AccessDeniedException', 'GetImportedModel')
     with pytest.raises(SystemExit):
-        inputs._parse_model_id('nothing-by-that-name')
+        _inputs(monkeypatch, Neither())._parse_model_id('nothing-by-that-name')
     assert 'Imported models could not be listed either' in caplog.text
 
 
@@ -634,7 +643,7 @@ def test_imported_models_are_offered_in_the_picker(monkeypatch):
     answers = iter(['2', 'all'])
     monkeypatch.setattr('builtins.input', lambda prompt='': next(answers))
     assert inputs._select_targets('us-east-1') == [
-        {'model_id': 'imp0000001', 'profile_prefix': 'custom', 'application_profile_ids': [IMPORTED]}]
+        {'model_id': 'imp0000001', 'profile_prefix': 'imported', 'application_profile_ids': [IMPORTED]}]
 
 
 def test_a_failed_imported_model_listing_hides_the_choice_once(monkeypatch, caplog):
@@ -649,8 +658,13 @@ def test_a_failed_imported_model_listing_hides_the_choice_once(monkeypatch, capl
     assert inputs._imported_models() == [] and inputs._imported_models() == []
     assert client.calls.count('ListImportedModels') == 1
     assert caplog.text.count('Imported models could not be listed') == 1
-    # Without the API (an older boto3) the choice is hidden too
+    # Without the API (an older boto3) the choice is hidden too, and the boto3 needed is named
     assert _inputs(monkeypatch, FakeCustom())._imported_models() == []
+    assert 'Imported models need boto3 1.39.7 or later' in caplog.text
+    # An ARN passed with -m is still analyzed, named by its ID
+    inputs = _inputs(monkeypatch, FakeCustom())
+    assert inputs._parse_model_id(IMPORTED)['application_profile_ids'] == [IMPORTED]
+    assert 'names imp0000001 by its ID' in caplog.text and 'could not be read' not in caplog.text
 
 
 def test_a_bug_listing_imported_models_is_raised(monkeypatch):
@@ -665,9 +679,9 @@ def test_an_imported_model_target_keeps_its_noted_name(monkeypatch):
     client = FakeImported()
     fetcher = InferenceProfileFetcher(client)
     fetcher.note_deployment_name(IMPORTED, 'my-qwen')
-    arns, names, _ = fetcher.find_profiles('imp0000001', 'custom', [IMPORTED])
+    arns, names, _ = fetcher.find_profiles('imp0000001', 'imported', [IMPORTED])
     assert arns == [IMPORTED] and names == {IMPORTED: 'my-qwen'}
     # Not noted: named by its ID, with no deployment read
     other = IMPORTED.replace('imp0000001', 'imp2')
-    assert InferenceProfileFetcher(client).find_profiles('imp2', 'custom', [other])[1] == {other: 'imp2'}
+    assert InferenceProfileFetcher(client).find_profiles('imp2', 'imported', [other])[1] == {other: 'imp2'}
     assert 'GetCustomModelDeployment' not in client.calls
