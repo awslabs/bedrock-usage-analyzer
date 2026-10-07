@@ -718,8 +718,10 @@ class UserInputs:
                         raise
                     answers.append(is_not_found(e))
                     logger.debug(f"{candidate} is not a readable imported model either: {e}")
-            if imported is None and answers and all(answers):
-                self._not_found['imported'].add(identifier)  # every read said no such model
+            if imported is None and len(answers) == 2 and all(answers):
+                # Read as a name and by its ARN, and neither is a model (without the account the
+                # ID was never read by its ARN, so it may still be one)
+                self._not_found['imported'].add(identifier)
         return self._imported_model_config(imported['arn'], imported) if imported else None
 
     def _imported_models(self, quiet=False) -> List[Dict]:

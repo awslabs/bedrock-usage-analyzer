@@ -633,9 +633,15 @@ def test_an_imported_model_name_is_read_when_the_listing_fails(monkeypatch, capl
     class NotFound(NoList):
         def get_imported_model(self, modelIdentifier):
             raise aws_error('ResourceNotFoundException', 'GetImportedModel')
+    inputs = _inputs(monkeypatch, NotFound())
+    inputs.account = '111122223333'  # so the identifier is also read by its ARN
+    with pytest.raises(SystemExit):
+        inputs._parse_model_id('nothing-by-that-name')
+    assert 'Imported models could not be listed either' not in caplog.text
+    # Without the account it was never read by its ARN: it may still be one
     with pytest.raises(SystemExit):
         _inputs(monkeypatch, NotFound())._parse_model_id('nothing-by-that-name')
-    assert 'Imported models could not be listed either' not in caplog.text
+    assert 'Imported models could not be listed either' in caplog.text
 
     # A throttled read says nothing about whether it exists: it may be one
     caplog.clear()

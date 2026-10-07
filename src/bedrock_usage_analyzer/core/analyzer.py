@@ -517,9 +517,11 @@ class BedrockAnalyzer:
             logger.info(f"  Generating output files...")
             end_time_local = datetime.now(self.local_tz)
             scope_label = APPLICATION_PROFILE_SCOPE
+            report_model = model_id
             if imported:
                 # Named by the imported model IDs, whatever model ID an API caller passed
                 ids = [deployment_short_id(a) for a in app_ids]
+                report_model = ids[0] if len(ids) == 1 else ', '.join(ids)
                 endpoint = f"{ids[0]} (imported model)" if len(ids) == 1 else f"{len(ids)} imported models"
                 scope_label = IMPORTED_SCOPE
                 file_label = f"imported-model.{ids[0]}" if len(ids) == 1 else \
@@ -537,7 +539,7 @@ class BedrockAnalyzer:
             scope = [profile_names.get(pid, pid) for pid in final_model_ids] if app_ids else []
 
             self.output_generator.generate({
-                model_id: {
+                report_model: {
                     'stats': model_results,
                     'time_series': time_series_data,
                     'quotas': quotas,

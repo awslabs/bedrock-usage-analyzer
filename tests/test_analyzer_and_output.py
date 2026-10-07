@@ -139,11 +139,15 @@ def test_an_imported_model_gets_no_quotas_whatever_its_model_id(analyzer, tmp_pa
     monkeypatch.setattr(analyzer, '_load_quota_codes', lambda *a: pytest.fail('quotas looked up'))
     monkeypatch.setattr(analyzer, '_warn_other_deployments', lambda *a: pytest.fail('deployment note'))
     out = tmp_path / 'results'
-    # An API caller naming a base model: still no limits
+    # An API caller naming a base model: still no limits, and named by the imported model
     analyzer.analyze([{'model_id': HAIKU, 'profile_prefix': 'imported', 'application_profile_ids': [imported]}],
                      output_dir=str(out))
     data = json.loads((out / reports(out)[1]).read_text())
     assert data['scope_label'] == 'Imported models analyzed' and not any(data['quotas'].values())
+    assert data['model_id'] == 'imp0000001'
+    # No max_tokens throttling note in the JSON either: the imported-model note instead
+    assert 'throttling' not in data['disclaimers'] and 'Custom Model Import' in data['disclaimers']['imported']
+    assert 'max_tokens' not in json.dumps(data['time_series'])
 
 
 def test_imported_models_must_be_their_own_targets(analyzer, tmp_path):
