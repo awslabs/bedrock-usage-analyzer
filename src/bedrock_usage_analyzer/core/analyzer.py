@@ -341,7 +341,7 @@ class BedrockAnalyzer:
             # One set of Logs Insights queries for every target of the run: the log group is
             # scanned once, whatever the number of reports
             builder = BreakdownBuilder(self.breakdown, self.region, self.bedrock_client, self.metrics_fetcher,
-                                       self._calculate_stats_from_time_series, self.local_tz, self.account,
+                                       self._calculate_stats_from_time_series, self.account,
                                        parallel=in_parallel,
                                        known_models=[m.get('model_id') for m in self._fm_list()])
             run_ids = sorted({cw_id for ids, _, _ in all_profiles_map.values() for cw_id in ids})

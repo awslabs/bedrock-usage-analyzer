@@ -48,7 +48,7 @@ class BreakdownBuilder:
     each report's breakdown section from them."""
 
     def __init__(self, breakdown: Breakdown, region: str, bedrock_client, metrics_fetcher, stats_fn: Callable,
-                 local_tz, account: Optional[str], parallel: Callable = None,
+                 account: Optional[str], parallel: Callable = None,
                  logs_client=None, iam_client=None, known_models: Iterable[str] = ()):
         self.breakdown = breakdown
         self.region = region
@@ -57,7 +57,6 @@ class BreakdownBuilder:
         self.bedrock_client = bedrock_client
         self.metrics_fetcher = metrics_fetcher
         self._stats = stats_fn
-        self.local_tz = local_tz
         self.account = account
         self._parallel = parallel
         self._logs_client = logs_client
@@ -216,7 +215,8 @@ class BreakdownBuilder:
         if kind == SESSION:
             return row['key'] or row['principal']
         if kind == METADATA:
-            return _caller_value(row['key']) if row['key'] not in (None, '') else f"(no {self.breakdown.key})"
+            # An empty value is a value, as in cost allocation: not the key missing
+            return _caller_value(row['key']) if row['key'] is not None else f"(no {self.breakdown.key})"
         if row['principal'] == UNKNOWN_CALLER:  # no caller: no tags, but not '(no <key> tag)' either
             return UNKNOWN_CALLER
         if row['principal'] in self._tag_errors:
@@ -225,7 +225,7 @@ class BreakdownBuilder:
         # IAM tag keys are case-insensitive (a principal cannot have both Team and team)
         wanted = self.breakdown.key.lower()
         value = next((v for k, v in (tags or {}).items() if k.lower() == wanted), None)
-        return _caller_value(value) if value not in (None, '') else f"(no {self.breakdown.key} tag)"
+        return _caller_value(value) if value is not None else f"(no {self.breakdown.key} tag)"
 
     def _selected(self, row) -> bool:
         # IAM role and user names are case-insensitive; the logs carry their real case
@@ -386,10 +386,11 @@ class BreakdownBuilder:
         }
 
     def _dataset(self, minutes: Dict[datetime, List[float]], end: datetime) -> Dict:
-        """Per-minute values in the shape the CloudWatch fetcher returns, for its slicing."""
+        """Per-minute values in the shape the CloudWatch fetcher returns, for its slicing:
+        UTC timestamps as CloudWatch's, so hourly peaks fall in the same hours as the endpoint's."""
         stamps = sorted(minutes)
         return {'end_time': end, '60_token': {
-            'timestamps': [m.astimezone(self.local_tz) for m in stamps],
+            'timestamps': stamps,
             'data': {'input_tokens': [minutes[m][0] for m in stamps],
                      'output_tokens': [minutes[m][1] for m in stamps],
                      'invocations': [minutes[m][2] for m in stamps]},
@@ -459,7 +460,7 @@ def _caller_value(value: str) -> str:
     """A metadata or tag value as a row name. The tool's own rows are named '(...)', so a
     value starting with '(' is quoted and can never take one of their places; one starting
     with a quote is quoted too, so that two different values never share a name."""
-    return f'"{value}"' if value.startswith(('(', '"')) else value
+    return f'"{value}"' if not value or value.startswith(('(', '"')) else value  # '' shown as ""
 
 
 def _add(values: List[float], row: Dict) -> None:

@@ -693,7 +693,7 @@ def cloudwatch(minutes):
 
 def builder_for(breakdown, logs, iam=None, bedrock=None):
     bedrock = bedrock or FakeBedrock(logging_config={'cloudWatchConfig': {'logGroupName': '/bedrock/logs'}})
-    return BreakdownBuilder(breakdown, REGION, bedrock, CloudWatchMetricsFetcher(None), stats_fn, timezone.utc,
+    return BreakdownBuilder(breakdown, REGION, bedrock, CloudWatchMetricsFetcher(None), stats_fn,
                             ACCOUNT, logs_client=logs, iam_client=iam or FakeIam())
 
 
@@ -769,6 +769,29 @@ def test_an_unrecorded_caller_has_its_own_row_in_a_tag_breakdown():
     builder.prepare([US_HAIKU], END, 1)
     section = builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({})}, GRANULARITY, ['1hour'])
     assert {r['name'] for r in section['periods']['1hour']['rows']} == {'shop', il.UNKNOWN_CALLER}
+
+
+def test_an_empty_tag_or_metadata_value_is_its_own_row_not_the_missing_key():
+    # As cost allocation by principal tag keeps team="" apart from no team tag
+    logs = FakeLogs([row(T1, 'assumed-role/Blank', meta=''), row(T2, 'assumed-role/Untagged')])
+    iam = FakeIam(role_tags={'Blank': {'team': ''}})
+    builder = builder_for(Breakdown.parse('tag:team'), logs, iam)
+    builder.prepare([US_HAIKU], END, 1)
+    rows = {r['name']: r for r in builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({})}, GRANULARITY,
+                                                  ['1hour'])['periods']['1hour']['rows']}
+    assert rows['""']['principals'] == ['role/Blank'] and rows['(no team tag)']['principals'] == ['role/Untagged']
+    builder = builder_for(Breakdown.parse('metadata:app'), logs)
+    builder.prepare([US_HAIKU], END, 1)
+    names = {r['name'] for r in builder.section([US_HAIKU], {}, {US_HAIKU: cloudwatch({})}, GRANULARITY,
+                                                ['1hour'])['periods']['1hour']['rows']}
+    assert names == {'""', '(no app)'}
+
+
+def test_breakdown_series_keep_cloudwatchs_utc_timestamps():
+    # Hourly peaks are aligned on the timestamps' clock: the endpoint's are UTC, so are these
+    builder = builder_for(Breakdown(), FakeLogs())
+    dataset = builder._dataset({T2: [1, 2, 3], T1: [4, 5, 6]}, END)['60_token']
+    assert dataset['timestamps'] == [T1, T2] and all(t.utcoffset() == timedelta(0) for t in dataset['timestamps'])
 
 
 def test_metadata_and_session_breakdowns():
