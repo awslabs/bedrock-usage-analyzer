@@ -165,6 +165,17 @@ def test_a_deployment_that_is_not_active_is_named(monkeypatch, caplog):
     assert 'my-lite is Failed, not Active' in caplog.text
 
 
+def test_a_deployment_without_a_custom_model_says_so(monkeypatch, caplog):
+    class NoModel(FakeCustom):
+        def get_custom_model_deployment(self, customModelDeploymentIdentifier):
+            found = dict(super().get_custom_model_deployment(customModelDeploymentIdentifier))
+            found.pop('modelArn', None)
+            return found
+    inputs = _inputs(monkeypatch, NoModel())
+    assert inputs._parse_model_id(DEPLOYMENT)['model_id'] == 'dep0000001'
+    assert 'my-lite names no custom model' in caplog.text and 'no foundation base model' not in caplog.text
+
+
 def test_an_application_profile_arn_needs_no_deployment_listing(monkeypatch):
     client = FakeCustom([SUMMARY])
     inputs = _inputs(monkeypatch, client)

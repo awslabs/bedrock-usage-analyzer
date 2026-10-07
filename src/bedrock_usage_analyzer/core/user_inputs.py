@@ -527,7 +527,8 @@ class UserInputs:
         if reason is None:
             try:
                 base = fetcher.deployment_base_model(summary.get('model_arn'))
-                reason = "has no foundation base model"  # GetCustomModel names none
+                # GetCustomModel names no base model, or the deployment names no custom model
+                reason = "has no foundation base model" if summary.get('model_arn') else "names no custom model"
             except AWS_ERRORS as e:
                 base = base_model_id_in_arn(summary.get('model_arn'))
                 reason = f"has a custom model that could not be read ({e})"

@@ -17,10 +17,9 @@ logger = logging.getLogger(__name__)
 PERIOD_DAYS = {'1hour': 1 / 24, '1day': 1, '7days': 7, '14days': 14, '30days': 30}
 
 
-ALL_METRICS = ('invocations', 'input_tokens', 'output_tokens', 'throttles', 'client_errors',
-               'server_errors', 'latency')
 TOKEN_METRICS = ('invocations', 'input_tokens', 'output_tokens')
 OTHER_METRICS = ('throttles', 'client_errors', 'server_errors', 'latency')
+ALL_METRICS = TOKEN_METRICS + OTHER_METRICS
 
 
 def failed_fetch(period, metrics=ALL_METRICS):
@@ -278,7 +277,7 @@ class CloudWatchMetricsFetcher:
             'start_time': target_start,
             'end_time': end_time,
             'period': 60,
-            'metrics': ['input_tokens', 'output_tokens', 'invocations']
+            'metrics': list(TOKEN_METRICS)
         }
         
         # Config 2: Other metrics at configured granularities
@@ -296,7 +295,7 @@ class CloudWatchMetricsFetcher:
             other_metrics_configs[period] = {
                 'start_time': period_start,
                 'end_time': end_time,
-                'metrics': ['throttles', 'client_errors', 'server_errors', 'latency']
+                'metrics': list(OTHER_METRICS)
             }
         
         # Calculate total chunks for progress tracking
@@ -649,7 +648,7 @@ class CloudWatchMetricsFetcher:
         
         filtered_token_timestamps = [token_timestamps[i] for i in token_indices]
         filtered_token_data = {}
-        for key in ['invocations', 'input_tokens', 'output_tokens']:
+        for key in TOKEN_METRICS:
             if key in token_data and token_data[key]:
                 valid_indices = [i for i in token_indices if i < len(token_data[key])]
                 filtered_token_data[key] = [token_data[key][i] for i in valid_indices]
@@ -663,7 +662,7 @@ class CloudWatchMetricsFetcher:
             other_data = other_dataset['data']
             other_indices = [i for i, ts in enumerate(other_timestamps) if start_time <= ts <= end_time]
             
-            for key in ['throttles', 'client_errors', 'server_errors', 'latency']:
+            for key in OTHER_METRICS:
                 if key in other_data and other_data[key]:
                     valid_indices = [i for i in other_indices if i < len(other_data[key])]
                     filtered_other_data[key] = [other_data[key][i] for i in valid_indices]
