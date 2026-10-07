@@ -550,14 +550,21 @@ class UserInputs:
     def _imported_model_config(self, arn, summary=None):
         """Analysis target for a Custom Model Import model: its usage under its ARN, without
         limits (imported models have no per-model token or request quotas). Its ID stands in
-        for the model ID, as for a deployment without a known base model."""
+        for the model ID, as for a deployment without a known base model. Without ``summary``
+        (passed by ARN) its name comes from the region's listing (one request for all of them),
+        or else from reading it."""
         fetcher = self._get_profile_fetcher()
+        if summary is None and isinstance(fetcher, InferenceProfileFetcher):
+            summary = next((m for m in self._imported_models() if m['arn'] == arn), None)
         if summary is None and isinstance(fetcher, InferenceProfileFetcher):
             try:
                 summary = fetcher.read_imported_model(arn)
             except Exception as e:
                 if not deployment_read_error(e):
                     raise
+                hint = troubleshooting_hint(e, self.region) if is_access_denied(e) else None
+                if hint:
+                    logger.warning(f"  Hint: {hint}")
                 # The name is cosmetic: the ARN still gives the metrics
                 logger.warning(f"  WARNING: imported model {deployment_short_id(arn)} could not be read ({e}); "
                                f"if it was deleted, the report still shows the usage CloudWatch keeps for it")
@@ -676,8 +683,17 @@ class UserInputs:
                 logger.debug(f"{identifier} is not a readable custom model deployment either: {e}")
         if deployment:
             return self._custom_deployment_config(deployment['arn'], deployment)
-        imported = None if identifier.startswith('arn:') else next(
+        if identifier.startswith('arn:'):
+            return None
+        imported = next(
             (m for m in self._imported_models() if identifier in (deployment_short_id(m['arn']), m['name'])), None)
+        if imported is None and isinstance(fetcher, InferenceProfileFetcher) and fetcher.imported_models_error is not None:
+            try:  # GetImportedModel also takes a name
+                imported = fetcher.read_imported_model(identifier)
+            except Exception as e:
+                if not deployment_read_error(e):
+                    raise
+                logger.debug(f"{identifier} is not a readable imported model either: {e}")
         return self._imported_model_config(imported['arn'], imported) if imported else None
 
     def _imported_models(self) -> List[Dict]:
@@ -697,11 +713,14 @@ class UserInputs:
             return []
 
     def _report_deployment_listing_error(self, identifier):
-        """Say so when ``identifier`` may be a deployment that could not be listed."""
+        """Say so when ``identifier`` may be a deployment or imported model that could not be listed."""
         fetcher = self._get_profile_fetcher()
-        error = fetcher.custom_deployments_error if isinstance(fetcher, InferenceProfileFetcher) else None
-        if error is not None and not identifier.startswith('arn:'):
-            logger.error(f"  (Custom model deployments could not be listed either, so it may be one: {error})")
+        if not isinstance(fetcher, InferenceProfileFetcher) or identifier.startswith('arn:'):
+            return
+        for what, error in (("Custom model deployments", fetcher.custom_deployments_error),
+                            ("Imported models", fetcher.imported_models_error)):
+            if error is not None:
+                logger.error(f"  ({what} could not be listed either, so it may be one: {error})")
 
     def _find_custom_deployment(self, identifier) -> Optional[Dict]:
         """The region's custom model deployment with this ID or name, or None (an ARN needs

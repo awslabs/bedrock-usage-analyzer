@@ -133,6 +133,7 @@ class InferenceProfileFetcher:
         self._read_deployments: Dict[str, object] = {}  # identifier -> summary, or its read error
         self._imported: Optional[List[Dict]] = None
         self._imported_error: Optional[Exception] = None
+        self._read_imported: Dict[str, object] = {}  # identifier -> summary, or its read error
 
     # ------------------------------------------------------------------ custom models
 
@@ -215,21 +216,40 @@ class InferenceProfileFetcher:
         self.read_base_models([a for a in model_arns if a])
 
     def list_imported_models(self) -> List[Dict]:
-        """The region's Custom Model Import models, listed once per run; an API error is
-        raised again on later calls without another request."""
+        """The region's Custom Model Import models, listed once per run. As for deployments, a
+        failed listing is retried once at once; access denied or a second failure is raised
+        again on later calls without another request."""
         if self._imported_error is not None:
             raise self._imported_error
-        if self._imported is None:
+        for attempt in range(MAX_LISTING_ATTEMPTS):
+            if self._imported is not None:
+                break
             try:
                 self._imported = list_imported_models(self.bedrock_client)
             except AWS_ERRORS as e:
-                self._imported_error = e
-                raise
+                if is_access_denied(e) or attempt + 1 == MAX_LISTING_ATTEMPTS:
+                    self._imported_error = e
+                    raise
+                logger.debug(f"Listing imported models failed, retrying: {e}")
         return self._imported
 
+    @property
+    def imported_models_error(self) -> Optional[Exception]:
+        """The error the imported model listing gave up on, or None."""
+        return self._imported_error
+
     def read_imported_model(self, identifier: str) -> Dict:
-        """An imported model's summary (arn, name), read by its ARN or name."""
-        return read_imported_model(self.bedrock_client, identifier)
+        """An imported model's summary (arn, name), read by its ARN or name once per run: an
+        API error is raised again without another request."""
+        if identifier not in self._read_imported:
+            try:
+                self._read_imported[identifier] = read_imported_model(self.bedrock_client, identifier)
+            except AWS_ERRORS as e:
+                self._read_imported[identifier] = e
+        result = self._read_imported[identifier]
+        if isinstance(result, Exception):
+            raise result
+        return result
 
     def note_deployment_name(self, arn: str, name: str):
         """Remember a selected deployment's name, so find_profiles need not read it again."""

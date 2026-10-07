@@ -26,18 +26,24 @@ All notable changes to the Bedrock Usage Analyzer will be documented in this fil
   `bedrock:GetImportedModel` (the name of an ARN passed with `-m`).
 
 ### Fixed
-- Quota mapping no longer gives an on-demand endpoint the latency-optimized quotas, or a model
-  whose version is part of its name (Nova 2.5 Sonic) the quota of the unversioned family.
+- Quota mapping no longer gives an on-demand endpoint the latency-optimized quotas, a model
+  whose version is part of its name (Nova 2.5 Sonic) the quota of the unversioned family, or a
+  model the quota of another API version of it (a "... Claude 3.5 Sonnet V2" quota for
+  `anthropic.claude-3-5-sonnet-20240620-v1:0`).
 - Bundled quota mappings: `nvidia.nemotron-nano-12b-v2` now uses the "NVIDIA Nemotron Nano 2 VL"
-  quotas (it had the 9B model's "Nemotron Nano 2" ones); the `us` profiles of Stable Image
-  Outpaint, Search and Recolor and Style Transfer, Stable Diffusion 3.5 Large (us-west-2) and
-  Claude Sonnet 5 on demand (ap-northeast-2) get the quotas Service Quotas lists for them.
+  quotas (it had the 9B model's "Nemotron Nano 2" ones, 10 regions); the `us` profiles of
+  Stable Image Outpaint, Search and Recolor and Style Transfer (us-east-1, us-east-2, us-west-2)
+  get their RPM quota, and Stable Diffusion 3.5 Large on demand (us-west-2) its RPM quota.
 
 ### Changed
-- Refreshed bundled fm-lists and quota mappings (adds `amazon.nova-2-5-sonic`, `zai.glm-5.3` and
-  new inference profile endpoints; Kimi K3 and Grok 4.7 cross-region and global quotas are
-  mapped where Service Quotas lists them; GLM 5.3 has no Service Quotas yet, so it is reported
-  without limits).
+- Refreshed bundled fm-lists and quota mappings: adds `amazon.nova-2-5-sonic`, `zai.glm-5.3` and
+  new inference profile endpoints. Newly mapped where Service Quotas lists them: Grok 4.7
+  `global` TPM (12 regions), Claude Sonnet 5.5 `global` TPM (15 regions), GPT-6.1 Sol `global`
+  TPM and TPD (15 regions), the `in` profiles of Claude Haiku 4.5, Sonnet 5 and Opus 5
+  (ap-south-1, ap-south-2), Claude Sonnet 5 on demand TPM (ap-northeast-2, ap-southeast-1),
+  Claude Opus 5 on demand TPM (ap-northeast-2) and Claude 3.5 Sonnet V2 `apac` TPD
+  (ap-south-1). Kimi K3 keeps its `us` and `global` mappings. GLM 5.3 has no Service Quotas
+  yet, so it is reported without limits.
 - Requires boto3 1.39.7 or later (custom model deployment APIs).
 
 ## [0.6.0-beta] - 2026-09-30

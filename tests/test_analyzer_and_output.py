@@ -133,6 +133,15 @@ def test_an_imported_model_report(analyzer, tmp_path, caplog):
     assert 'custom model deployment quotas' not in caplog.text
 
 
+def test_a_target_mixing_imported_models_and_deployments_is_refused(analyzer, tmp_path):
+    imported = 'arn:aws:bedrock:ap-southeast-2:111122223333:imported-model/imp0000001'
+    deployment = 'arn:aws:bedrock:ap-southeast-2:111122223333:custom-model-deployment/dep0000001'
+    with pytest.raises(ValueError, match='mixes imported models and custom model deployments'):
+        analyzer.analyze([{'model_id': HAIKU, 'profile_prefix': 'custom',
+                           'application_profile_ids': [deployment, imported]}], output_dir=str(tmp_path / 'r'))
+    assert not analyzer.cw.dimensions  # refused before any metric is read
+
+
 def test_two_endpoints_of_one_model_do_not_overwrite(analyzer, tmp_path):
     out = tmp_path / 'results'
     analyzer.analyze([{'model_id': HAIKU, 'profile_prefix': 'au'},

@@ -125,9 +125,9 @@ models:
       quotas:
         concurrent: null
         rpm:
-          code: L-1D3E59A3
-          name: Cross-Region model inference requests per minute for Anthropic Claude
-            3.5 Sonnet V2
+          code: L-F457545D
+          name: Cross-region model inference requests per minute for Anthropic Claude
+            3.5 Sonnet
         tpd:
           code: L-E7D41161
           name: Model invocation max tokens per day for Anthropic Claude 3.5 Sonnet

@@ -21,6 +21,10 @@ _API_VERSION_TOKEN = re.compile(r'^v\d+(?:\.\d+)?$')
 _SIZE_TOKEN = re.compile(r'^\d+(?:\.\d+)?[bmk]$')
 # A version in a quota name: '4.6' in 'Sonnet 4.6', '6' in 'GPT-6 Sol'; not '20B', 'V2' or 'K2.5'
 _NAME_VERSION = re.compile(r'(?<![\w.])(\d{1,2}(?:\.\d{1,2})?)(?![\w.])')
+# The API version of a model ID ('-v2:0', '-v1') and of a quota name ('Claude 3.5 Sonnet V2';
+# not 'Marengo Embed V2.7', which is the model's generation)
+_ID_API_VERSION = re.compile(r'-v(\d+)(?::\d+)?$')
+_NAME_API_VERSION = re.compile(r'(?<![\w.])V(\d+)(?![\w.])')
 
 
 def model_version(model_id: str) -> Optional[str]:
@@ -132,6 +136,11 @@ def mapping_conflict(model_id: str, endpoint_type: str, quota_name: Optional[str
         return f"quota is for version {'/'.join(sorted(versions))}, model is {version}"
     if version and not versions and _version_inside_name(model_id):
         return f"quota names no version, model is {version}"
+    id_api = _ID_API_VERSION.search(model_id.lower())
+    name_api = set(_NAME_API_VERSION.findall(quota_name))
+    if id_api and name_api and id_api.group(1) not in name_api:
+        # 'Claude 3.5 Sonnet V2' is the quota of claude-3-5-sonnet-20241022-v2:0, not of -v1:0
+        return f"quota is for V{'/V'.join(sorted(name_api))}, model is v{id_api.group(1)}"
     return None
 
 

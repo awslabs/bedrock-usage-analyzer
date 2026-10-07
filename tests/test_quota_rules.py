@@ -280,6 +280,20 @@ def test_a_version_inside_the_name_needs_it_in_the_quota():
                             'On-demand model inference tokens per minute for Qwen3 32B V1', REGIONAL) is None
 
 
+def test_a_quota_of_another_api_version_is_rejected():
+    v2 = 'Cross-Region model inference requests per minute for Anthropic Claude 3.5 Sonnet V2'
+    assert mapping_conflict('anthropic.claude-3-5-sonnet-20240620-v1:0', 'apac', v2, REGIONAL) == \
+        'quota is for V2, model is v1'
+    assert mapping_conflict('anthropic.claude-3-5-sonnet-20241022-v2:0', 'apac', v2, REGIONAL) is None
+    # A name without an API version, or with a generation such as 'V2.7', says nothing
+    assert mapping_conflict('anthropic.claude-3-5-sonnet-20240620-v1:0', 'apac',
+                            'Cross-region model inference requests per minute for Anthropic Claude 3.5 Sonnet',
+                            REGIONAL) is None
+    assert mapping_conflict('twelvelabs.marengo-embed-2-7-v1:0', 'base',
+                            'On-demand model inference requests per minute for TwelveLabs Marengo Embed V2.7',
+                            REGIONAL) is None
+
+
 def test_latency_optimized_quota_is_rejected():
     name = 'On-Demand, latency-optimized model inference tokens per minute for Amazon Nova Pro V1'
     assert mapping_conflict('amazon.nova-pro-v1:0', 'base', name, REGIONAL) == 'latency-optimized inference quota'

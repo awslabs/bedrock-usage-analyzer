@@ -550,14 +550,31 @@ def test_an_imported_model_is_analyzed_by_arn_id_or_name_without_limits(monkeypa
     assert 'no per-model token or request quotas' in caplog.text
 
 
+def test_an_imported_model_arn_is_named_from_the_listing(monkeypatch):
+    client = FakeImported()
+    inputs = _inputs(monkeypatch, client)
+    other = IMPORTED.replace('imp0000001', 'imp2')
+    client.imported.append({'modelArn': other, 'modelName': 'b'})
+    inputs._parse_model_id(IMPORTED)
+    inputs._parse_model_id(other)
+    assert inputs.profile_fetcher._deployment_names == {IMPORTED: 'my-qwen', other: 'b'}
+    # One listing for both, no per-model read
+    assert client.calls.count('ListImportedModels') == 1 and 'GetImportedModel' not in client.calls
+
+
 def test_an_unreadable_imported_model_arn_is_still_analyzed(monkeypatch, caplog):
     class Denied(FakeImported):
         def get_imported_model(self, modelIdentifier):
+            self.calls.append('GetImportedModel')
             raise aws_error('AccessDeniedException', 'GetImportedModel')
-    inputs = _inputs(monkeypatch, Denied())
+    client = Denied(imported=())  # e.g. deleted: not listed any more
+    inputs = _inputs(monkeypatch, client)
     assert inputs._parse_model_id(IMPORTED)['application_profile_ids'] == [IMPORTED]
-    assert 'imp0000001 could not be read' in caplog.text
+    assert 'imp0000001 could not be read' in caplog.text and 'Hint:' in caplog.text
     assert inputs.profile_fetcher._deployment_names[IMPORTED] == 'imp0000001'
+    # The failed read is not repeated
+    inputs._parse_model_id(IMPORTED)
+    assert client.calls.count('GetImportedModel') == 1
 
 
 def test_a_bug_reading_an_imported_model_is_raised(monkeypatch):
@@ -565,7 +582,36 @@ def test_a_bug_reading_an_imported_model_is_raised(monkeypatch):
         def get_imported_model(self, modelIdentifier):
             raise KeyError('bug')
     with pytest.raises(KeyError):
-        _inputs(monkeypatch, Broken())._parse_model_id(IMPORTED)
+        _inputs(monkeypatch, Broken(imported=()))._parse_model_id(IMPORTED)
+
+
+def test_a_failed_imported_model_listing_is_retried_once():
+    class Flaky(FakeImported):
+        def list_imported_models(self, **kwargs):
+            self.calls.append('ListImportedModels')
+            if self.calls.count('ListImportedModels') == 1:
+                raise aws_error('ThrottlingException', 'ListImportedModels')
+            return {'modelSummaries': self.imported}
+    client = Flaky()
+    fetcher = InferenceProfileFetcher(client)
+    assert fetcher.list_imported_models() == [{'arn': IMPORTED, 'name': 'my-qwen'}]
+    assert fetcher.imported_models_error is None and client.calls.count('ListImportedModels') == 2
+
+
+def test_an_imported_model_name_is_read_when_the_listing_fails(monkeypatch, caplog):
+    class NoList(FakeImported):
+        def list_imported_models(self, **kwargs):
+            raise aws_error('AccessDeniedException', 'ListImportedModels')
+    inputs = _inputs(monkeypatch, NoList())
+    assert inputs._parse_model_id('my-qwen')['application_profile_ids'] == [IMPORTED]
+
+    class Neither(NoList):
+        def get_imported_model(self, modelIdentifier):
+            raise aws_error('ValidationException', 'GetImportedModel')
+    inputs = _inputs(monkeypatch, Neither())
+    with pytest.raises(SystemExit):
+        inputs._parse_model_id('nothing-by-that-name')
+    assert 'Imported models could not be listed either' in caplog.text
 
 
 def test_imported_models_are_offered_in_the_picker(monkeypatch):

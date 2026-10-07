@@ -263,6 +263,19 @@ class BedrockAnalyzer:
         app_ids = tuple(sorted(model_config.get('application_profile_ids') or ()))
         return (model_config['model_id'], model_config.get('profile_prefix'), app_ids)
 
+    @staticmethod
+    def _imported_target(key) -> bool:
+        """True when a target (its scope key) is Custom Model Import models, reported under
+        their ARNs without limits. Raises ValueError for a target mixing them with custom
+        model deployments, which are measured against their base model's quotas."""
+        _, profile_prefix, app_ids = key
+        if profile_prefix != CUSTOM_ENDPOINT or not any(is_imported(a) for a in app_ids):
+            return False
+        if not all(is_imported(a) for a in app_ids):
+            raise ValueError(f"target {key[0]} mixes imported models and custom model deployments: "
+                             f"pass them as separate targets")
+        return True
+
     def _warn_other_deployments(self, base, deployment_arns):
         """Tell the user when other active deployments share the base model's custom
         deployment quotas: those limits are account-wide sums, so this report's
@@ -306,6 +319,8 @@ class BedrockAnalyzer:
         logger.info(f"{'='*80}")
 
         all_profiles_map = {}  # {scope_key: (final_model_ids, profile_names, profile_metadata)}
+        for model_config in models:
+            self._imported_target(self._scope_key(model_config))  # a mixed target fails before any AWS call
 
         for model_config in models:
             key = self._scope_key(model_config)
@@ -359,6 +374,7 @@ class BedrockAnalyzer:
                 continue
             processed.add(key)
             model_id, profile_prefix, app_ids = key
+            imported = self._imported_target(key)
 
             logger.info(f"\n{'='*80}")
             logger.info(f"Processing model: {model_id}")
@@ -386,7 +402,7 @@ class BedrockAnalyzer:
                     else "the report will show usage without limits"
                 logger.info(f"  {endpoint_id(model_id, profile_prefix)} is not offered in "
                             f"{self.region}; {ending}")
-            elif profile_prefix == CUSTOM_ENDPOINT and app_ids and all(is_imported(a) for a in app_ids):
+            elif imported:
                 pass  # imported models have no quotas, as said when they were selected
             elif not any(quota_codes.values()) and profile_prefix == CUSTOM_ENDPOINT:
                 if _base_unknown(model_id, app_ids):
@@ -496,7 +512,7 @@ class BedrockAnalyzer:
             logger.info(f"  Generating output files...")
             end_time_local = datetime.now(self.local_tz)
             scope_label = APPLICATION_PROFILE_SCOPE
-            if profile_prefix == CUSTOM_ENDPOINT and app_ids and all(is_imported(a) for a in app_ids):
+            if imported:
                 endpoint = f"{model_id} (imported model)"
                 scope_label = IMPORTED_SCOPE
                 file_label = f"imported-model.{model_id}"  # its ID is the model ID: one file per model
