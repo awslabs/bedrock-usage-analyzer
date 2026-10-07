@@ -223,22 +223,13 @@ class OutputGenerator:
         if end_time is None:
             end_time = datetime.now().astimezone()
         names = {}
-        for period in ['1hour', '1day', '7days', '14days', '30days']:
-            if period == '1hour':
-                start = end_time - timedelta(hours=1)
-                names[period] = f"Last 1 hour ({start.strftime('%H:%M')}-{end_time.strftime('%H:%M')})"
-            elif period == '1day':
-                start = end_time - timedelta(days=1)
-                names[period] = f"Last 1 day ({start.strftime('%a %H:%M')}-{end_time.strftime('%a %H:%M')})"
-            elif period == '7days':
-                start = end_time - timedelta(days=7)
-                names[period] = f"Last 7 days ({start.strftime('%d %b')}-{end_time.strftime('%d %b')})"
-            elif period == '14days':
-                start = end_time - timedelta(days=14)
-                names[period] = f"Last 14 days ({start.strftime('%d %b')}-{end_time.strftime('%d %b')})"
-            elif period == '30days':
-                start = end_time - timedelta(days=30)
-                names[period] = f"Last 30 days ({start.strftime('%d %b')}-{end_time.strftime('%d %b')})"
+        for period, days in PERIOD_DAYS.items():  # the one period table
+            start = end_time - timedelta(days=days)
+            if days < 1:
+                label, fmt = f"{round(days * 24)} hour", '%H:%M'
+            else:
+                label, fmt = f"{days:g} day{'s' if days != 1 else ''}", '%a %H:%M' if days == 1 else '%d %b'
+            names[period] = f"Last {label} ({start.strftime(fmt)}-{end_time.strftime(fmt)})"
         return names
     
     def _generate_html(self, filename, model_id, timestamp, data):

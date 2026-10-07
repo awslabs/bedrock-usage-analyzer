@@ -37,8 +37,10 @@ TAG = 'tag'
 METADATA = 'metadata'
 KINDS = (PRINCIPAL, SESSION, TAG, METADATA)
 
-# Logs Insights returns at most this many rows per query
-MAX_ROWS = 10000
+# Logs Insights returns at most this many rows per query, in GetQueryResults pages of
+# PAGE_ROWS; with an SDK that cannot ask for the next page, one page is the limit
+MAX_ROWS = 100000
+PAGE_ROWS = 10000
 # Queries run at once (the account allows 100 across all users, and 10 StartQuery per second)
 MAX_CONCURRENT_QUERIES = 4
 QUERY_TIMEOUT_SECONDS = 900
@@ -204,7 +206,7 @@ def model_id_forms(cw_ids: Iterable[str], region: str, account: Optional[str],
     return {form: cw_id for form, cw_id in forms.items() if _MODEL_ID_PATTERN.match(form)}
 
 
-def build_query(forms: Iterable[str], breakdown: Breakdown) -> str:
+def build_query(forms: Iterable[str], breakdown: Breakdown, limit: Optional[int] = None) -> str:
     """Logs Insights query: per-minute input/output tokens and requests by modelId,
     principal and (for session and metadata breakdowns) the breakdown key."""
     values = sorted(set(forms))
@@ -240,7 +242,7 @@ def build_query(forms: Iterable[str], breakdown: Breakdown) -> str:
         '| fields coalesce(p_role, p_user, arn) as principal',
         '| stats sum(in_tokens) as i, sum(out_tokens) as o, count(*) as n'
         f' by bin(1m) as minute, modelId, {", ".join(keys)}',
-        f'| limit {MAX_ROWS}',
+        f'| limit {limit or MAX_ROWS}',
     ])
 
 
@@ -294,6 +296,15 @@ def next_minute(moment: datetime) -> datetime:
     return floor if floor == moment else floor + timedelta(minutes=1)
 
 
+def _pages_results(logs_client) -> bool:
+    """Whether the client can ask GetQueryResults for its next page (newer SDKs)."""
+    try:
+        shape = logs_client.meta.service_model.operation_model('GetQueryResults').input_shape
+        return 'nextToken' in shape.members
+    except Exception:  # not a botocore client (a test double), or no such operation
+        return False
+
+
 def _number(value) -> float:
     try:
         return float(value)
@@ -313,6 +324,8 @@ class InvocationLogFetcher:
         # lost reply cannot leave a second, unseen query scanning; throttling is retried here
         self.start_client = start_client or logs_client
         self.log_group = log_group
+        # Rows a query may return: a window at this many is split
+        self.max_rows = MAX_ROWS if _pages_results(logs_client) else min(MAX_ROWS, PAGE_ROWS)
         self._poll = poll_seconds
         self._max_concurrent = max_concurrent
         self.bytes_scanned = 0.0
@@ -376,7 +389,7 @@ class InvocationLogFetcher:
             cursor = windows[-1][1]
         # Each modelId spelling is in exactly one query, so the results simply add up
         # Each query and the report ModelIds its spellings belong to
-        self._batch_ids = {build_query(values, breakdown): frozenset(forms[v] for v in values)
+        self._batch_ids = {build_query(values, breakdown, self.max_rows): frozenset(forms[v] for v in values)
                            for values in _value_batches(forms, breakdown)}
         batches = list(self._batch_ids)
         jobs = [(query, w_start, w_end, False) for query in batches for w_start, w_end in windows]
@@ -417,10 +430,11 @@ class InvocationLogFetcher:
             # Too much to scan in one query (a busy log group with bodies): smaller windows
             logger.debug(f"Invocation-log query for {start:%Y-%m-%d %H:%M} timed out; splitting it")
             return [], self._parts(query, start, end, True)
-        if len(results) < MAX_ROWS or end - start <= MIN_WINDOW:
-            if len(results) >= MAX_ROWS:
+        if len(results) < self.max_rows or end - start <= MIN_WINDOW:
+            if len(results) >= self.max_rows:
                 # Summed up once by the caller and in the reports it affects, not per window
-                logger.debug(f"Invocation-log query for {start:%Y-%m-%d %H:%M} returned the {MAX_ROWS}-row limit")
+                logger.debug(f"Invocation-log query for {start:%Y-%m-%d %H:%M} returned the "
+                             f"{self.max_rows}-row limit")
                 with self._count_lock:
                     self.truncated.append((start, end, self._batch_ids.get(query, frozenset())))
             return results, []
@@ -447,7 +461,7 @@ class InvocationLogFetcher:
             try:
                 response = self.start_client.start_query(
                     logGroupName=self.log_group, queryString=query,
-                    startTime=int(start.timestamp()), endTime=int(end.timestamp()), limit=MAX_ROWS)
+                    startTime=int(start.timestamp()), endTime=int(end.timestamp()), limit=self.max_rows)
                 break
             except (ClientError, EndpointConnectionError, ConnectTimeoutError) as e:
                 # Refused (throttled, or too many queries at once), or no connection was made:
@@ -472,8 +486,15 @@ class InvocationLogFetcher:
                 status = result.get('status')
                 scanned = _number((result.get('statistics') or {}).get('bytesScanned')) or scanned
                 if status == 'Complete':
-                    rows = [{field['field']: field.get('value') for field in row}
-                            for row in result.get('results') or []]
+                    results = list(result.get('results') or [])
+                    token = result.get('nextToken')
+                    while token:  # rows past the first page
+                        if self._cancel.is_set():
+                            raise LogsQueryError("cancelled")
+                        page = self.logs_client.get_query_results(queryId=query_id, nextToken=token)
+                        results.extend(page.get('results') or [])
+                        token = page.get('nextToken')
+                    rows = [{field['field']: field.get('value') for field in row} for row in results]
                     with self._count_lock:  # after the rows: a bad row counts it once, below
                         self.bytes_scanned += scanned
                     return rows

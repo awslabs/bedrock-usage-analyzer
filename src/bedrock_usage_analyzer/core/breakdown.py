@@ -65,6 +65,7 @@ class BreakdownBuilder:
         self._rows_by_id: Optional[Dict[str, List[Dict]]] = None
         self._unavailable: Optional[str] = None
         self._truncated: List[Tuple[datetime, datetime, frozenset]] = []  # query windows cut at the row limit
+        self._max_rows = MAX_ROWS  # that limit, as the fetcher could use it
         self.log_group: Optional[str] = breakdown.log_group
         self.coverage: Optional[Tuple[datetime, datetime]] = None
         self._tags: Dict[str, Dict[str, str]] = {}
@@ -138,9 +139,10 @@ class BreakdownBuilder:
             return self._give_up(f"could not read the model invocation logs: {e}" + (f" ({hint})" if hint else ""))
         self.coverage = (covered_from, end)
         self._truncated = sorted(fetcher.truncated, key=lambda w: (w[0], w[1]))
+        self._max_rows = fetcher.max_rows
         if self._truncated:
             logger.info(f"  Warning: {len(self._truncated)} invocation-log query window(s) returned the "
-                        f"{MAX_ROWS}-row limit at the smallest split; some callers there are missing")
+                        f"{self._max_rows}-row limit at the smallest split; some callers there are missing")
         self._rows_by_id = {}
         for row in rows:
             self._rows_by_id.setdefault(row['cw_id'], []).append(row)
@@ -181,7 +183,7 @@ class BreakdownBuilder:
             # The tool cut these, not the logs: say so, or the remainder row would blame logging
             shortest = min(b - a for a, b in cut)
             notes.append(f"{len(cut)} invocation-log query window(s) between {max(cut[0][0], start):%Y-%m-%d %H:%M} and "
-                         f"{max(b for _, b in cut):%Y-%m-%d %H:%M} UTC returned the Logs Insights limit of {MAX_ROWS} rows "
+                         f"{max(b for _, b in cut):%Y-%m-%d %H:%M} UTC returned the Logs Insights limit of {self._max_rows} rows "
                          f"even when split down to {int(shortest.total_seconds() // 60)} minutes; the usage "
                          f"of callers left out there is counted in '{UNATTRIBUTED}'")
         if no_cloudwatch:

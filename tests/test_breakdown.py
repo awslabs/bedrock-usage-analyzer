@@ -1189,6 +1189,44 @@ def test_a_log_group_that_cannot_be_described_is_read_from_the_requested_start()
         fetcher_for(Denied('ServiceUnavailableException')).coverage_start(start, END, END)
 
 
+def test_a_complete_result_is_read_to_its_last_page():
+    # GetQueryResults returns 10,000 rows a page: the rest must not fall into the remainder row
+    class Paged(FakeLogs):
+        def get_query_results(self, queryId, nextToken=None):
+            result = super().get_query_results(queryId)
+            if result['status'] != 'Complete':
+                return result
+            page = int(nextToken or 0)
+            rows = result['results']
+            return {**result, 'results': rows[page:page + 1],
+                    **({'nextToken': str(page + 1)} if page + 1 < len(rows) else {})}
+    logs = Paged([row(T1, 'assumed-role/A'), row(T2, 'assumed-role/B'), row(T3, 'assumed-role/C')])
+    rows = fetcher_for(logs).fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(hours=1), END)
+    assert sorted(r['principal'] for r in rows) == ['role/A', 'role/B', 'role/C'] and len(logs.queries) == 1
+    # A run cancelled between pages stops paging
+    fetcher = fetcher_for(logs)
+    first = logs.get_query_results
+
+    def cancel_after_first_page(queryId, nextToken=None):
+        result = first(queryId, nextToken)
+        if 'nextToken' in result:
+            fetcher._cancel.set()
+        return result
+    logs.get_query_results = cancel_after_first_page
+    with pytest.raises(LogsQueryError):
+        fetcher._run_query(build_query([US_HAIKU], Breakdown()), END - timedelta(hours=1), END)
+
+
+def test_the_row_limit_follows_what_the_sdk_can_page():
+    from bedrock_usage_analyzer.aws.client_factory import create_client
+    real = InvocationLogFetcher(create_client('logs', REGION), '/g')
+    assert real.max_rows == il.MAX_ROWS == 100000  # this SDK pages GetQueryResults
+    logs = FakeLogs()
+    fetcher_for(logs).fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(hours=1), END)
+    # One page only (no paging): the query asks for no more, and a window is split at it
+    assert logs.queries[0]['limit'] == il.PAGE_ROWS and f'| limit {il.PAGE_ROWS}' in logs.queries[0]['query']
+
+
 def test_a_malformed_complete_result_counts_its_scan_once():
     class Malformed(FakeLogs):
         def get_query_results(self, queryId):
