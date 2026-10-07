@@ -629,6 +629,19 @@ models:
   model_id: twelvelabs.pegasus-1-2-v1:0
   provider: TwelveLabs
 - endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: zai.glm-5.3
+  provider: Z.AI
+- endpoints:
     us:
       quotas:
         concurrent: null

@@ -948,6 +948,19 @@ models:
         concurrent: null
         rpm: null
         tpd: null
+        tpm: null
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: zai.glm-5.3
+  provider: Z.AI
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
         tpm:
           code: L-2AD735F5
           name: Global cross-region model inference tokens per minute for Grok 4.6

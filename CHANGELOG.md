@@ -28,10 +28,16 @@ All notable changes to the Bedrock Usage Analyzer will be documented in this fil
 ### Fixed
 - Quota mapping no longer gives an on-demand endpoint the latency-optimized quotas, or a model
   whose version is part of its name (Nova 2.5 Sonic) the quota of the unversioned family.
+- Bundled quota mappings: `nvidia.nemotron-nano-12b-v2` now uses the "NVIDIA Nemotron Nano 2 VL"
+  quotas (it had the 9B model's "Nemotron Nano 2" ones); the `us` profiles of Stable Image
+  Outpaint, Search and Recolor and Style Transfer, Stable Diffusion 3.5 Large (us-west-2) and
+  Claude Sonnet 5 on demand (ap-northeast-2) get the quotas Service Quotas lists for them.
 
 ### Changed
-- Refreshed bundled fm-lists and quota mappings (adds `amazon.nova-2-5-sonic` and new
-  inference profile endpoints).
+- Refreshed bundled fm-lists and quota mappings (adds `amazon.nova-2-5-sonic`, `zai.glm-5.3` and
+  new inference profile endpoints; Kimi K3 and Grok 4.7 cross-region and global quotas are
+  mapped where Service Quotas lists them; GLM 5.3 has no Service Quotas yet, so it is reported
+  without limits).
 - Requires boto3 1.39.7 or later (custom model deployment APIs).
 
 ## [0.6.0-beta] - 2026-09-30

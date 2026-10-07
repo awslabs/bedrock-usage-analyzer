@@ -874,14 +874,14 @@ models:
       quotas:
         concurrent: null
         rpm:
-          code: L-AC7B3FB9
+          code: L-30B384EA
           name: On-demand model inference requests per minute for NVIDIA Nemotron
-            Nano 2
+            Nano 2 VL
         tpd: null
         tpm:
-          code: L-33D3627D
+          code: L-A05A5476
           name: On-demand model inference tokens per minute for NVIDIA Nemotron Nano
-            2
+            2 VL
   inference_types:
   - ON_DEMAND
   model_id: nvidia.nemotron-nano-12b-v2
@@ -1294,6 +1294,19 @@ models:
   inference_types:
   - ON_DEMAND
   model_id: zai.glm-5
+  provider: Z.AI
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: zai.glm-5.3
   provider: Z.AI
 - endpoints:
     global:

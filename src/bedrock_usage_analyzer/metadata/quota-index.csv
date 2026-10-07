@@ -87,6 +87,8 @@ anthropic.claude-haiku-4-5-20251001-v1:0,us,rpm,L-CCA5DF70,Cross-region model in
 anthropic.claude-haiku-4-5-20251001-v1:0,us,tpm,L-58BE175A,Cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5,aws
 anthropic.claude-haiku-4-5-20251001-v1:0,jp,rpm,L-CCA5DF70,Cross-region model inference requests per minute for Anthropic Claude Haiku 4.5,aws
 anthropic.claude-haiku-4-5-20251001-v1:0,jp,tpm,L-58BE175A,Cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5,aws
+anthropic.claude-haiku-4-5-20251001-v1:0,in,rpm,L-CCA5DF70,Cross-region model inference requests per minute for Anthropic Claude Haiku 4.5,aws
+anthropic.claude-haiku-4-5-20251001-v1:0,in,tpm,L-58BE175A,Cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5,aws
 anthropic.claude-haiku-4-5-20251001-v1:0,au,rpm,L-CCA5DF70,Cross-region model inference requests per minute for Anthropic Claude Haiku 4.5,aws
 anthropic.claude-haiku-4-5-20251001-v1:0,au,tpm,L-58BE175A,Cross-region model inference tokens per minute for Anthropic Claude Haiku 4.5,aws
 anthropic.claude-haiku-4-5-20251001-v1:0,eu,rpm,L-CCA5DF70,Cross-region model inference requests per minute for Anthropic Claude Haiku 4.5,aws
@@ -122,6 +124,8 @@ anthropic.claude-opus-4-8,au,tpm,L-DB99DCDB,Cross-region model inference tokens 
 anthropic.claude-opus-4-8,eu,tpm,L-DB99DCDB,Cross-region model inference tokens per minute for Anthropic Claude Opus 4.8,aws
 anthropic.claude-opus-5,global,tpm,L-D73B1244,Global cross-region model inference tokens per minute for Anthropic Claude Opus 5,aws
 anthropic.claude-opus-5,us,tpm,L-99296DCD,Cross-region model inference tokens per minute for Anthropic Claude Opus 5,aws
+anthropic.claude-opus-5,base,tpm,L-2EFDF21F,On-demand model inference tokens per minute for Anthropic Claude Opus 5,aws
+anthropic.claude-opus-5,in,tpm,L-99296DCD,Cross-region model inference tokens per minute for Anthropic Claude Opus 5,aws
 anthropic.claude-opus-5,au,tpm,L-99296DCD,Cross-region model inference tokens per minute for Anthropic Claude Opus 5,aws
 anthropic.claude-opus-5,eu,tpm,L-99296DCD,Cross-region model inference tokens per minute for Anthropic Claude Opus 5,aws
 anthropic.claude-opus-5-5,global,tpm,L-A103A344,Global cross-region model inference tokens per minute for Anthropic Claude Opus 5.5,aws
@@ -153,6 +157,8 @@ anthropic.claude-sonnet-4-6,base,rpm,L-9B878FAE,On-demand model inference reques
 anthropic.claude-sonnet-4-6,base,tpm,L-5F5A169C,On-demand model inference tokens per minute for Anthropic Claude Sonnet 4.6,aws
 anthropic.claude-sonnet-5,global,tpm,L-DD84E5CA,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 5,aws
 anthropic.claude-sonnet-5,us,tpm,L-D4FBCF4E,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 5,aws
+anthropic.claude-sonnet-5,base,tpm,L-B46CFAB8,On-demand model inference tokens per minute for Anthropic Claude Sonnet 5,aws
+anthropic.claude-sonnet-5,in,tpm,L-D4FBCF4E,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 5,aws
 anthropic.claude-sonnet-5,au,tpm,L-D4FBCF4E,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 5,aws
 anthropic.claude-sonnet-5,eu,tpm,L-D4FBCF4E,Cross-region model inference tokens per minute for Anthropic Claude Sonnet 5,aws
 anthropic.claude-sonnet-5-5,global,tpm,L-31AB82D0,Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 5.5,aws
@@ -249,8 +255,8 @@ moonshotai.kimi-k3,global,tpd,L-0EDA3E92,Global cross-region model inference tok
 moonshotai.kimi-k3,global,tpm,L-2B5A3FA2,Global cross-region model inference tokens per minute for Moonshot AI Kimi K3,aws
 moonshotai.kimi-k3,us,tpd,L-BA59CBAA,Model invocation max tokens per day for Moonshot AI Kimi K3 (doubled for cross-region calls),aws
 moonshotai.kimi-k3,us,tpm,L-51FF35D5,Cross-region model inference tokens per minute for Moonshot AI Kimi K3,aws
-nvidia.nemotron-nano-12b-v2,base,rpm,L-AC7B3FB9,On-demand model inference requests per minute for NVIDIA Nemotron Nano 2,aws
-nvidia.nemotron-nano-12b-v2,base,tpm,L-33D3627D,On-demand model inference tokens per minute for NVIDIA Nemotron Nano 2,aws
+nvidia.nemotron-nano-12b-v2,base,rpm,L-30B384EA,On-demand model inference requests per minute for NVIDIA Nemotron Nano 2 VL,aws
+nvidia.nemotron-nano-12b-v2,base,tpm,L-A05A5476,On-demand model inference tokens per minute for NVIDIA Nemotron Nano 2 VL,aws
 nvidia.nemotron-nano-3-30b,base,rpm,L-2DA9C9CC,On-demand model inference requests per minute for Nemotron Nano 3 30B,aws
 nvidia.nemotron-nano-3-30b,base,tpm,L-C0663FA3,On-demand model inference tokens per minute for Nemotron Nano 3 30B,aws
 nvidia.nemotron-nano-9b-v2,base,rpm,L-AC7B3FB9,On-demand model inference requests per minute for NVIDIA Nemotron Nano 2,aws
@@ -305,8 +311,11 @@ stability.stable-image-control-structure-v1:0,us,rpm,L-9B65945A,Cross-region mod
 stability.stable-image-erase-object-v1:0,us,rpm,L-14BB1F8E,Cross-region model inference requests per minute for Stable Image Erase Object,aws
 stability.stable-image-inpaint-v1:0,us,rpm,L-3CD80F9F,Cross-region model inference requests per minute for Stable Image Inpaint,aws
 stability.stable-image-remove-background-v1:0,us,rpm,L-E347CF0D,Cross-region model inference requests per minute for Stable Image Remove Background,aws
+stability.stable-image-search-recolor-v1:0,us,rpm,L-2CE9125F,Cross-region model inference requests per minute for Stable Image Search and Recolor,aws
 stability.stable-image-search-replace-v1:0,us,rpm,L-AE5771D9,Cross-region model inference requests per minute for Stable Image Search and Replace,aws
 stability.stable-image-style-guide-v1:0,us,rpm,L-D15F5A64,Cross-region model inference requests per minute for Stable Image Style Guide,aws
+stability.stable-outpaint-v1:0,us,rpm,L-C90A68F1,Cross-region model inference requests per minute for Stable Image Outpaint,aws
+stability.stable-style-transfer-v1:0,us,rpm,L-42A5F078,Cross-region model inference requests per minute for Stable Image Style Transfer,aws
 twelvelabs.marengo-embed-2-7-v1:0,us,rpm,L-E967C2DE,Cross-region model inference requests per minute for Twelve Labs Marengo,aws
 twelvelabs.marengo-embed-2-7-v1:0,apac,rpm,L-E967C2DE,Cross-region model inference requests per minute for Twelve Labs Marengo,aws
 twelvelabs.marengo-embed-2-7-v1:0,eu,rpm,L-E967C2DE,Cross-region model inference requests per minute for Twelve Labs Marengo,aws
@@ -373,5 +382,6 @@ meta.llama3-3-70b-instruct-v1:0:128k,custom,tpd,L-E2A3818E,(Model customization)
 meta.llama3-3-70b-instruct-v1:0:128k,custom,tpm,L-3C151A2C,(Model customization) Sum of on demand custom model deployment tokens per minute for Meta Llama 3.3 70B Instruct,aws
 mistral.mistral-large-2407-v1:0,base,rpm,L-1402869F,On-demand model inference requests per minute for Mistral Large 2407,aws
 mistral.mistral-large-2407-v1:0,base,tpm,L-1C28E1AB,On-demand model inference tokens per minute for Mistral Large 2407,aws
+stability.sd3-5-large-v1:0,base,rpm,L-99B287FA,On-demand model inference requests per minute for Stability.ai Stable Diffusion 3.5 Large,aws
 stability.stable-image-core-v1:1,base,rpm,L-5D30A162,On-demand model inference requests per minute for Stability.ai Stable Image Core,aws
 stability.stable-image-ultra-v1:1,base,rpm,L-F192B1D7,On-demand model inference requests per minute for Stability.ai Stable Image Ultra,aws
