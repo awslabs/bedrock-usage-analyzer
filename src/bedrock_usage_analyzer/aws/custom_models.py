@@ -6,6 +6,10 @@
 CloudWatch reports a deployment's usage with its deployment ARN as the ModelId. Its quotas
 are the base model's "(Model customization) Sum of on demand custom model deployment ..."
 quotas, mapped in the fm-list as the base model's 'custom' endpoint.
+
+Custom Model Import models are invoked, and reported in CloudWatch, under their imported
+model ARN. They have no per-model token or request quotas: Bedrock scales the model copies
+that serve them.
 """
 
 import logging
@@ -16,6 +20,7 @@ from bedrock_usage_analyzer.aws.bedrock import model_id_from_arn
 logger = logging.getLogger(__name__)
 
 DEPLOYMENT_KIND = 'custom-model-deployment'
+IMPORTED_KIND = 'imported-model'
 # A custom model fine-tuned from another custom model names that one as its base
 _MAX_BASE_CHAIN = 10
 
@@ -83,3 +88,32 @@ def list_deployments(bedrock_client) -> List[Dict]:
         if not token:
             return deployments
         kwargs['nextToken'] = token
+
+
+def is_imported(arn: str) -> bool:
+    """True for a Custom Model Import model ARN."""
+    return f":{IMPORTED_KIND}/" in (arn or '')
+
+
+def list_imported_models(bedrock_client) -> List[Dict]:
+    """The region's Custom Model Import models (summaries: arn, name)."""
+    models: List[Dict] = []
+    kwargs: Dict = {'maxResults': 1000}
+    while True:
+        response = bedrock_client.list_imported_models(**kwargs)
+        for summary in response.get('modelSummaries') or []:
+            arn = summary.get('modelArn')
+            if arn:
+                models.append({'arn': arn, 'name': summary.get('modelName') or deployment_short_id(arn)})
+        token = response.get('nextToken')
+        if not token:
+            return models
+        kwargs['nextToken'] = token
+
+
+def read_imported_model(bedrock_client, identifier: str) -> Dict:
+    """An imported model as list_imported_models summarizes it (arn, name), read by its ARN
+    or name. Raises the API error (a missing model, a missing permission)."""
+    model = bedrock_client.get_imported_model(modelIdentifier=identifier)
+    arn = model.get('modelArn') or identifier
+    return {'arn': arn, 'name': model.get('modelName') or deployment_short_id(arn)}

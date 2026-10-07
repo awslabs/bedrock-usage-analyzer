@@ -14,10 +14,11 @@ from bedrock_usage_analyzer.core.breakdown import BreakdownBuilder
 from bedrock_usage_analyzer.core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher, in_parallel
 from bedrock_usage_analyzer.sync.quota_rules import scrub_conflicting
 from bedrock_usage_analyzer.core.metrics_fetcher import PERIOD_DAYS, CloudWatchMetricsFetcher
-from bedrock_usage_analyzer.core.output_generator import APPLICATION_PROFILE_SCOPE, DEPLOYMENT_SCOPE, OutputGenerator
+from bedrock_usage_analyzer.core.output_generator import (
+    APPLICATION_PROFILE_SCOPE, DEPLOYMENT_SCOPE, IMPORTED_SCOPE, OutputGenerator)
 from bedrock_usage_analyzer.aws.bedrock import (
     endpoint_id, get_endpoint_quota_keywords, get_regional_profile_prefixes)
-from bedrock_usage_analyzer.aws.custom_models import deployment_short_id
+from bedrock_usage_analyzer.aws.custom_models import deployment_short_id, is_imported
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.servicequotas import (
     QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK, list_quota_codes, lookup_quota)
@@ -385,6 +386,8 @@ class BedrockAnalyzer:
                     else "the report will show usage without limits"
                 logger.info(f"  {endpoint_id(model_id, profile_prefix)} is not offered in "
                             f"{self.region}; {ending}")
+            elif profile_prefix == CUSTOM_ENDPOINT and app_ids and all(is_imported(a) for a in app_ids):
+                pass  # imported models have no quotas, as said when they were selected
             elif not any(quota_codes.values()) and profile_prefix == CUSTOM_ENDPOINT:
                 if _base_unknown(model_id, app_ids):
                     # No base model: the deployment ID stands in for it (said when it was
@@ -493,7 +496,11 @@ class BedrockAnalyzer:
             logger.info(f"  Generating output files...")
             end_time_local = datetime.now(self.local_tz)
             scope_label = APPLICATION_PROFILE_SCOPE
-            if profile_prefix == CUSTOM_ENDPOINT:
+            if profile_prefix == CUSTOM_ENDPOINT and app_ids and all(is_imported(a) for a in app_ids):
+                endpoint = f"{model_id} (imported model)"
+                scope_label = IMPORTED_SCOPE
+                file_label = f"imported-model.{model_id}"  # its ID is the model ID: one file per model
+            elif profile_prefix == CUSTOM_ENDPOINT:
                 endpoint = f"{model_id} (custom model deployment)"
                 scope_label = DEPLOYMENT_SCOPE
                 # Deployment IDs, not their ARNs, in the file name

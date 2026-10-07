@@ -507,3 +507,106 @@ def test_fm_list_keeps_mapped_custom_quotas_of_a_model_no_longer_listed(monkeypa
     saved = {m['model_id']: m for m in load_yaml(str(tmp_path / 'data' / 'fm-list-us-east-1.yml'))['models']}
     assert set(saved) == {'amazon.nova-pro-v1:0', BASE}
     assert saved[BASE]['endpoints'] == {'custom': {'quotas': {'tpm': {'code': 'L-1', 'name': TPM}}}}
+
+
+IMPORTED = 'arn:aws:bedrock:us-east-1:111122223333:imported-model/imp0000001'
+
+
+class FakeImported(FakeCustom):
+    def __init__(self, imported=({'modelArn': IMPORTED, 'modelName': 'my-qwen'},), **kw):
+        super().__init__(**kw)
+        self.imported = list(imported)
+
+    def list_imported_models(self, **kwargs):
+        self.calls.append('ListImportedModels')
+        return {'modelSummaries': self.imported}
+
+    def get_imported_model(self, modelIdentifier):
+        self.calls.append('GetImportedModel')
+        return {'modelArn': IMPORTED, 'modelName': 'my-qwen'}
+
+
+def test_imported_models_are_listed_and_read():
+    from bedrock_usage_analyzer.aws.custom_models import is_imported, list_imported_models, read_imported_model
+
+    class Paged(FakeImported):
+        def list_imported_models(self, **kwargs):
+            if 'nextToken' not in kwargs:
+                return {'modelSummaries': [{'modelArn': IMPORTED}, {'modelName': 'no-arn'}], 'nextToken': 't'}
+            return {'modelSummaries': [{'modelArn': IMPORTED.replace('imp0000001', 'imp2'), 'modelName': 'b'}]}
+    assert list_imported_models(Paged()) == [{'arn': IMPORTED, 'name': 'imp0000001'},
+                                             {'arn': IMPORTED.replace('imp0000001', 'imp2'), 'name': 'b'}]
+    assert read_imported_model(FakeImported(), 'my-qwen') == {'arn': IMPORTED, 'name': 'my-qwen'}
+    assert is_imported(IMPORTED) and not is_imported(DEPLOYMENT) and not is_imported(None)
+
+
+def test_an_imported_model_is_analyzed_by_arn_id_or_name_without_limits(monkeypatch, caplog):
+    caplog.set_level('INFO')
+    expected = {'model_id': 'imp0000001', 'profile_prefix': 'custom', 'application_profile_ids': [IMPORTED]}
+    for value in (IMPORTED, 'imp0000001', 'my-qwen'):
+        inputs = _inputs(monkeypatch, FakeImported())
+        assert inputs._parse_model_id(value) == expected
+        assert inputs.profile_fetcher._deployment_names[IMPORTED] == 'my-qwen'
+    assert 'no per-model token or request quotas' in caplog.text
+
+
+def test_an_unreadable_imported_model_arn_is_still_analyzed(monkeypatch, caplog):
+    class Denied(FakeImported):
+        def get_imported_model(self, modelIdentifier):
+            raise aws_error('AccessDeniedException', 'GetImportedModel')
+    inputs = _inputs(monkeypatch, Denied())
+    assert inputs._parse_model_id(IMPORTED)['application_profile_ids'] == [IMPORTED]
+    assert 'imp0000001 could not be read' in caplog.text
+    assert inputs.profile_fetcher._deployment_names[IMPORTED] == 'imp0000001'
+
+
+def test_a_bug_reading_an_imported_model_is_raised(monkeypatch):
+    class Broken(FakeImported):
+        def get_imported_model(self, modelIdentifier):
+            raise KeyError('bug')
+    with pytest.raises(KeyError):
+        _inputs(monkeypatch, Broken())._parse_model_id(IMPORTED)
+
+
+def test_imported_models_are_offered_in_the_picker(monkeypatch):
+    inputs = _inputs(monkeypatch, FakeImported())
+    answers = iter(['2', 'all'])
+    monkeypatch.setattr('builtins.input', lambda prompt='': next(answers))
+    assert inputs._select_targets('us-east-1') == [
+        {'model_id': 'imp0000001', 'profile_prefix': 'custom', 'application_profile_ids': [IMPORTED]}]
+
+
+def test_a_failed_imported_model_listing_hides_the_choice_once(monkeypatch, caplog):
+    caplog.set_level('INFO')
+
+    class Denied(FakeImported):
+        def list_imported_models(self, **kwargs):
+            self.calls.append('ListImportedModels')
+            raise aws_error('AccessDeniedException', 'ListImportedModels')
+    client = Denied()
+    inputs = _inputs(monkeypatch, client)
+    assert inputs._imported_models() == [] and inputs._imported_models() == []
+    assert client.calls.count('ListImportedModels') == 1
+    assert caplog.text.count('Imported models could not be listed') == 1
+    # Without the API (an older boto3) the choice is hidden too
+    assert _inputs(monkeypatch, FakeCustom())._imported_models() == []
+
+
+def test_a_bug_listing_imported_models_is_raised(monkeypatch):
+    class Broken(FakeImported):
+        def list_imported_models(self, **kwargs):
+            raise KeyError('bug')
+    with pytest.raises(KeyError):
+        _inputs(monkeypatch, Broken())._imported_models()
+
+
+def test_an_imported_model_target_keeps_its_noted_name(monkeypatch):
+    client = FakeImported()
+    fetcher = InferenceProfileFetcher(client)
+    fetcher.note_deployment_name(IMPORTED, 'my-qwen')
+    arns, names, _ = fetcher.find_profiles('imp0000001', 'custom', [IMPORTED])
+    assert arns == [IMPORTED] and names == {IMPORTED: 'my-qwen'}
+    # Not noted: named by its ID, with no deployment read
+    other = IMPORTED.replace('imp0000001', 'imp2')
+    assert InferenceProfileFetcher(client).find_profiles('imp2', 'custom', [other])[1] == {other: 'imp2'}
+    assert 'GetCustomModelDeployment' not in client.calls

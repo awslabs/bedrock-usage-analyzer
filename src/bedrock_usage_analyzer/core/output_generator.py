@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # What the names in a report's application_profile_scope are
 APPLICATION_PROFILE_SCOPE = 'Application inference profiles analyzed'
 DEPLOYMENT_SCOPE = 'Custom model deployments analyzed'
+IMPORTED_SCOPE = 'Imported models analyzed'
 
 
 def safe_filename(label: str) -> str:

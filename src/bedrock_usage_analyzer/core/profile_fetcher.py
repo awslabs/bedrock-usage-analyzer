@@ -19,7 +19,8 @@ from bedrock_usage_analyzer.aws.bedrock import (
     region_group,
 )
 from bedrock_usage_analyzer.aws.custom_models import (
-    base_model_id, base_model_id_in_arn, deployment_short_id, is_active, list_deployments, read_deployment)
+    base_model_id, base_model_id_in_arn, deployment_short_id, is_active, is_imported, list_deployments,
+    list_imported_models, read_deployment, read_imported_model)
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ TAG_WORKERS = 8
 
 
 _MISSING_API = re.compile(
-    r"object has no attribute '(list_custom_model_deployments|get_custom_model_deployment|get_custom_model)'$")
+    r"object has no attribute '(list_custom_model_deployments|get_custom_model_deployment|get_custom_model|list_imported_models|get_imported_model)'$")
 
 
 def missing_deployment_api(error: Exception) -> bool:
@@ -130,6 +131,8 @@ class InferenceProfileFetcher:
         # deployed model ARN -> base model ID, or the error reading it (raised again)
         self._base_models: Dict[str, object] = {}
         self._read_deployments: Dict[str, object] = {}  # identifier -> summary, or its read error
+        self._imported: Optional[List[Dict]] = None
+        self._imported_error: Optional[Exception] = None
 
     # ------------------------------------------------------------------ custom models
 
@@ -210,6 +213,23 @@ class InferenceProfileFetcher:
                 return None  # kept: read_custom_deployment raises it again for its caller
         model_arns = in_parallel(read, [i for i in dict.fromkeys(identifiers) if i not in self._read_deployments])
         self.read_base_models([a for a in model_arns if a])
+
+    def list_imported_models(self) -> List[Dict]:
+        """The region's Custom Model Import models, listed once per run; an API error is
+        raised again on later calls without another request."""
+        if self._imported_error is not None:
+            raise self._imported_error
+        if self._imported is None:
+            try:
+                self._imported = list_imported_models(self.bedrock_client)
+            except AWS_ERRORS as e:
+                self._imported_error = e
+                raise
+        return self._imported
+
+    def read_imported_model(self, identifier: str) -> Dict:
+        """An imported model's summary (arn, name), read by its ARN or name."""
+        return read_imported_model(self.bedrock_client, identifier)
 
     def note_deployment_name(self, arn: str, name: str):
         """Remember a selected deployment's name, so find_profiles need not read it again."""
@@ -563,7 +583,7 @@ class InferenceProfileFetcher:
         and with their tags, as application profiles are."""
         def target(arn):
             name = self._deployment_names.get(arn)  # resolved when it was selected
-            if name is None:
+            if name is None and not is_imported(arn):  # an imported model is named when selected
                 # The name is cosmetic: the ARN still gives the metrics
                 try:
                     name = self.read_custom_deployment(arn)['name']

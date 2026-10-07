@@ -114,6 +114,25 @@ def test_a_custom_model_deployment_report(analyzer, tmp_path, caplog):
     assert 'To map them' not in caplog.text
 
 
+def test_an_imported_model_report(analyzer, tmp_path, caplog):
+    imported = 'arn:aws:bedrock:ap-southeast-2:111122223333:imported-model/imp0000001'
+    analyzer.cw.per_model[imported] = (3, 30, 15)
+    analyzer.profile_fetcher.note_deployment_name(imported, 'my-qwen')
+    caplog.set_level('INFO')
+    out = tmp_path / 'results'
+    analyzer.analyze([{'model_id': 'imp0000001', 'profile_prefix': 'custom', 'application_profile_ids': [imported]}],
+                     output_dir=str(out))
+    files = reports(out)
+    assert set(analyzer.cw.dimensions) == {imported}
+    assert files[0].startswith('imported-model_imp0000001-')
+    data = json.loads((out / files[1]).read_text())
+    assert data['scope_label'] == 'Imported models analyzed' and data['endpoint'] == 'imp0000001 (imported model)'
+    assert data['stats']['1hour']['__AGGREGATED__']['InputTokenCount']['sum'] == pytest.approx(10 * 30)
+    assert 'Imported models analyzed:</strong> my-qwen' in (out / files[0]).read_text()
+    # No quotas exist for imported models: no deployment quota hint
+    assert 'custom model deployment quotas' not in caplog.text
+
+
 def test_two_endpoints_of_one_model_do_not_overwrite(analyzer, tmp_path):
     out = tmp_path / 'results'
     analyzer.analyze([{'model_id': HAIKU, 'profile_prefix': 'au'},

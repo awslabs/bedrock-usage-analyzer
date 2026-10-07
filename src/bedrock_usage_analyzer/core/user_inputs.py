@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Sequence, Union
 
 from ..aws.bedrock import arn_resource, endpoint_id, region_from_arn, split_profile_id
 from ..aws.client_factory import create_client
-from ..aws.custom_models import DEPLOYMENT_KIND, base_model_id_in_arn, deployment_short_id, is_active
+from ..aws.custom_models import DEPLOYMENT_KIND, IMPORTED_KIND, base_model_id_in_arn, deployment_short_id, is_active
 from ..aws.invocation_logs import (
     METADATA, PRINCIPAL, SESSION, TAG, Breakdown, BreakdownError, logging_destination)
 from ..core.breakdown import CONFIG_DENIED_HINT, ENABLE_HINT
@@ -111,6 +111,7 @@ class UserInputs:
         self._inactive_deployments_noted = False
         self.breakdown: Optional[Breakdown] = None
         self._deployment_listing_noted = False
+        self._imported_listing_noted = False
         self._fm_lists: Dict[str, Optional[List[Dict]]] = {}  # None: the region has no fm-list
         self.granularity_config = {  # The aggregation granularity for different metrics window/period
             '1hour': 300,   # 5 minutes
@@ -367,6 +368,7 @@ class UserInputs:
         - Application inference profile: its ID (e.g. 'tqab5jqtywp7') or ARN; only
           that profile is analyzed
         - On-demand custom model deployment: its ARN, ID or name
+        - Custom Model Import model: its ARN, ID or name (analyzed without limits)
 
         The prefix (us, eu, apac, global, etc.) indicates cross-region inference profile.
         Provider names (amazon, anthropic, meta, etc.) are NOT prefixes.
@@ -391,6 +393,8 @@ class UserInputs:
                 return self._application_profile_config(value)
             if kind == DEPLOYMENT_KIND and ident:
                 return self._custom_deployment_config(value)
+            if kind == IMPORTED_KIND and ident:
+                return self._imported_model_config(value)
             if kind in ('inference-profile', 'foundation-model') and ident:
                 value = ident
             else:
@@ -543,6 +547,28 @@ class UserInputs:
             base = deployment_short_id(arn)
         return {'model_id': base, 'profile_prefix': CUSTOM_ENDPOINT, 'application_profile_ids': [arn]}
 
+    def _imported_model_config(self, arn, summary=None):
+        """Analysis target for a Custom Model Import model: its usage under its ARN, without
+        limits (imported models have no per-model token or request quotas). Its ID stands in
+        for the model ID, as for a deployment without a known base model."""
+        fetcher = self._get_profile_fetcher()
+        if summary is None and isinstance(fetcher, InferenceProfileFetcher):
+            try:
+                summary = fetcher.read_imported_model(arn)
+            except Exception as e:
+                if not deployment_read_error(e):
+                    raise
+                # The name is cosmetic: the ARN still gives the metrics
+                logger.warning(f"  WARNING: imported model {deployment_short_id(arn)} could not be read ({e}); "
+                               f"if it was deleted, the report still shows the usage CloudWatch keeps for it")
+        name = (summary or {}).get('name') or deployment_short_id(arn)
+        if isinstance(fetcher, InferenceProfileFetcher):
+            fetcher.note_deployment_name(arn, name)
+        logger.info(f"  Imported model {name} ({deployment_short_id(arn)}): Custom Model Import models have no "
+                    f"per-model token or request quotas (Bedrock scales the model copies that serve them), "
+                    f"so the report shows its usage without limits")
+        return {'model_id': deployment_short_id(arn), 'profile_prefix': CUSTOM_ENDPOINT, 'application_profile_ids': [arn]}
+
     def _application_profile_config(self, identifier, profile=None):
         if profile is None:
             try:
@@ -598,6 +624,9 @@ class UserInputs:
             modes.append(f'Specific application inference profiles ({len(app_profiles)} in {region})')
         if deployments:
             modes.append(f'Custom model deployments ({len(deployments)} in {region})')
+        imported = self._imported_models()
+        if imported:
+            modes.append(f'Imported models (Custom Model Import, {len(imported)} in {region})')
         if len(modes) > 1:
             mode = select_from_list("What do you want to analyze?", modes, allow_cancel=False,
                                     input_prompt=f"\nSelect (1-{len(modes)}): ")
@@ -605,6 +634,10 @@ class UserInputs:
                 return self._select_application_profiles(app_profiles)
             if mode.startswith('Custom'):
                 return self._select_custom_deployments(deployments)
+            if mode.startswith('Imported'):
+                indices = self._pick("Imported models", [
+                    f"{m['name']} ({deployment_short_id(m['arn'])})" for m in imported], 'models')
+                return [self._imported_model_config(imported[i]['arn'], imported[i]) for i in indices]
 
         config = self._select_model(region)
         return [config] if config else []
@@ -641,7 +674,27 @@ class UserInputs:
                 deployment = fetcher.read_custom_deployment(identifier)
             except AWS_ERRORS as e:
                 logger.debug(f"{identifier} is not a readable custom model deployment either: {e}")
-        return self._custom_deployment_config(deployment['arn'], deployment) if deployment else None
+        if deployment:
+            return self._custom_deployment_config(deployment['arn'], deployment)
+        imported = None if identifier.startswith('arn:') else next(
+            (m for m in self._imported_models() if identifier in (deployment_short_id(m['arn']), m['name'])), None)
+        return self._imported_model_config(imported['arn'], imported) if imported else None
+
+    def _imported_models(self) -> List[Dict]:
+        """The region's Custom Model Import models ([] when there are none or they cannot be
+        listed; a listing failure is said once per session, a bug is raised)."""
+        fetcher = self._get_profile_fetcher()
+        if not isinstance(fetcher, InferenceProfileFetcher):
+            return []
+        try:
+            return fetcher.list_imported_models()
+        except Exception as e:
+            if not deployment_read_error(e):
+                raise
+            if not self._imported_listing_noted:
+                self._imported_listing_noted = True
+                logger.info(f"  Imported models could not be listed ({e}); they are not offered")
+            return []
 
     def _report_deployment_listing_error(self, identifier):
         """Say so when ``identifier`` may be a deployment that could not be listed."""
