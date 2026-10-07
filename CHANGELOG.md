@@ -22,8 +22,9 @@ All notable changes to the Bedrock Usage Analyzer will be documented in this fil
   picked interactively ("Imported models", offered when the region has one) or passed with `-m`
   as the imported model ARN, ID or name. Usage comes from CloudWatch under the imported model ARN;
   reports show usage and throttles without limits, as imported models have no per-model token or
-  request quotas. Optional permissions: `bedrock:ListImportedModels` (picker, ID or name) and
-  `bedrock:GetImportedModel` (the name of an ARN passed with `-m`).
+  request quotas. Optional permissions: `bedrock:ListImportedModels` (the picker; names models
+  and resolves IDs and names in one request) and `bedrock:GetImportedModel` (reads one model
+  by ARN, ID or name when the listing is not allowed).
 
 ### Fixed
 - Quota mapping no longer gives an on-demand endpoint the latency-optimized quotas, a model

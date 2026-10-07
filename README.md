@@ -363,7 +363,7 @@ bedrock-usage-analyzer analyze -r us-east-1 -y -g 5min -o ./results \
   -m arn:aws:bedrock:us-east-1:111122223333:imported-model/imp0example1
 ```
 
-Imported models have no per-model token or request quotas: Bedrock scales the model copies that serve them, so the report shows usage and throttles without limits. A name that contains `.` or `:` is read as a model ID: pass the ARN or ID instead. Passing an ID or name needs `bedrock:ListImportedModels`.
+Imported models have no per-model token or request quotas: Bedrock scales the model copies that serve them, so the report shows usage and throttles without limits. A name that contains `.` or `:` is read as a model ID: pass the ARN or ID instead. Passing an ID or name needs `bedrock:ListImportedModels` or `bedrock:GetImportedModel`.
 
 ### Attributing usage to IAM principals
 

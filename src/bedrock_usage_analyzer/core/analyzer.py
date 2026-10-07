@@ -335,7 +335,7 @@ class BedrockAnalyzer:
             logger.info(f"  {model_id} ({profile_prefix or 'base'}): {len(final_model_ids)} profile(s) - {', '.join(profile_list)}")
             if not app_ids:
                 self._warn_other_sources(model_id, profile_prefix, final_model_ids)
-            elif profile_prefix == CUSTOM_ENDPOINT:
+            elif profile_prefix == CUSTOM_ENDPOINT and not self._imported_target(key):
                 self._warn_other_deployments(model_id, app_ids)
 
         logger.info(f"Profile discovery complete.\n")
@@ -344,7 +344,7 @@ class BedrockAnalyzer:
         # quotas is cheaper than one GetServiceQuota call each
         # Counted with the same reader the lookups use (it also reads the legacy model-level
         # 'quotas' of a base endpoint)
-        targets = {(model_id, prefix) for model_id, prefix, _ in all_profiles_map}
+        targets = {(key[0], key[1]) for key in all_profiles_map if not self._imported_target(key)}
         codes = {q['code'] for model_id, prefix in targets
                  for q in self._load_quota_codes(model_id, prefix, quiet=True).values()
                  if isinstance(q, dict) and q.get('code')}
@@ -388,7 +388,8 @@ class BedrockAnalyzer:
                 continue
 
             # Step 2: Fetch quotas
-            quota_codes = self._load_quota_codes(model_id, profile_prefix)
+            # Imported models have no quotas, whatever model ID an API caller gives them
+            quota_codes = {} if imported else self._load_quota_codes(model_id, profile_prefix)
             retired = profile_prefix not in (None, UNKNOWN_SOURCE, CUSTOM_ENDPOINT) and \
                 not self._system_profile_listed(endpoint_id(model_id, profile_prefix))
             if profile_prefix is None and app_ids:

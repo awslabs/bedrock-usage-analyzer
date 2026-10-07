@@ -888,6 +888,10 @@
           "description": "Analysis target for a Custom Model Import model: its usage under its ARN, without limits; its ID stands in for the model ID."
         },
         {
+          "name": "_imported_summary",
+          "description": "An imported model passed by ARN as the listing has it, else as read with GetImportedModel; None when neither works."
+        },
+        {
           "name": "_custom_deployments",
           "description": "The region's custom model deployments ([] when none or not listable; a listing failure is said once per session)."
         },

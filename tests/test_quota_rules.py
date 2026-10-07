@@ -289,6 +289,9 @@ def test_a_quota_of_another_api_version_is_rejected():
     assert mapping_conflict('anthropic.claude-3-5-sonnet-20240620-v1:0', 'apac',
                             'Cross-region model inference requests per minute for Anthropic Claude 3.5 Sonnet',
                             REGIONAL) is None
+    # A 'V3' that is the model's generation, as its ID says
+    assert mapping_conflict('deepseek.v3-v1:0', 'base',
+                            'On-demand model inference tokens per minute for DeepSeek V3', REGIONAL) is None
     assert mapping_conflict('twelvelabs.marengo-embed-2-7-v1:0', 'base',
                             'On-demand model inference requests per minute for TwelveLabs Marengo Embed V2.7',
                             REGIONAL) is None
@@ -315,6 +318,25 @@ def test_quota_index_keeps_other_partitions_rows(monkeypatch, tmp_path, no_bundl
     csv_text = (tmp_path / 'data' / 'quota-index.csv').read_text()
     assert 'L-COMM' in csv_text and 'L-GOV' in csv_text
     assert set(checked) == {'L-GOV'}                  # never the other partition's codes
+
+
+def test_quota_index_keeps_a_slot_only_a_later_region_maps(monkeypatch, tmp_path, no_bundle, commercial_creds):
+    """ap-south-1 maps a TPD the first region leaves empty: it is indexed, checked there."""
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['ap-northeast-2', 'ap-south-1']})
+    name = 'Cross-Region model inference {} for Anthropic Claude 3.5 Sonnet V2'
+    for region, tpd in (('ap-northeast-2', None), ('ap-south-1', {'code': 'L-TPD', 'name': name.format('tokens per day')})):
+        save_yaml(str(tmp_path / 'data' / f'fm-list-{region}.yml'), {'models': [
+            {'model_id': 'anthropic.claude-3-5-sonnet-20241022-v2:0', 'provider': 'Anthropic', 'endpoints': {
+                'apac': {'quotas': {'rpm': {'code': 'L-RPM', 'name': name.format('requests per minute')}, 'tpd': tpd}}}}]})
+    checked = []
+    names = {'L-RPM': name.format('requests per minute'), 'L-TPD': name.format('tokens per day')}
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota',
+                        lambda code, region: checked.append((code, region)) or ('ok', {'QuotaName': names[code]}))
+    quota_index.QuotaIndexGenerator().run()
+    csv_text = (tmp_path / 'data' / 'quota-index.csv').read_text()
+    assert 'L-RPM' in csv_text and 'L-TPD' in csv_text
+    assert ('L-RPM', 'ap-northeast-2') in checked and ('L-TPD', 'ap-south-1') in checked
 
 
 def test_quota_index_prefers_home_and_enabled_regions_and_writes_partition(monkeypatch, tmp_path, no_bundle, commercial_creds):

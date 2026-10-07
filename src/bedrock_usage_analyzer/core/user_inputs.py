@@ -21,6 +21,7 @@ from ..sync.regions import load_region_names
 from ..utils.yaml_handler import CUSTOM_ENDPOINT, endpoint_keys, fm_endpoints, has_endpoint, invokable_endpoint_keys, load_fm_list, profile_endpoints
 from ..utils.ui import require_credentials_partition, select_from_list
 from ..utils.partition import (
+    build_arn,
     filter_regions_by_partition,
     get_caller_identity,
     get_partition_display_name,
@@ -554,27 +555,38 @@ class UserInputs:
         (passed by ARN) its name comes from the region's listing (one request for all of them),
         or else from reading it."""
         fetcher = self._get_profile_fetcher()
-        if summary is None and isinstance(fetcher, InferenceProfileFetcher):
-            summary = next((m for m in self._imported_models() if m['arn'] == arn), None)
-        if summary is None and isinstance(fetcher, InferenceProfileFetcher):
-            try:
-                summary = fetcher.read_imported_model(arn)
-            except Exception as e:
-                if not deployment_read_error(e):
-                    raise
-                hint = troubleshooting_hint(e, self.region) if is_access_denied(e) else None
-                if hint:
-                    logger.warning(f"  Hint: {hint}")
-                # The name is cosmetic: the ARN still gives the metrics
-                logger.warning(f"  WARNING: imported model {deployment_short_id(arn)} could not be read ({e}); "
-                               f"if it was deleted, the report still shows the usage CloudWatch keeps for it")
-        name = (summary or {}).get('name') or deployment_short_id(arn)
-        if isinstance(fetcher, InferenceProfileFetcher):
+        name = deployment_short_id(arn)
+        if isinstance(fetcher, InferenceProfileFetcher):  # another fetcher (an API caller's) names none
+            summary = summary or self._imported_summary(fetcher, arn)
+            name = (summary or {}).get('name') or name
             fetcher.note_deployment_name(arn, name)
         logger.info(f"  Imported model {name} ({deployment_short_id(arn)}): Custom Model Import models have no "
                     f"per-model token or request quotas (Bedrock scales the model copies that serve them), "
                     f"so the report shows its usage without limits")
         return {'model_id': deployment_short_id(arn), 'profile_prefix': CUSTOM_ENDPOINT, 'application_profile_ids': [arn]}
+
+    def _imported_summary(self, fetcher, arn) -> Optional[Dict]:
+        """An imported model passed by ARN as the listing has it, else as read; None when
+        neither works (the name is cosmetic: the ARN still gives the metrics)."""
+        try:  # quietly: a failed listing does not mean this model is not analyzed
+            summary = next((m for m in fetcher.list_imported_models() if m['arn'] == arn), None)
+            if summary:
+                return summary
+        except Exception as e:
+            if not deployment_read_error(e):
+                raise
+            logger.debug(f"Could not list imported models to name {arn}: {e}")
+        try:
+            return fetcher.read_imported_model(arn)
+        except Exception as e:
+            if not deployment_read_error(e):
+                raise
+            hint = troubleshooting_hint(e, self.region) if is_access_denied(e) else None
+            if hint:
+                logger.warning(f"  Hint: {hint}")
+            logger.warning(f"  WARNING: imported model {deployment_short_id(arn)} could not be read ({e}); "
+                           f"if it was deleted, the report still shows the usage CloudWatch keeps for it")
+            return None
 
     def _application_profile_config(self, identifier, profile=None):
         if profile is None:
@@ -688,12 +700,18 @@ class UserInputs:
         imported = next(
             (m for m in self._imported_models() if identifier in (deployment_short_id(m['arn']), m['name'])), None)
         if imported is None and isinstance(fetcher, InferenceProfileFetcher) and fetcher.imported_models_error is not None:
-            try:  # GetImportedModel also takes a name
-                imported = fetcher.read_imported_model(identifier)
-            except Exception as e:
-                if not deployment_read_error(e):
-                    raise
-                logger.debug(f"{identifier} is not a readable imported model either: {e}")
+            # GetImportedModel takes a name or an ARN: an ID is read by the ARN it would have
+            candidates = [identifier]
+            if self.account:
+                candidates.append(build_arn('bedrock', self.region, self.account, f"{IMPORTED_KIND}/{identifier}"))
+            for candidate in candidates:
+                try:
+                    imported = fetcher.read_imported_model(candidate)
+                    break
+                except Exception as e:
+                    if not deployment_read_error(e):
+                        raise
+                    logger.debug(f"{candidate} is not a readable imported model either: {e}")
         return self._imported_model_config(imported['arn'], imported) if imported else None
 
     def _imported_models(self) -> List[Dict]:

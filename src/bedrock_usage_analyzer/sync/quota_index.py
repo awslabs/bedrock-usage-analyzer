@@ -200,6 +200,16 @@ class QuotaIndexGenerator:
                         **endpoint_data,
                         '_source_region': region
                     }
+                elif new_has_quotas:
+                    # A slot only a later region maps (e.g. its TPD) is indexed too, checked
+                    # against the region that maps it
+                    entry = existing_endpoints[endpoint_type]
+                    merged = dict(existing_quotas)
+                    for slot, quota in new_quotas.items():
+                        if quota is not None and merged.get(slot) is None:
+                            merged[slot] = quota
+                            entry.setdefault('_slot_regions', {})[slot] = region
+                    entry['quotas'] = merged
 
     def _extract_quota_entries(self):
         """Extract all quota mappings from models"""
@@ -212,9 +222,10 @@ class QuotaIndexGenerator:
             
             for endpoint_type, endpoint_data in endpoints.items():
                 quotas = endpoint_data.get('quotas') or {}
-                source_region = endpoint_data.get('_source_region', 'unknown')
-                
+                endpoint_region = endpoint_data.get('_source_region', 'unknown')
+
                 for quota_type, quota_data in quotas.items():
+                    source_region = (endpoint_data.get('_slot_regions') or {}).get(quota_type, endpoint_region)
                     # {code: L-xxx, name: "..."} or null
                     if quota_data and isinstance(quota_data, dict):
                         quota_code = quota_data.get('code')

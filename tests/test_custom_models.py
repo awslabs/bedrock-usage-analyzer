@@ -605,6 +605,21 @@ def test_an_imported_model_name_is_read_when_the_listing_fails(monkeypatch, capl
     inputs = _inputs(monkeypatch, NoList())
     assert inputs._parse_model_id('my-qwen')['application_profile_ids'] == [IMPORTED]
 
+    # A bare ID: GetImportedModel takes no ID, so it is read by the ARN it would have
+    class ByArnOnly(NoList):
+        def get_imported_model(self, modelIdentifier):
+            if not modelIdentifier.startswith('arn:'):
+                raise aws_error('ValidationException', 'GetImportedModel')
+            return {'modelArn': modelIdentifier, 'modelName': 'my-qwen'}
+    inputs = _inputs(monkeypatch, ByArnOnly())
+    inputs.account = '111122223333'
+    assert inputs._parse_model_id('imp0000001')['application_profile_ids'] == [IMPORTED]
+    # An ARN is analyzed without a 'not offered' note from the failed listing
+    caplog.clear()
+    caplog.set_level('INFO')
+    assert _inputs(monkeypatch, NoList())._parse_model_id(IMPORTED)['application_profile_ids'] == [IMPORTED]
+    assert 'not offered' not in caplog.text
+
     class Neither(NoList):
         def get_imported_model(self, modelIdentifier):
             raise aws_error('ValidationException', 'GetImportedModel')

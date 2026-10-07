@@ -133,6 +133,19 @@ def test_an_imported_model_report(analyzer, tmp_path, caplog):
     assert 'custom model deployment quotas' not in caplog.text
 
 
+def test_an_imported_model_gets_no_quotas_whatever_its_model_id(analyzer, tmp_path, monkeypatch):
+    imported = 'arn:aws:bedrock:ap-southeast-2:111122223333:imported-model/imp0000001'
+    analyzer.cw.per_model[imported] = (3, 30, 15)
+    monkeypatch.setattr(analyzer, '_load_quota_codes', lambda *a: pytest.fail('quotas looked up'))
+    monkeypatch.setattr(analyzer, '_warn_other_deployments', lambda *a: pytest.fail('deployment note'))
+    out = tmp_path / 'results'
+    # An API caller naming a base model: still no limits
+    analyzer.analyze([{'model_id': HAIKU, 'profile_prefix': 'custom', 'application_profile_ids': [imported]}],
+                     output_dir=str(out))
+    data = json.loads((out / reports(out)[1]).read_text())
+    assert data['scope_label'] == 'Imported models analyzed' and not any(data['quotas'].values())
+
+
 def test_a_target_mixing_imported_models_and_deployments_is_refused(analyzer, tmp_path):
     imported = 'arn:aws:bedrock:ap-southeast-2:111122223333:imported-model/imp0000001'
     deployment = 'arn:aws:bedrock:ap-southeast-2:111122223333:custom-model-deployment/dep0000001'
