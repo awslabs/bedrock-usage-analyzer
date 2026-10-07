@@ -41,7 +41,7 @@ METADATA = 'metadata'
 KINDS = (PRINCIPAL, SESSION, TAG, METADATA)
 
 # Logs Insights returns at most this many rows per query, in GetQueryResults pages of
-# PAGE_ROWS; with an SDK that cannot ask for the next page, one page is the limit
+# PAGE_ROWS; with an SDK that cannot ask for the next page or for that limit, one page
 MAX_ROWS = 100000
 PAGE_ROWS = 10000
 # Queries run at once (the account allows 100 across all users, and 10 StartQuery per second)
@@ -52,9 +52,10 @@ MAX_POLL_SECONDS = 10  # polling slows from poll_seconds to this as a query runs
 MIN_WINDOW = timedelta(minutes=10)
 # A window that returns MAX_ROWS rows is run again as this many parts
 SPLIT_PARTS = 4
-# StartQuery refusals that started no query, retried with backoff (1, 2, 4, 8 s)
+# StartQuery refusals that started no query, retried with backoff (1, 2, 4, 8, 16, 32 s):
+# about a minute, so other users' queries holding the account's concurrency can finish
 START_RETRY_CODES = ('ThrottlingException', 'LimitExceededException', 'TooManyRequestsException')
-START_ATTEMPTS = 5
+START_ATTEMPTS = 7
 # StartQuery accepts query strings of up to 10,000 characters; each window adds its end
 # filter (QUERY_END_FILTER_LENGTH characters at most) to the query
 MAX_QUERY_LENGTH = 10000
@@ -299,13 +300,19 @@ def next_minute(moment: datetime) -> datetime:
     return floor if floor == moment else floor + timedelta(minutes=1)
 
 
-def _pages_results(logs_client) -> bool:
-    """Whether the client can ask GetQueryResults for its next page (newer SDKs)."""
+def _row_limit(logs_client) -> int:
+    """Rows a query may return with this SDK: MAX_ROWS when it can ask GetQueryResults for
+    the next page and its StartQuery accepts that limit (both came in different releases),
+    else one page."""
+    page = min(MAX_ROWS, PAGE_ROWS)
     try:
-        shape = logs_client.meta.service_model.operation_model('GetQueryResults').input_shape
-        return 'nextToken' in shape.members
+        model = logs_client.meta.service_model
+        if 'nextToken' not in model.operation_model('GetQueryResults').input_shape.members:
+            return page
+        limit = model.operation_model('StartQuery').input_shape.members['limit']
+        return max(page, min(MAX_ROWS, int(limit.metadata.get('max', page))))
     except Exception:  # not a botocore client (a test double), or no such operation
-        return False
+        return page
 
 
 def _number(value) -> float:
@@ -328,7 +335,7 @@ class InvocationLogFetcher:
         self.start_client = start_client or logs_client
         self.log_group = log_group
         # Rows a query may return: a window at this many is split
-        self.max_rows = MAX_ROWS if _pages_results(logs_client) else min(MAX_ROWS, PAGE_ROWS)
+        self.max_rows = _row_limit(logs_client)
         self._poll = poll_seconds
         self._max_concurrent = max_concurrent
         self.bytes_scanned = 0.0

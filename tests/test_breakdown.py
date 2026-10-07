@@ -8,6 +8,7 @@ import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 from botocore.exceptions import ClientError
@@ -1219,8 +1220,26 @@ def test_a_complete_result_is_read_to_its_last_page():
 
 def test_the_row_limit_follows_what_the_sdk_can_page():
     from bedrock_usage_analyzer.aws.client_factory import create_client
-    real = InvocationLogFetcher(create_client('logs', REGION), '/g')
-    assert real.max_rows == il.MAX_ROWS == 100000  # this SDK pages GetQueryResults
+    client = create_client('logs', REGION)
+    real = InvocationLogFetcher(client, '/g')
+    cap = client.meta.service_model.operation_model('StartQuery').input_shape.members['limit'].metadata['max']
+    # Both SDKs tested page GetQueryResults; StartQuery accepts 100,000 only in the newer one
+    assert real.max_rows == min(cap, il.MAX_ROWS) and real.max_rows in (il.PAGE_ROWS, il.MAX_ROWS)
+
+    class Model:  # an SDK that pages, with StartQuery's limit as given
+        def __init__(self, paged, cap):
+            self.paged, self.cap = paged, cap
+
+        def operation_model(self, name):
+            members = ({'nextToken': 1} if self.paged else {}) if name == 'GetQueryResults' else \
+                {'limit': SimpleNamespace(metadata={'max': self.cap} if self.cap else {})}
+            return SimpleNamespace(input_shape=SimpleNamespace(members=members))
+
+    def limit(paged, cap):
+        return il._row_limit(SimpleNamespace(meta=SimpleNamespace(service_model=Model(paged, cap))))
+    assert limit(True, 100000) == il.MAX_ROWS and limit(True, 10000) == il.PAGE_ROWS
+    assert limit(True, None) == il.PAGE_ROWS and limit(False, 100000) == il.PAGE_ROWS
+    assert limit(True, 500000) == il.MAX_ROWS
     logs = FakeLogs()
     fetcher_for(logs).fetch({US_HAIKU: US_HAIKU}, Breakdown(), END - timedelta(hours=1), END)
     # One page only (no paging): the query asks for no more, and a window is split at it
