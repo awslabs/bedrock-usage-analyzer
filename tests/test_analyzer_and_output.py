@@ -129,8 +129,9 @@ def test_an_imported_model_report(analyzer, tmp_path, caplog):
     assert data['scope_label'] == 'Imported models analyzed' and data['endpoint'] == 'imp0000001 (imported model)'
     assert data['stats']['1hour']['__AGGREGATED__']['InputTokenCount']['sum'] == pytest.approx(10 * 30)
     assert 'Imported models analyzed:</strong> my-qwen' in (out / files[0]).read_text()
-    # No quotas exist for imported models: no deployment quota hint
+    # No quotas exist for imported models: no deployment quota hint, and the run log says why
     assert 'custom model deployment quotas' not in caplog.text
+    assert 'Imported models have no per-model token or request quotas' in caplog.text
 
 
 def test_an_imported_model_gets_no_quotas_whatever_its_model_id(analyzer, tmp_path, monkeypatch):

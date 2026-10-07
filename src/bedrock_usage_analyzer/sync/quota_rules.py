@@ -24,6 +24,7 @@ _NAME_VERSION = re.compile(r'(?<![\w.])(\d{1,2}(?:\.\d{1,2})?)(?![\w.])')
 # The API version of a model ID ('-v2:0', '-v1') and of a quota name ('Claude 3.5 Sonnet V2';
 # not 'Marengo Embed V2.7', which is the model's generation)
 _ID_API_VERSION = re.compile(r'-v(\d+)(?::\d+)?$')
+_CONTEXT_SUFFIX = re.compile(r':\d+[km]$')  # a context-window variant: ':200k', ':8k', ':1m'
 _NAME_API_VERSION = re.compile(r'(?<![\w.])[Vv](\d+)(?![\w.])')
 # Models whose quotas differ from a sibling's only by words the rules above cannot tell apart:
 # each quota of the model names these words ('... Claude 3.5 Sonnet' is the V1 model's quota,
@@ -147,21 +148,24 @@ def mapping_conflict(model_id: str, endpoint_type: str, quota_name: Optional[str
         return f"quota is for version {'/'.join(sorted(versions))}, model is {version}"
     if version and not versions and _version_inside_name(model_id):
         return f"quota names no version, model is {version}"
-    id_api = _ID_API_VERSION.search(model_id.lower())
+    # The model without its context-window variant ('...-v1:0:200k' is '...-v1:0' with a 200K
+    # context): the fm-list keeps such IDs, with their 'custom' endpoint
+    base_id = _CONTEXT_SUFFIX.sub('', model_id.lower())
+    id_api = _ID_API_VERSION.search(base_id)
     name_api = set(_NAME_API_VERSION.findall(quota_name))
     if id_api:
         # A 'V3' the ID also has as a name token is the model's generation ('DeepSeek V3' for
         # deepseek.v3-v1:0), not its API version
-        stem = model_id.lower()[:id_api.start()]
+        stem = base_id[:id_api.start()]
         name_api -= {n for n in name_api if f'v{n}' in re.split(r'[-_.]', stem)}
     if id_api and name_api and id_api.group(1) not in name_api:
         # 'Claude 3.5 Sonnet V2' is the quota of claude-3-5-sonnet-20241022-v2:0, not of -v1:0
         return f"quota is for V{'/V'.join(sorted(name_api))}, model is v{id_api.group(1)}"
-    must_say = _NAME_MUST_SAY.get(model_id)
+    must_say = _NAME_MUST_SAY.get(base_id)
     words = ' '.join(name.split())
     if must_say and must_say not in words:
         return f"quota is not for {must_say} (a sibling model's)"
-    must_not_say = _NAME_MUST_NOT_SAY.get(model_id)
+    must_not_say = _NAME_MUST_NOT_SAY.get(base_id)
     if must_not_say and must_not_say in words:
         return f"quota is for {must_not_say} (a sibling model's)"
     return None

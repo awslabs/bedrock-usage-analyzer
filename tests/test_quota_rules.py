@@ -297,6 +297,14 @@ def test_a_quota_of_another_api_version_is_rejected():
     assert mapping_conflict('nvidia.nemotron-nano-12b-v2', 'base', nano + ' VL', REGIONAL) is None
     assert mapping_conflict('nvidia.nemotron-nano-9b-v2', 'base', nano, REGIONAL) is None
     assert 'sibling' in mapping_conflict('nvidia.nemotron-nano-9b-v2', 'base', nano + ' VL', REGIONAL)
+    # A context-window variant of the model ID (where the fm-list keeps the 'custom' endpoint)
+    custom_v2 = '(Model customization) Sum of on demand custom model deployment tokens per minute for ' \
+                'Anthropic Claude 3.5 Sonnet V2'
+    assert mapping_conflict('anthropic.claude-3-5-sonnet-20240620-v1:0:200k', 'custom', custom_v2,
+                            REGIONAL) == 'quota is for V2, model is v1'
+    assert mapping_conflict('anthropic.claude-3-5-sonnet-20241022-v2:0:200k', 'custom', custom_v2, REGIONAL) is None
+    assert 'sibling' in mapping_conflict('anthropic.claude-3-5-sonnet-20241022-v2:0:200k', 'custom',
+                                         custom_v2.replace(' V2', ''), REGIONAL)
     # The API version written in lowercase
     assert mapping_conflict('anthropic.claude-3-5-sonnet-20240620-v1:0', 'apac',
                             'Cross-region model inference requests per minute for Anthropic Claude 3.5 Sonnet v2',

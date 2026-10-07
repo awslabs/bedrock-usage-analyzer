@@ -408,7 +408,9 @@ class BedrockAnalyzer:
                 logger.info(f"  {endpoint_id(model_id, profile_prefix)} is not offered in "
                             f"{self.region}; {ending}")
             elif imported:
-                pass  # imported models have no quotas, as said when they were selected
+                # Said here too for API callers, who select no model through UserInputs
+                logger.info("  Imported models have no per-model token or request quotas; the report will "
+                            "show usage without limits")
             elif not any(quota_codes.values()) and profile_prefix == CUSTOM_ENDPOINT:
                 if _base_unknown(model_id, app_ids):
                     # No base model: the deployment ID stands in for it (said when it was

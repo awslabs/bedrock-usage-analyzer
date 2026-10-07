@@ -621,6 +621,8 @@ class UserInputs:
             sys.exit(1)
         logger.info(f"  Application inference profile {profile['name']} ({profile['id']}) "
                     f"is based on {profile['source'] or 'an unknown endpoint'}")
+        if identifier == profile.get('name'):  # IDs are random: only a name can be shared
+            self._note_imported_namesake(identifier, 'an application inference profile')
         return group_application_profiles([profile])[0]
 
     def _select_targets(self, region) -> List[Dict]:
@@ -698,6 +700,7 @@ class UserInputs:
                     self._not_found['deployment'].add(identifier)  # read: no such deployment
                 logger.debug(f"{identifier} is not a readable custom model deployment either: {e}")
         if deployment:
+            self._note_imported_namesake(identifier, 'a custom model deployment')
             return self._custom_deployment_config(deployment['arn'], deployment)
         if identifier.startswith('arn:'):
             return None
@@ -729,6 +732,17 @@ class UserInputs:
                 # ID was never read by its ARN, so it may still be one)
                 self._not_found['imported'].add(identifier)
         return self._imported_model_config(imported['arn'], imported) if imported else None
+
+    def _note_imported_namesake(self, identifier, analyzed):
+        """Warn when a bare ID or name resolved to something else also names an imported model:
+        that one is not analyzed unless its ARN is passed."""
+        if identifier.startswith('arn:'):
+            return
+        namesake = next((m for m in self._imported_models(quiet=True)
+                         if identifier in (deployment_short_id(m['arn']), m['name'])), None)
+        if namesake:
+            logger.warning(f"  WARNING: {identifier} is analyzed as {analyzed}; an imported model has the same "
+                           f"name or ID. To analyze it, pass its ARN: -m {namesake['arn']}")
 
     def _imported_models(self, quiet=False) -> List[Dict]:
         """The region's Custom Model Import models ([] when there are none or they cannot be

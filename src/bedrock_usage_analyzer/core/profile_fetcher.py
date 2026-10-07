@@ -604,16 +604,16 @@ class InferenceProfileFetcher:
         def target(arn):
             name = self._deployment_names.get(arn)  # resolved when it was selected
             if name is None and imported:
-                # Not selected through UserInputs (an API caller): the listing, if one was made
+                # Not selected through UserInputs (an API caller): the listing if one was made
                 name = next((m['name'] for m in self._imported or [] if m['arn'] == arn), None)
-            elif name is None:
+            if name is None:
                 # The name is cosmetic: the ARN still gives the metrics
                 try:
-                    name = self.read_custom_deployment(arn)['name']
+                    name = (self.read_imported_model(arn) if imported else self.read_custom_deployment(arn))['name']
                 except Exception as e:
                     if not deployment_read_error(e):
                         raise
-                    logger.debug(f"Could not read custom model deployment {arn}: {e}")
+                    logger.debug(f"Could not read {arn}: {e}")
             name = name or deployment_short_id(arn)
             return name, {'id': deployment_short_id(arn), 'tags': self._get_tags(arn, name)}
 

@@ -718,15 +718,35 @@ def test_a_bug_listing_imported_models_is_raised(monkeypatch):
         _inputs(monkeypatch, Broken())._imported_models()
 
 
+def test_a_deployment_named_like_an_imported_model_says_so(monkeypatch, caplog):
+    # Bedrock allows a deployment and an imported model of the same name: the deployment wins,
+    # with a warning naming the imported model's ARN
+    client = FakeImported(imported=({'modelArn': IMPORTED, 'modelName': 'my-lite'},), deployments=[SUMMARY])
+    config = _inputs(monkeypatch, client)._parse_model_id('my-lite')
+    assert config['application_profile_ids'] == [DEPLOYMENT]
+    assert f'an imported model has the same name or ID. To analyze it, pass its ARN: -m {IMPORTED}' in caplog.text
+    # No namesake: no warning
+    caplog.clear()
+    _inputs(monkeypatch, FakeImported(deployments=[SUMMARY]))._parse_model_id('my-lite')
+    assert 'same name' not in caplog.text
+
+
 def test_an_imported_model_target_keeps_its_noted_name(monkeypatch):
     client = FakeImported()
     fetcher = InferenceProfileFetcher(client)
     fetcher.note_deployment_name(IMPORTED, 'my-qwen')
     arns, names, _ = fetcher.find_profiles('imp0000001', 'imported', [IMPORTED])
     assert arns == [IMPORTED] and names == {IMPORTED: 'my-qwen'}
-    # Not noted: named by its ID, with no deployment read
+    # Not noted (an API caller): read with GetImportedModel, never as a deployment
     other = IMPORTED.replace('imp0000001', 'imp2')
-    assert InferenceProfileFetcher(client).find_profiles('imp2', 'imported', [other])[1] == {other: 'imp2'}
+    assert InferenceProfileFetcher(client).find_profiles('imp2', 'imported', [other])[1] == {other: 'my-qwen'}
+    assert 'GetImportedModel' in client.calls
+
+    class Unreadable(FakeImported):
+        def get_imported_model(self, modelIdentifier):
+            raise aws_error('AccessDeniedException', 'GetImportedModel')
+    # Not readable: named by its ID
+    assert InferenceProfileFetcher(Unreadable()).find_profiles('imp2', 'imported', [other])[1] == {other: 'imp2'}
     # Not noted but listed (an API caller that listed them): named from the listing
     listed = InferenceProfileFetcher(client)
     listed.list_imported_models()
