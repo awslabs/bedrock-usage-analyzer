@@ -1283,6 +1283,12 @@ def test_report_times_fall_back_to_the_value_when_it_is_not_an_iso_time():
     assert _local_time('2026-10-07T02:55:00+00:00', timezone(timedelta(hours=8))) == '2026-10-07 10:55 UTC+08:00'
 
 
+def test_a_configured_log_group_that_is_gone_is_not_logging_switched_off():
+    # Logging is on (the configuration names the group): recreate it or repoint, not "enable"
+    reason = builder_for(Breakdown(), FakeLogs(groups=[])).prepare([US_HAIKU], END, 1)
+    assert 'create it again' in reason and 'enable model invocation logging' not in reason
+
+
 def test_a_missing_given_log_group_asks_to_check_its_name():
     builder = builder_for(Breakdown.parse('principal', log_group='/bedrock/typo'), FakeLogs(groups=[]))
     reason = builder.prepare([US_HAIKU], END, 1)

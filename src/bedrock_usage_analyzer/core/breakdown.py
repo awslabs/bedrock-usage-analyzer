@@ -37,6 +37,12 @@ CLOUDWATCH_MINUTE_DAYS = 15
 ENABLE_HINT = ("To attribute usage to callers, enable model invocation logging to CloudWatch Logs in this "
                "region (Bedrock console > Settings, or PutModelInvocationLoggingConfiguration); turning "
                "off text, image, embedding and video delivery keeps only metadata.")
+# A denied GetModelInvocationLoggingConfiguration: logging may well be on
+CONFIG_DENIED_HINT = ("Allow bedrock:GetModelInvocationLoggingConfiguration, or pass --breakdown with "
+                      "--log-group <invocation log group>.")
+# The logging configuration names a log group that is gone: logging itself is on
+GROUP_GONE_HINT = ("The model invocation logging configuration names this group: create it again, or point "
+                   "the logging configuration at an existing log group.")
 
 
 def _empty_minute():
@@ -99,8 +105,7 @@ class BreakdownBuilder:
                         raise
                     # Logging may well be on: naming the group skips this call
                     return self._give_up(f"the model invocation logging configuration could not be read "
-                                         f"({e}); allow bedrock:GetModelInvocationLoggingConfiguration, or "
-                                         f"pass --log-group <invocation log group>")
+                                         f"({e}). {CONFIG_DENIED_HINT}")
                 if not self.log_group:
                     return self._give_up(f"{reason}. {ENABLE_HINT}")
             if self.account is None:
@@ -119,7 +124,7 @@ class BreakdownBuilder:
             start = now - timedelta(days=min(days, CLOUDWATCH_MINUTE_DAYS))
             covered_from = fetcher.coverage_start(start, end, now)
             if covered_from is None:
-                hint = (ENABLE_HINT if self.breakdown.log_group is None
+                hint = (GROUP_GONE_HINT if self.breakdown.log_group is None
                         else "Check the --log-group name (the logging configuration names the group).")
                 return self._give_up(f"log group {self.log_group} does not exist in {self.region}. {hint}")
             if covered_from >= end:

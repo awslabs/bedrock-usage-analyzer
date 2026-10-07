@@ -13,7 +13,7 @@ from ..aws.client_factory import create_client
 from ..aws.custom_models import DEPLOYMENT_KIND, base_model_id_in_arn, deployment_short_id, is_active
 from ..aws.invocation_logs import (
     METADATA, PRINCIPAL, SESSION, TAG, Breakdown, BreakdownError, logging_destination)
-from ..core.breakdown import ENABLE_HINT
+from ..core.breakdown import CONFIG_DENIED_HINT, ENABLE_HINT
 from ..core.errors import AWS_ERRORS, is_access_denied, troubleshooting_hint
 from ..core.profile_fetcher import (
     UNKNOWN_SOURCE, InferenceProfileFetcher, deployment_read_error, missing_deployment_api)
@@ -210,8 +210,7 @@ class UserInputs:
         except AWS_ERRORS as e:
             if is_access_denied(e):
                 # Logging may well be on: the fix is the permission, or naming the group
-                fix = ("Allow bedrock:GetModelInvocationLoggingConfiguration, or pass --breakdown with "
-                       "--log-group <invocation log group>.")
+                fix = CONFIG_DENIED_HINT
             else:  # throttled, unreachable, expired credentials: not a permission to add
                 fix = troubleshooting_hint(e, self.region) or "Run again to be offered it."
             logger.info(f"\nUsage by caller (IAM principal) is not offered: the model invocation logging "
