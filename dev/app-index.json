@@ -800,8 +800,8 @@
       ],
       "methods": [
         {
-          "name": "_match_imported",
-          "description": "The imported model with this ID, else the one with this name (the ID is matched first, whatever the listing order)."
+          "name": "_match_id_or_name",
+          "description": "The deployment or imported model with this ID, else the one with this name (the ID is matched first, whatever the listing order)."
         },
         {
           "name": "parse_selection",

@@ -99,12 +99,11 @@ def merge_application_configs(configs: Sequence[Dict]) -> List[Dict]:
     return merged
 
 
-
-def _match_imported(models: List[Dict], identifier: str) -> Optional[Dict]:
-    """The imported model with this ID, else the one with this name (a name may equal another
-    model's ID, so the ID is matched first, whatever the listing order)."""
-    return next((m for m in models if deployment_short_id(m['arn']) == identifier), None) or \
-        next((m for m in models if m['name'] == identifier), None)
+def _match_id_or_name(resources: List[Dict], identifier: str) -> Optional[Dict]:
+    """The deployment or imported model with this ID, else the one with this name (a name may
+    equal another one's ID, so the ID is matched first, whatever the listing order)."""
+    return next((r for r in resources if deployment_short_id(r['arn']) == identifier), None) or \
+        next((r for r in resources if r['name'] == identifier), None)
 
 
 class UserInputs:
@@ -586,8 +585,8 @@ class UserInputs:
             if not deployment_read_error(e):
                 raise
             if missing_deployment_api(e):
-                logger.warning(f"  Imported model names need boto3 1.39.7 or later; the report names "
-                               f"{deployment_short_id(arn)} by its ID")
+                logger.info(f"  Imported model names need boto3 1.39.7 or later; the report names "
+                            f"{deployment_short_id(arn)} by its ID")
                 return None
             if is_access_denied(e):
                 # The permissions are optional: without them only the name is missing
@@ -700,7 +699,8 @@ class UserInputs:
         deployment = self._find_custom_deployment(identifier)
         fetcher = self._get_profile_fetcher()
         if deployment is None and not identifier.startswith('arn:') and \
-                isinstance(fetcher, InferenceProfileFetcher) and fetcher.custom_deployments_error is not None:
+                isinstance(fetcher, InferenceProfileFetcher) and fetcher.custom_deployments_error is not None and \
+                not missing_deployment_api(fetcher.custom_deployments_error):  # an older boto3 cannot read it either
             try:
                 deployment = fetcher.read_custom_deployment(identifier)
             except AWS_ERRORS as e:
@@ -712,8 +712,9 @@ class UserInputs:
             return self._custom_deployment_config(deployment['arn'], deployment)
         if identifier.startswith('arn:'):
             return None
-        imported = _match_imported(self._imported_models(quiet=True), identifier)
-        if imported is None and isinstance(fetcher, InferenceProfileFetcher) and fetcher.imported_models_error is not None:
+        imported = _match_id_or_name(self._imported_models(quiet=True), identifier)
+        if imported is None and isinstance(fetcher, InferenceProfileFetcher) and fetcher.imported_models_error is not None \
+                and not missing_deployment_api(fetcher.imported_models_error):  # an older boto3 cannot read it either
             # GetImportedModel takes a name or an ARN: an ID is read by the ARN it would have,
             # first, so an ID wins over another model's same name (as with the listing)
             candidates = [identifier]
@@ -746,7 +747,7 @@ class UserInputs:
         that one is not analyzed unless its ARN is passed."""
         if identifier.startswith('arn:') or any(c in identifier for c in '.:'):
             return  # an imported model's name and ID have neither '.' nor ':'
-        namesake =_match_imported(self._imported_models(quiet=True), identifier)
+        namesake = _match_id_or_name(self._imported_models(quiet=True), identifier)
         if namesake:
             logger.warning(f"  WARNING: {identifier} is analyzed as {analyzed}; an imported model has the same "
                            f"name or ID. To analyze it, pass its ARN: -m {namesake['arn']}")
@@ -802,8 +803,7 @@ class UserInputs:
         no listing: deployment ARNs are read directly)."""
         if identifier.startswith('arn:'):
             return None
-        return next((d for d in self._custom_deployments()
-                     if identifier in (deployment_short_id(d['arn']), d['name'])), None)
+        return _match_id_or_name(self._custom_deployments(), identifier)
 
     @staticmethod
     def _pick(title: str, lines: List[str], what: str) -> List[int]:

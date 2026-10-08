@@ -153,6 +153,12 @@ def test_a_candidate_the_llm_turned_down_is_not_asked_about_again(monkeypatch):
         assert mapper._get_quota_mapping(region, SONNET4, 'claude', 'us', QUOTAS + [sibling_tpd])['tpd'] is None
     entries = mapper.lcode_cache[(SONNET4, mapper._rules()[0]['us'])]
     assert len(calls) == 1 and len(entries) == 1 and 'L-SIB' in entries[0][1]
+    # Another region offers a second sibling: asked once, the same answer is one entry that
+    # has now seen both, so a region offering either is not asked again
+    sibling2 = {'QuotaName': sibling_tpd['QuotaName'].replace('Large', 'Small'), 'QuotaCode': 'L-SIB2'}
+    mapper._get_quota_mapping('eu-west-1', SONNET4, 'claude', 'us', QUOTAS + [sibling2])
+    mapper._get_quota_mapping('eu-west-2', SONNET4, 'claude', 'us', QUOTAS + [sibling_tpd, sibling2])
+    assert len(calls) == 2 and len(entries) == 1 and {'L-SIB', 'L-SIB2'} <= entries[0][1]
 
 
 def test_quota_index_removes_saved_mismatches_in_every_region(monkeypatch, tmp_path, no_bundle, commercial_creds):

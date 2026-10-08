@@ -596,6 +596,23 @@ def test_an_older_boto3_without_the_imported_apis_is_said_for_a_bare_name(monkey
     assert 'Imported models could not be checked' in caplog.text and 'boto3 1.39.7' in caplog.text
 
 
+def test_an_older_boto3_without_the_deployment_apis_is_said_for_a_bare_name(monkeypatch, caplog):
+    class Old(FakeImported):
+        def list_custom_model_deployments(self, **kwargs):
+            raise AttributeError("'Bedrock' object has no attribute 'list_custom_model_deployments'")
+    inputs = _inputs(monkeypatch, Old(imported=()))
+    assert inputs._deployment_target('my-lite') is None  # no direct read either: it would fail the same way
+    inputs._report_deployment_listing_error('my-lite')
+    assert 'Custom model deployments could not be checked' in caplog.text
+
+
+def test_a_deployment_id_wins_over_another_deployments_same_name(monkeypatch):
+    other = DEPLOYMENT.replace('dep0000001', 'dep2')
+    named_like_id = {**SUMMARY, 'customModelDeploymentArn': other, 'customModelDeploymentName': 'dep0000001'}
+    inputs = _inputs(monkeypatch, FakeImported(deployments=[named_like_id, SUMMARY], imported=()))
+    assert inputs._find_custom_deployment('dep0000001')['arn'] == DEPLOYMENT
+
+
 def test_an_imported_model_arn_is_named_from_the_listing(monkeypatch):
     client = FakeImported()
     inputs = _inputs(monkeypatch, client)
