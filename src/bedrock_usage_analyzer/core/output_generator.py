@@ -150,7 +150,7 @@ class OutputGenerator:
             'model_id': model_id,
             'endpoint': data.get('endpoint', model_id),
             'application_profile_scope': data.get('application_profile_scope', []),
-            # What the scope names are: application inference profiles or custom model deployments
+            # What the scope names are: application inference profiles, custom model deployments or imported models
             'scope_label': data.get('scope_label') or APPLICATION_PROFILE_SCOPE,
             # Custom Model Import models: reported without limits (they have no quotas)
             'imported': bool(data.get('imported')),

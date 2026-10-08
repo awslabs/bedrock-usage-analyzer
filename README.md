@@ -744,7 +744,7 @@ A: Verify your IAM permissions. See the [IAM Permissions](#iam-permissions) sect
 
 **Q: Analysis is very slow**
 A: CloudWatch queries can take time for large time ranges; the tool always fetches all five periods. To speed up:
-1. Use coarser granularity for the long periods (e.g. `-g 5min`, or `-g '{"1hour":"1min","1day":"5min","7days":"1hour","14days":"1hour","30days":"1hour"}'`)
+1. Use coarser granularity for the long periods, e.g. `-g '{"1hour":"5min","1day":"5min","7days":"1hour","14days":"1hour","30days":"1hour"}'` (the default is 5 minutes everywhere). This shortens the throttle, error and latency queries; token counts and invocations are always read at 1 minute, for TPM, RPM and TPD
 2. Analyze fewer targets per run (fewer `-m` values or application profiles)
 3. Check your network connection to AWS
 

@@ -734,8 +734,6 @@ class UserInputs:
                 except AWS_ERRORS as e:
                     answers.append(is_not_found(e))
                     logger.debug(f"{candidate} is not a readable custom model deployment either: {e}")
-                    if is_access_denied(e) and candidate == identifier:
-                        break  # read as a name and denied: no other read can be allowed
             if deployment is None and len(answers) == 2 and all(answers):
                 # Read by its ARN and as a name, and neither is a deployment (without the account
                 # an ID was never read by its ARN, so it may still be one)
@@ -769,8 +767,6 @@ class UserInputs:
                         raise
                     answers.append(is_not_found(e))
                     logger.debug(f"{candidate} is not a readable imported model either: {e}")
-                    if is_access_denied(e) and candidate == identifier:
-                        break  # read as a name and denied: no other read can be allowed
             if imported is None and len(answers) == 2 and all(answers):
                 # Read as a name and by its ARN, and neither is a model (without the account the
                 # ID was never read by its ARN, so it may still be one)

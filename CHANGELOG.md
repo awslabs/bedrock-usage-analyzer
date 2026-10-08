@@ -27,6 +27,9 @@ All notable changes to the Bedrock Usage Analyzer will be documented in this fil
   by ARN, ID or name when the listing fails; an ARN a working listing does not have is reported
   as not among the region's imported models). API callers pass imported models as
   `{'model_id': <id>, 'profile_prefix': 'imported', 'application_profile_ids': [<ARN>, ...]}`.
+  An imported model's JSON report has `"imported": true` and `disclaimers.imported` in place of
+  `disclaimers.throttling`, and no per-metric TPM/TPD `disclaimer` keys (the token quota
+  disclaimers do not apply).
 
 ### Fixed
 - Quota mapping no longer gives an on-demand endpoint the latency-optimized quotas, a model
