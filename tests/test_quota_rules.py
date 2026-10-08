@@ -305,6 +305,10 @@ def test_a_quota_of_another_api_version_is_rejected():
     assert mapping_conflict('anthropic.claude-3-5-sonnet-20241022-v2:0:200k', 'custom', custom_v2, REGIONAL) is None
     assert 'sibling' in mapping_conflict('anthropic.claude-3-5-sonnet-20241022-v2:0:200k', 'custom',
                                          custom_v2.replace(' V2', ''), REGIONAL)
+    # A context variant without a unit (':512' tokens)
+    embed_v4 = 'On-demand model inference requests per minute for Cohere Embed English V4'
+    assert mapping_conflict('cohere.embed-english-v3:0:512', 'base', embed_v4, REGIONAL) == \
+        mapping_conflict('cohere.embed-english-v3', 'base', embed_v4, REGIONAL) == 'quota is for V4, model is v3'
     # The API version written in lowercase
     assert mapping_conflict('anthropic.claude-3-5-sonnet-20240620-v1:0', 'apac',
                             'Cross-region model inference requests per minute for Anthropic Claude 3.5 Sonnet v2',

@@ -24,7 +24,8 @@ _NAME_VERSION = re.compile(r'(?<![\w.])(\d{1,2}(?:\.\d{1,2})?)(?![\w.])')
 # The API version of a model ID ('-v2:0', '-v1') and of a quota name ('Claude 3.5 Sonnet V2';
 # not 'Marengo Embed V2.7', which is the model's generation)
 _ID_API_VERSION = re.compile(r'-v(\d+)(?::\d+)?$')
-_CONTEXT_SUFFIX = re.compile(r':\d+[km]$')  # a context-window variant: ':200k', ':8k', ':1m'
+# A context-window variant after the revision: ':200k', ':8k', ':1m', and ':512' (tokens, no unit)
+_CONTEXT_SUFFIX = re.compile(r'(:\d+):\d+[km]?$')
 _NAME_API_VERSION = re.compile(r'(?<![\w.])[Vv](\d+)(?![\w.])')
 # Models whose quotas differ from a sibling's only by words the rules above cannot tell apart:
 # each quota of the model names these words ('... Claude 3.5 Sonnet' is the V1 model's quota,
@@ -150,7 +151,7 @@ def mapping_conflict(model_id: str, endpoint_type: str, quota_name: Optional[str
         return f"quota names no version, model is {version}"
     # The model without its context-window variant ('...-v1:0:200k' is '...-v1:0' with a 200K
     # context): the fm-list keeps such IDs, with their 'custom' endpoint
-    base_id = _CONTEXT_SUFFIX.sub('', model_id.lower())
+    base_id = _CONTEXT_SUFFIX.sub(r'\1', model_id.lower())
     id_api = _ID_API_VERSION.search(base_id)
     name_api = set(_NAME_API_VERSION.findall(quota_name))
     if id_api:
