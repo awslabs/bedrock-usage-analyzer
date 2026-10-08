@@ -149,6 +149,18 @@ def test_a_failed_llm_call_keeps_the_cached_mapping_that_fits(monkeypatch):
     assert mapper._get_quota_mapping('us-west-2', SONNET4, 'claude', 'us', QUOTAS + [tpd])['tpm']['code'] == 'L-US'
 
 
+def test_an_answer_for_a_new_candidate_keeps_the_fitting_mappings_other_slots(monkeypatch):
+    mapper = qm.QuotaMapper('us-east-1', 'm')
+    answers = [{'tpm': {'code': 'L-US', 'name': ''}, 'rpm': None, 'tpd': None, 'concurrent': None},
+               {'tpm': None, 'rpm': None, 'tpd': {'code': 'L-USTPD', 'name': ''}, 'concurrent': None}]
+    monkeypatch.setattr(qm, 'extract_quota_codes', lambda *a: answers.pop(0))
+    tpd = {'QuotaName': 'Model invocation max tokens per day for Anthropic Claude Sonnet 4 V1 (doubled for '
+                        'cross-region calls)', 'QuotaCode': 'L-USTPD'}
+    mapper._get_quota_mapping('us-east-1', SONNET4, 'claude', 'us', QUOTAS)
+    west = mapper._get_quota_mapping('us-west-2', SONNET4, 'claude', 'us', QUOTAS + [tpd])
+    assert west['tpd']['code'] == 'L-USTPD' and west['tpm']['code'] == 'L-US'
+
+
 def test_a_candidate_the_llm_turned_down_is_not_asked_about_again(monkeypatch):
     mapper = qm.QuotaMapper('us-east-1', 'm')
     calls = []

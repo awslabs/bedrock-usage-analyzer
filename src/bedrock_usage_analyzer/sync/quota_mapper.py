@@ -255,7 +255,7 @@ class QuotaMapper:
                        for slot in empty):
                 return copy.deepcopy(cached)
         if not matching_quotas:
-            return copy.deepcopy(fitting) if fitting else None
+            return None  # (a fitting cached mapping was already returned: no candidate is new)
 
         # Call LLM
         # Inputs are the possible matching quota names for the given FM
@@ -265,6 +265,11 @@ class QuotaMapper:
             endpoint_type, matching_quotas
         )
         quota_mapping = self._drop_invalid_choices(quota_mapping, matching_quotas, model_id, endpoint_type)
+        if quota_mapping and fitting:
+            # Asked again for a new candidate: a slot the fitting mapping filled and the new answer
+            # leaves empty keeps the fitting mapping's quota (it exists in this region)
+            quota_mapping = {slot: quota_mapping.get(slot) or fitting.get(slot)
+                             for slot in {**fitting, **quota_mapping}}
 
         if quota_mapping:
             # Tried first from now on, so the next regions with the same quota set reuse it

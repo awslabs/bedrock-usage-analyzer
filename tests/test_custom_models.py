@@ -606,6 +606,12 @@ def test_an_older_boto3_without_the_deployment_apis_is_said_for_a_bare_name(monk
     assert 'Custom model deployments could not be checked' in caplog.text
 
 
+def test_a_profile_id_shared_with_an_imported_models_name_is_warned_about(monkeypatch, caplog):
+    inputs = _inputs(monkeypatch, FakeImported(imported=({'modelArn': IMPORTED, 'modelName': 'prof0000001'},)))
+    inputs._note_imported_namesake('prof0000001', 'an application inference profile')
+    assert 'WARNING: prof0000001 is analyzed as an application inference profile' in caplog.text
+
+
 def test_a_deployment_id_wins_over_another_deployments_same_name(monkeypatch):
     other = DEPLOYMENT.replace('dep0000001', 'dep2')
     named_like_id = {**SUMMARY, 'customModelDeploymentArn': other, 'customModelDeploymentName': 'dep0000001'}
@@ -652,6 +658,19 @@ def test_an_imported_arn_the_listing_lacks_is_not_blamed_on_permissions(monkeypa
     inputs = _inputs(monkeypatch, Unlisted(imported=()))  # listed fine: e.g. deleted, or another account's
     assert inputs._parse_model_id(IMPORTED)['application_profile_ids'] == [IMPORTED]
     assert 'is not among' in caplog.text and 'bedrock:ListImportedModels' not in caplog.text
+
+
+def test_a_throttled_listing_does_not_blame_the_listing_permission(monkeypatch, caplog):
+    class Throttled(FakeImported):
+        def list_imported_models(self, **kwargs):
+            raise aws_error('ThrottlingException', 'ListImportedModels')
+
+        def get_imported_model(self, modelIdentifier):
+            raise aws_error('AccessDeniedException', 'GetImportedModel')
+    caplog.set_level('INFO')
+    inputs = _inputs(monkeypatch, Throttled())
+    assert inputs._parse_model_id(IMPORTED)['application_profile_ids'] == [IMPORTED]
+    assert 'without bedrock:GetImportedModel its name' in caplog.text and 'ListImportedModels or' not in caplog.text
 
 
 def test_a_bug_reading_an_imported_model_is_raised(monkeypatch):

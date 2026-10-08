@@ -595,9 +595,12 @@ class UserInputs:
                                f"usage CloudWatch keeps for it")
                 return None
             if is_access_denied(e):
-                # The permissions are optional: without them only the name is missing
+                # The permissions are optional: without them only the name is missing. Name the
+                # listing permission only when the listing too was denied (not throttled)
+                needs = "bedrock:ListImportedModels or bedrock:GetImportedModel" \
+                    if is_access_denied(fetcher.imported_models_error) else "bedrock:GetImportedModel"
                 logger.info(f"  Imported model {deployment_short_id(arn)} is named by its ID (without "
-                            f"bedrock:ListImportedModels or bedrock:GetImportedModel its name cannot be read)")
+                            f"{needs} its name cannot be read)")
                 return None
             logger.warning(f"  WARNING: imported model {deployment_short_id(arn)} could not be read ({e}); "
                            f"if it was deleted, the report still shows the usage CloudWatch keeps for it")
@@ -634,8 +637,8 @@ class UserInputs:
             sys.exit(1)
         logger.info(f"  Application inference profile {profile['name']} ({profile['id']}) "
                     f"is based on {profile['source'] or 'an unknown endpoint'}")
-        if identifier == profile.get('name'):  # IDs are random: only a name can be shared
-            self._note_imported_namesake(identifier, 'an application inference profile')
+        # By ID or name: an imported model may be named like either
+        self._note_imported_namesake(identifier, 'an application inference profile')
         return group_application_profiles([profile])[0]
 
     def _select_targets(self, region) -> List[Dict]:
