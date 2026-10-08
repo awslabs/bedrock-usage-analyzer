@@ -569,7 +569,8 @@ class UserInputs:
             summary = summary or self._imported_summary(fetcher, arn)
             name = (summary or {}).get('name') or name
             fetcher.note_deployment_name(arn, name)
-        logger.info(f"  Imported model {name} ({deployment_short_id(arn)})")  # the analyzer says why it has no limits
+        shown = name if name == deployment_short_id(arn) else f"{name} ({deployment_short_id(arn)})"
+        logger.info(f"  Imported model {shown}")  # the analyzer says why it has no limits
         return {'model_id': deployment_short_id(arn), 'profile_prefix': IMPORTED_ENDPOINT, 'application_profile_ids': [arn]}
 
     def _imported_summary(self, fetcher, arn) -> Optional[Dict]:
@@ -702,9 +703,9 @@ class UserInputs:
             return []
 
     def _deployment_target(self, identifier) -> Optional[Dict]:
-        """The config of the custom model deployment with this ID or name (the ones the
-        deployment list shows), or None. Without the listing it is read directly, as
-        GetCustomModelDeployment also takes an ID or name."""
+        """The config of the custom model deployment, else of the imported model, with this
+        ID or name (as their listings show them), or None. Without a listing it is read
+        directly, as GetCustomModelDeployment and GetImportedModel also take a name."""
         deployment = self._find_custom_deployment(identifier)
         fetcher = self._get_profile_fetcher()
         if deployment is None and not identifier.startswith('arn:') and \
@@ -745,11 +746,21 @@ class UserInputs:
                         raise
                     answers.append(is_not_found(e))
                     logger.debug(f"{candidate} is not a readable imported model either: {e}")
+                    if is_access_denied(e):
+                        break  # the other candidate would be denied the same way
             if imported is None and len(answers) == 2 and all(answers):
                 # Read as a name and by its ARN, and neither is a model (without the account the
                 # ID was never read by its ARN, so it may still be one)
                 self._not_found['imported'].add(identifier)
-        return self._imported_model_config(imported['arn'], imported) if imported else None
+        if not imported:
+            return None
+        if isinstance(fetcher, InferenceProfileFetcher) and fetcher.custom_deployments_error is not None \
+                and identifier not in self._not_found['deployment']:
+            # Deployments could not be checked: one of that name may be the one meant
+            logger.warning(f"  WARNING: {identifier} is analyzed as an imported model; custom model deployments "
+                           f"could not be checked, so a deployment may have the same name or ID. To analyze it, "
+                           f"pass its ARN")
+        return self._imported_model_config(imported['arn'], imported)
 
     def _note_imported_namesake(self, identifier, analyzed):
         """Warn when a bare ID or name resolved to something else also names an imported model:

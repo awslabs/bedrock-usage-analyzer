@@ -612,6 +612,18 @@ def test_a_profile_id_shared_with_an_imported_models_name_is_warned_about(monkey
     assert 'WARNING: prof0000001 is analyzed as an application inference profile' in caplog.text
 
 
+def test_an_imported_name_is_flagged_when_deployments_could_not_be_checked(monkeypatch, caplog):
+    class NoDeployments(FakeImported):
+        def list_custom_model_deployments(self, **kwargs):
+            raise aws_error('AccessDeniedException', 'ListCustomModelDeployments')
+
+        def get_custom_model_deployment(self, customModelDeploymentIdentifier):
+            raise aws_error('AccessDeniedException', 'GetCustomModelDeployment')
+    inputs = _inputs(monkeypatch, NoDeployments())
+    assert inputs._parse_model_id('my-qwen')['profile_prefix'] == 'imported'
+    assert 'custom model deployments could not be checked' in caplog.text
+
+
 def test_a_deployment_id_wins_over_another_deployments_same_name(monkeypatch):
     other = DEPLOYMENT.replace('dep0000001', 'dep2')
     named_like_id = {**SUMMARY, 'customModelDeploymentArn': other, 'customModelDeploymentName': 'dep0000001'}
