@@ -588,6 +588,12 @@ class UserInputs:
                 logger.info(f"  Imported model names need boto3 1.39.7 or later; the report names "
                             f"{deployment_short_id(arn)} by its ID")
                 return None
+            if is_access_denied(e) and fetcher.imported_models_error is None:
+                # The region's listing worked and does not have it: not a permission gap
+                logger.warning(f"  WARNING: imported model {deployment_short_id(arn)} is not among {self.region}'s "
+                               f"imported models (deleted, or another account's); the report shows only the "
+                               f"usage CloudWatch keeps for it")
+                return None
             if is_access_denied(e):
                 # The permissions are optional: without them only the name is missing
                 logger.info(f"  Imported model {deployment_short_id(arn)} is named by its ID (without "

@@ -578,12 +578,12 @@ class InferenceProfileFetcher:
         return profile_id in self._system_ids
 
     def resolve_application_profile(self, identifier: str) -> Optional[Dict]:
-        """Find an application profile by ID, ARN or name."""
+        """Find an application profile by ID or ARN, else by name (a name may equal another
+        profile's ID, so the ID wins, whatever the listing order)."""
         identifier = identifier.strip()
-        for profile in self.list_application_profiles():
-            if identifier in (profile['id'], profile['arn'], profile['name']):
-                return profile
-        return None
+        profiles = self.list_application_profiles()
+        return next((p for p in profiles if identifier in (p['id'], p['arn'])), None) or \
+            next((p for p in profiles if p['name'] == identifier), None)
 
     def routes_to_no_foundation_model(self, identifier: str) -> bool:
         """True for an application profile left out of the listing because it copies no

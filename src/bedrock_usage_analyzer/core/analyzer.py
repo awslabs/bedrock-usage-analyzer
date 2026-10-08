@@ -262,7 +262,7 @@ class BedrockAnalyzer:
         """Cache key for one analysis target (model, endpoint and optional profile subset)."""
         app_ids = tuple(sorted(model_config.get('application_profile_ids') or ()))
         model_id = model_config['model_id']
-        if model_config.get('profile_prefix') == IMPORTED_ENDPOINT and app_ids:
+        if model_config.get('profile_prefix') == IMPORTED_ENDPOINT and app_ids and all(map(is_imported, app_ids)):
             # Imported reports ignore the caller's model_id: the same models are one target
             model_id = deployment_short_id(app_ids[0])
         return (model_id, model_config.get('profile_prefix'), app_ids)

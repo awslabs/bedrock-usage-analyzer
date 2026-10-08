@@ -627,11 +627,14 @@ def test_an_imported_model_arn_is_named_from_the_listing(monkeypatch):
 
 def test_an_unreadable_imported_model_arn_is_still_analyzed(monkeypatch, caplog):
     class Denied(FakeImported):
+        def list_imported_models(self, **kwargs):
+            raise aws_error('AccessDeniedException', 'ListImportedModels')
+
         def get_imported_model(self, modelIdentifier):
             self.calls.append('GetImportedModel')
             raise aws_error('AccessDeniedException', 'GetImportedModel')
     caplog.set_level('INFO')
-    client = Denied(imported=())  # e.g. deleted: not listed any more
+    client = Denied()
     inputs = _inputs(monkeypatch, client)
     assert inputs._parse_model_id(IMPORTED)['application_profile_ids'] == [IMPORTED]
     # The read permissions are optional: only the name is missing, said at info level
@@ -640,6 +643,15 @@ def test_an_unreadable_imported_model_arn_is_still_analyzed(monkeypatch, caplog)
     # The failed read is not repeated
     inputs._parse_model_id(IMPORTED)
     assert client.calls.count('GetImportedModel') == 1
+
+
+def test_an_imported_arn_the_listing_lacks_is_not_blamed_on_permissions(monkeypatch, caplog):
+    class Unlisted(FakeImported):
+        def get_imported_model(self, modelIdentifier):
+            raise aws_error('AccessDeniedException', 'GetImportedModel')
+    inputs = _inputs(monkeypatch, Unlisted(imported=()))  # listed fine: e.g. deleted, or another account's
+    assert inputs._parse_model_id(IMPORTED)['application_profile_ids'] == [IMPORTED]
+    assert 'is not among' in caplog.text and 'bedrock:ListImportedModels' not in caplog.text
 
 
 def test_a_bug_reading_an_imported_model_is_raised(monkeypatch):

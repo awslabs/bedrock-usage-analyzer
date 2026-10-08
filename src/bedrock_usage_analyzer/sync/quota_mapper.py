@@ -245,15 +245,17 @@ class QuotaMapper:
         # turned down is not asked about again). Each mapping is kept, newest first, with the
         # candidate codes it was made from, so regions with and without such a quota each reuse
         # their own.
+        fitting = None  # a cached mapping this region has every code of, kept if the LLM fails
         for cached, considered in self.lcode_cache.get(cache_key, ()):
             if not all(v['code'] in region_codes for v in cached.values() if v):
                 continue
+            fitting = fitting or cached
             empty = [slot for slot, v in cached.items() if not v]
             if not any(measures_metric(slot, q['name']) for q in matching_quotas if q['code'] not in considered
                        for slot in empty):
                 return copy.deepcopy(cached)
         if not matching_quotas:
-            return None
+            return copy.deepcopy(fitting) if fitting else None
 
         # Call LLM
         # Inputs are the possible matching quota names for the given FM
@@ -274,6 +276,9 @@ class QuotaMapper:
                 entries.remove(same)
                 considered |= same[1]
             entries.insert(0, (quota_mapping, considered))
+        elif fitting:
+            # No answer (e.g. the call failed): the mapping that fits is better than none
+            return copy.deepcopy(fitting)
 
         return quota_mapping
 

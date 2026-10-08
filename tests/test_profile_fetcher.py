@@ -110,6 +110,12 @@ def test_resolve_application_profile_by_id_arn_or_name(sydney_bedrock):
     assert fetcher.resolve_application_profile(by_id['arn'])['id'] == 'jpapp000001'
     assert fetcher.resolve_application_profile(' team-c-jp-haiku ')['id'] == 'jpapp000001'
     assert fetcher.resolve_application_profile('missing') is None
+    # A profile named like another profile's ID, listed first: the ID wins
+    real = fetcher.resolve_application_profile('jpapp000001')
+    namesake = {**real, 'id': 'other000001', 'arn': real['arn'].replace('jpapp000001', 'other000001'),
+                'name': 'jpapp000001'}
+    fetcher.list_application_profiles = lambda: [namesake, real]
+    assert fetcher.resolve_application_profile('jpapp000001')['id'] == 'jpapp000001'
 
 
 def test_other_sources_for_model(sydney_bedrock):
