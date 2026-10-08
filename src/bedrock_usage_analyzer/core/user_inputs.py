@@ -120,6 +120,7 @@ class UserInputs:
         self.breakdown: Optional[Breakdown] = None
         self._deployment_listing_noted = False
         self._imported_listing_noted = False
+        self._namesake_unchecked_noted = False  # 'imported models could not be listed' said once per run
         # Identifiers a direct read found to be no deployment / no imported model
         self._not_found = {'deployment': set(), 'imported': set()}
         self._fm_lists: Dict[str, Optional[List[Dict]]] = {}  # None: the region has no fm-list
@@ -638,7 +639,8 @@ class UserInputs:
             config = self._deployment_target(identifier)
             if config:
                 return config
-            logger.error(f"Application inference profile not found in {self.region}: {identifier}")
+            logger.error(f"No application inference profile, custom model deployment or imported model in "
+                         f"{self.region} has the ID or name {identifier}")
             self._report_deployment_listing_error(identifier)
             sys.exit(1)
         logger.info(f"  Application inference profile {profile['name']} ({profile['id']}) "
@@ -788,10 +790,12 @@ class UserInputs:
             return  # an imported model's name and ID have neither '.' nor ':'
         namesake = _match_id_or_name(self._imported_models(quiet=True), identifier)
         error = getattr(self._get_profile_fetcher(), 'imported_models_error', None)
-        if error is not None and not is_access_denied(error) and not missing_deployment_api(error):
+        if error is not None and not is_access_denied(error) and not missing_deployment_api(error) \
+                and not self._namesake_unchecked_noted:
+            self._namesake_unchecked_noted = True
             # Listing failed for a passing reason (a region without Custom Model Import denies it)
             logger.warning(f"  WARNING: imported models could not be listed ({error}), so one with the name or ID "
-                           f"{identifier} could not be ruled out; run again to check")
+                           f"of a target passed with -m (first: {identifier}) could not be ruled out; run again to check")
         if namesake:
             logger.warning(f"  WARNING: {identifier} is analyzed as {analyzed}; an imported model has the same "
                            f"name or ID. To analyze it, pass its ARN: -m {namesake['arn']}")
