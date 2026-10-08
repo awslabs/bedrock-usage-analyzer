@@ -131,7 +131,17 @@ def test_an_imported_model_report(analyzer, tmp_path, caplog):
     assert 'Imported models analyzed:</strong> my-qwen' in (out / files[0]).read_text()
     # No quotas exist for imported models: no deployment quota hint, and the run log says why
     assert 'custom model deployment quotas' not in caplog.text
-    assert 'Imported models have no per-model token or request quotas' in caplog.text
+    assert caplog.text.count('Custom Model Import models have no per-model token or request quotas') == 1
+
+
+def test_the_same_imported_models_under_two_model_ids_are_one_target(analyzer, tmp_path):
+    imported = 'arn:aws:bedrock:ap-southeast-2:111122223333:imported-model/imp0000001'
+    analyzer.cw.per_model[imported] = (3, 30, 15)
+    out = tmp_path / 'results'
+    analyzer.analyze([{'model_id': 'imp0000001', 'profile_prefix': 'imported', 'application_profile_ids': [imported]},
+                      {'model_id': HAIKU, 'profile_prefix': 'imported', 'application_profile_ids': [imported]}],
+                     output_dir=str(out))
+    assert len(reports(out)) == 2  # one HTML and one JSON report
 
 
 def test_an_imported_model_gets_no_quotas_whatever_its_model_id(analyzer, tmp_path, monkeypatch):

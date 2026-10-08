@@ -99,6 +99,14 @@ def merge_application_configs(configs: Sequence[Dict]) -> List[Dict]:
     return merged
 
 
+
+def _match_imported(models: List[Dict], identifier: str) -> Optional[Dict]:
+    """The imported model with this ID, else the one with this name (a name may equal another
+    model's ID, so the ID is matched first, whatever the listing order)."""
+    return next((m for m in models if deployment_short_id(m['arn']) == identifier), None) or \
+        next((m for m in models if m['name'] == identifier), None)
+
+
 class UserInputs:
     """Handles interactive user input collection"""
 
@@ -562,9 +570,7 @@ class UserInputs:
             summary = summary or self._imported_summary(fetcher, arn)
             name = (summary or {}).get('name') or name
             fetcher.note_deployment_name(arn, name)
-        logger.info(f"  Imported model {name} ({deployment_short_id(arn)}): Custom Model Import models have no "
-                    f"per-model token or request quotas (Bedrock scales the model copies that serve them), "
-                    f"so the report shows its usage without limits")
+        logger.info(f"  Imported model {name} ({deployment_short_id(arn)})")  # the analyzer says why it has no limits
         return {'model_id': deployment_short_id(arn), 'profile_prefix': IMPORTED_ENDPOINT, 'application_profile_ids': [arn]}
 
     def _imported_summary(self, fetcher, arn) -> Optional[Dict]:
@@ -704,8 +710,7 @@ class UserInputs:
             return self._custom_deployment_config(deployment['arn'], deployment)
         if identifier.startswith('arn:'):
             return None
-        imported = next((m for m in self._imported_models(quiet=True)
-                         if identifier in (deployment_short_id(m['arn']), m['name'])), None)
+        imported = _match_imported(self._imported_models(quiet=True), identifier)
         if imported is None and isinstance(fetcher, InferenceProfileFetcher) and fetcher.imported_models_error is not None:
             # GetImportedModel takes a name or an ARN: an ID is read by the ARN it would have
             candidates = [identifier]
@@ -738,8 +743,7 @@ class UserInputs:
         that one is not analyzed unless its ARN is passed."""
         if identifier.startswith('arn:'):
             return
-        namesake = next((m for m in self._imported_models(quiet=True)
-                         if identifier in (deployment_short_id(m['arn']), m['name'])), None)
+        namesake = _match_imported(self._imported_models(quiet=True), identifier)
         if namesake:
             logger.warning(f"  WARNING: {identifier} is analyzed as {analyzed}; an imported model has the same "
                            f"name or ID. To analyze it, pass its ARN: -m {namesake['arn']}")

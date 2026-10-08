@@ -555,7 +555,15 @@ def test_an_imported_model_is_analyzed_by_arn_id_or_name_without_limits(monkeypa
         inputs = _inputs(monkeypatch, FakeImported())
         assert inputs._parse_model_id(value) == expected
         assert inputs.profile_fetcher._deployment_names[IMPORTED] == 'my-qwen'
-    assert 'no per-model token or request quotas' in caplog.text
+    assert 'Imported model my-qwen (imp0000001)' in caplog.text  # the analyzer says why it has no limits
+
+
+def test_an_imported_model_id_wins_over_another_models_same_name(monkeypatch):
+    other = IMPORTED.replace('imp0000001', 'imp2')
+    # imp2 is named like imp0000001's ID and comes first in the listing
+    client = FakeImported(imported=({'modelArn': other, 'modelName': 'imp0000001'},
+                                    {'modelArn': IMPORTED, 'modelName': 'my-qwen'}))
+    assert _inputs(monkeypatch, client)._parse_model_id('imp0000001')['application_profile_ids'] == [IMPORTED]
 
 
 def test_an_imported_model_arn_is_named_from_the_listing(monkeypatch):

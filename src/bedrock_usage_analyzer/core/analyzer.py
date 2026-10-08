@@ -261,7 +261,11 @@ class BedrockAnalyzer:
     def _scope_key(model_config):
         """Cache key for one analysis target (model, endpoint and optional profile subset)."""
         app_ids = tuple(sorted(model_config.get('application_profile_ids') or ()))
-        return (model_config['model_id'], model_config.get('profile_prefix'), app_ids)
+        model_id = model_config['model_id']
+        if model_config.get('profile_prefix') == IMPORTED_ENDPOINT and app_ids:
+            # Imported reports ignore the caller's model_id: the same models are one target
+            model_id = deployment_short_id(app_ids[0])
+        return (model_id, model_config.get('profile_prefix'), app_ids)
 
     @staticmethod
     def _imported_target(key) -> bool:
@@ -408,9 +412,9 @@ class BedrockAnalyzer:
                 logger.info(f"  {endpoint_id(model_id, profile_prefix)} is not offered in "
                             f"{self.region}; {ending}")
             elif imported:
-                # Said here too for API callers, who select no model through UserInputs
-                logger.info("  Imported models have no per-model token or request quotas; the report will "
-                            "show usage without limits")
+                # Said here, where CLI and API runs both pass
+                logger.info("  Custom Model Import models have no per-model token or request quotas (Bedrock "
+                            "scales the model copies that serve them), so the report shows usage without limits")
             elif not any(quota_codes.values()) and profile_prefix == CUSTOM_ENDPOINT:
                 if _base_unknown(model_id, app_ids):
                     # No base model: the deployment ID stands in for it (said when it was
