@@ -143,7 +143,7 @@ def test_the_same_imported_models_under_two_model_ids_are_one_target(analyzer, t
                       {'model_id': HAIKU, 'profile_prefix': 'imported', 'application_profile_ids': [imported, imported]}],
                      output_dir=str(out))
     assert len(reports(out)) == 2  # one HTML and one JSON report
-    assert reports(out)[0].startswith('imported-model.imp0000001-')  # one model, though passed twice
+    assert reports(out)[0].startswith('imported-model_imp0000001-')  # one model, though passed twice
 
 
 def test_an_imported_model_gets_no_quotas_whatever_its_model_id(analyzer, tmp_path, monkeypatch):
