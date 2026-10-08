@@ -716,12 +716,25 @@ class UserInputs:
         if deployment is None and not identifier.startswith('arn:') and \
                 isinstance(fetcher, InferenceProfileFetcher) and fetcher.custom_deployments_error is not None and \
                 not missing_deployment_api(fetcher.custom_deployments_error):  # an older boto3 cannot read it either
-            try:
-                deployment = fetcher.read_custom_deployment(identifier)
-            except AWS_ERRORS as e:
-                if is_not_found(e):
-                    self._not_found['deployment'].add(identifier)  # read: no such deployment
-                logger.debug(f"{identifier} is not a readable custom model deployment either: {e}")
+            # GetCustomModelDeployment takes an ARN or a name, not an ID: an ID is read by the ARN
+            # it would have, first (as for imported models)
+            candidates = [identifier]
+            if self.account:
+                candidates.insert(0, build_arn('bedrock', self.region, self.account, f"{DEPLOYMENT_KIND}/{identifier}"))
+            answers = []
+            for candidate in candidates:
+                try:
+                    deployment = fetcher.read_custom_deployment(candidate)
+                    break
+                except AWS_ERRORS as e:
+                    answers.append(is_not_found(e))
+                    logger.debug(f"{candidate} is not a readable custom model deployment either: {e}")
+                    if is_access_denied(e):
+                        break  # the other candidate would be denied the same way
+            if deployment is None and len(answers) == 2 and all(answers):
+                # Read by its ARN and as a name, and neither is a deployment (without the account
+                # an ID was never read by its ARN, so it may still be one)
+                self._not_found['deployment'].add(identifier)
         if deployment:
             self._note_imported_namesake(identifier, 'a custom model deployment')
             return self._custom_deployment_config(deployment['arn'], deployment)
@@ -774,6 +787,11 @@ class UserInputs:
         if identifier.startswith('arn:') or any(c in identifier for c in '.:'):
             return  # an imported model's name and ID have neither '.' nor ':'
         namesake = _match_id_or_name(self._imported_models(quiet=True), identifier)
+        error = getattr(self._get_profile_fetcher(), 'imported_models_error', None)
+        if error is not None and not is_access_denied(error) and not missing_deployment_api(error):
+            # Listing failed for a passing reason (a region without Custom Model Import denies it)
+            logger.warning(f"  WARNING: imported models could not be listed ({error}), so one with the name or ID "
+                           f"{identifier} could not be ruled out; run again to check")
         if namesake:
             logger.warning(f"  WARNING: {identifier} is analyzed as {analyzed}; an imported model has the same "
                            f"name or ID. To analyze it, pass its ARN: -m {namesake['arn']}")

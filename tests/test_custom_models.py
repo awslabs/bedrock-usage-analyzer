@@ -265,6 +265,24 @@ def test_a_deployment_id_resolves_when_profiles_cannot_be_listed(monkeypatch, ca
     assert 'application inference profiles could not be listed' in caplog.text
 
 
+def test_without_the_listing_a_deployment_id_is_read_by_its_arn(monkeypatch):
+    class NoListing(FakeCustom):
+        def list_custom_model_deployments(self, **kwargs):
+            raise aws_error('AccessDeniedException', 'ListCustomModelDeployments')
+
+        def get_custom_model_deployment(self, customModelDeploymentIdentifier):
+            self.reads.append(customModelDeploymentIdentifier)
+            if customModelDeploymentIdentifier != DEPLOYMENT:  # GetCustomModelDeployment takes no ID
+                raise aws_error('ResourceNotFoundException', 'GetCustomModelDeployment')
+            return super().get_custom_model_deployment(customModelDeploymentIdentifier)
+    client = NoListing()
+    client.reads = []
+    inputs = _inputs(monkeypatch, client)
+    inputs.account = '111122223333'
+    assert inputs._parse_model_id('dep0000001')['application_profile_ids'] == [DEPLOYMENT]
+    assert client.reads[0] == DEPLOYMENT  # the ARN its ID would have, first
+
+
 def test_a_failed_deployment_listing_is_requested_once_and_reported(monkeypatch, caplog):
     from botocore.exceptions import ClientError
 
@@ -280,10 +298,11 @@ def test_a_failed_deployment_listing_is_requested_once_and_reported(monkeypatch,
             return super().get_custom_model_deployment(customModelDeploymentIdentifier)
     client = NoListing()
     inputs = _inputs(monkeypatch, client)
+    inputs.account = '111122223333'  # so an ID is also read by the ARN it would have
     with pytest.raises(SystemExit):
         inputs._parse_model_id('zzzzzzzzzzzz')
     assert client.calls.count('ListCustomModelDeployments') == 1
-    # The direct read said there is no such deployment: no 'it may be one'
+    # Both reads (by ARN and as a name) said there is no such deployment: no 'it may be one'
     assert 'Custom model deployments could not be listed either' not in caplog.text
 
     class Throttled(NoListing):

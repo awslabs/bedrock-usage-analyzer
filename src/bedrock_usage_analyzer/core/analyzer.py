@@ -279,7 +279,7 @@ class BedrockAnalyzer:
                 raise ValueError(f"target {model_id}: profile_prefix '{IMPORTED_ENDPOINT}' needs imported "
                                  f"model ARNs in application_profile_ids")
             return True
-        if any(is_imported(a) for a in app_ids):
+        if any(is_imported(a) for a in app_ids) or is_imported(model_id):
             raise ValueError(f"target {model_id}: pass imported model ARNs with profile_prefix "
                              f"'{IMPORTED_ENDPOINT}', as separate targets")
         return False
@@ -530,7 +530,7 @@ class BedrockAnalyzer:
             if imported:
                 # Named by the imported model IDs, whatever model ID an API caller passed
                 ids = [deployment_short_id(a) for a in app_ids]
-                report_model = ids[0] if len(ids) == 1 else ', '.join(ids)
+                report_model = ', '.join(ids)
                 endpoint = f"{ids[0]} (imported model)" if len(ids) == 1 else f"{len(ids)} imported models"
                 scope_label = IMPORTED_SCOPE
                 file_label = f"imported-model.{ids[0]}" if len(ids) == 1 else \

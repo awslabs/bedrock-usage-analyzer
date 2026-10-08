@@ -173,6 +173,9 @@ def test_imported_models_must_be_their_own_targets(analyzer, tmp_path):
             analyzer.analyze([{'model_id': HAIKU, 'profile_prefix': prefix, 'application_profile_ids': ids}],
                              output_dir=str(tmp_path / 'r'))
     assert not analyzer.cw.dimensions  # refused before any metric is read
+    # An imported model ARN as a model_id is refused too
+    with pytest.raises(ValueError, match="profile_prefix 'imported'"):
+        analyzer.analyze([{'model_id': imported, 'profile_prefix': None}], output_dir=str(tmp_path / 'r'))
     # The error names the target as the caller passed it, not an ID taken from a wrong ARN
     with pytest.raises(ValueError, match=re.escape(HAIKU)):
         analyzer.analyze([{'model_id': HAIKU, 'profile_prefix': 'imported', 'application_profile_ids': [deployment]}],

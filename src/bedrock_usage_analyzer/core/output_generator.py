@@ -212,9 +212,7 @@ class OutputGenerator:
                         }
                 
                 # Add quota info to RPM (no throttling disclaimer, just quota)
-                if 'RPM' in metrics and quotas.get('rpm'):
-                    if not isinstance(metrics['RPM'], dict):
-                        continue
+                if isinstance(metrics.get('RPM'), dict) and quotas.get('rpm'):
                     metrics['RPM']['quota'] = {
                         'value': quotas['rpm'].get('value'),
                         'code': quotas['rpm'].get('code'),

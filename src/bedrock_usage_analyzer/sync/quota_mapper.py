@@ -264,6 +264,7 @@ class QuotaMapper:
             self.bedrock_region, self.model_id, model_id,
             endpoint_type, matching_quotas
         )
+        answered = quota_mapping is not None  # None: the call failed (later regions may ask again)
         quota_mapping = self._drop_invalid_choices(quota_mapping, matching_quotas, model_id, endpoint_type)
         if quota_mapping and fitting:
             # Asked again for a new candidate: a slot the fitting mapping filled and the new answer
@@ -284,7 +285,11 @@ class QuotaMapper:
                 considered |= same[1]
             entries.insert(0, (quota_mapping, considered))
         elif fitting:
-            # No answer (e.g. the call failed): the mapping that fits is better than none
+            # No usable answer: the mapping that fits is better than none. If the LLM answered
+            # (and so turned the new candidates down), they are not asked about again
+            if answered:
+                entry = next(e for e in self.lcode_cache[cache_key] if e[0] is fitting)
+                entry[1].update(q['code'] for q in matching_quotas)
             return copy.deepcopy(fitting)
 
         return quota_mapping
