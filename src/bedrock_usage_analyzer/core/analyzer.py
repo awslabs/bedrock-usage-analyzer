@@ -319,6 +319,9 @@ class BedrockAnalyzer:
                 analyze only those application inference profiles.
             output_dir: Directory to save results
         """
+        for model_config in models:
+            # A wrong target fails before any AWS call (and before the output directory is made)
+            self._imported_target(self._scope_key(model_config))
         self.output_generator = OutputGenerator(output_dir)
 
         # Step 0: Discover all profiles once for all models
@@ -327,8 +330,6 @@ class BedrockAnalyzer:
         logger.info(f"{'='*80}")
 
         all_profiles_map = {}  # {scope_key: (final_model_ids, profile_names, profile_metadata)}
-        for model_config in models:
-            self._imported_target(self._scope_key(model_config))  # a wrong target fails before any AWS call
 
         for model_config in models:
             key = self._scope_key(model_config)

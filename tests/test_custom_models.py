@@ -283,6 +283,20 @@ def test_without_the_listing_a_deployment_id_is_read_by_its_arn(monkeypatch):
     assert client.reads[0] == DEPLOYMENT  # the ARN its ID would have, first
 
 
+def test_a_denied_read_by_a_built_arn_still_reads_the_name(monkeypatch):
+    class LeastPrivilege(FakeCustom):
+        def list_custom_model_deployments(self, **kwargs):
+            raise aws_error('AccessDeniedException', 'ListCustomModelDeployments')
+
+        def get_custom_model_deployment(self, customModelDeploymentIdentifier):
+            if customModelDeploymentIdentifier.startswith('arn:'):  # only the real deployment ARN is allowed
+                raise aws_error('AccessDeniedException', 'GetCustomModelDeployment')
+            return super().get_custom_model_deployment(customModelDeploymentIdentifier)
+    inputs = _inputs(monkeypatch, LeastPrivilege())
+    inputs.account = '111122223333'
+    assert inputs._parse_model_id('my-lite')['application_profile_ids'] == [DEPLOYMENT]
+
+
 def test_a_failed_deployment_listing_is_requested_once_and_reported(monkeypatch, caplog):
     from botocore.exceptions import ClientError
 

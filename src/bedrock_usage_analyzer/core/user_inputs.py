@@ -639,8 +639,11 @@ class UserInputs:
             config = self._deployment_target(identifier)
             if config:
                 return config
-            logger.error(f"No application inference profile, custom model deployment or imported model in "
-                         f"{self.region} has the ID or name {identifier}")
+            if identifier.startswith('arn:'):
+                logger.error(f"Application inference profile not found in {self.region}: {identifier}")
+            else:
+                logger.error(f"No application inference profile, custom model deployment or imported model in "
+                             f"{self.region} has the ID or name {identifier}")
             self._report_deployment_listing_error(identifier)
             sys.exit(1)
         logger.info(f"  Application inference profile {profile['name']} ({profile['id']}) "
@@ -731,8 +734,8 @@ class UserInputs:
                 except AWS_ERRORS as e:
                     answers.append(is_not_found(e))
                     logger.debug(f"{candidate} is not a readable custom model deployment either: {e}")
-                    if is_access_denied(e):
-                        break  # the other candidate would be denied the same way
+                    if is_access_denied(e) and candidate == identifier:
+                        break  # read as a name and denied: no other read can be allowed
             if deployment is None and len(answers) == 2 and all(answers):
                 # Read by its ARN and as a name, and neither is a deployment (without the account
                 # an ID was never read by its ARN, so it may still be one)
@@ -766,8 +769,8 @@ class UserInputs:
                         raise
                     answers.append(is_not_found(e))
                     logger.debug(f"{candidate} is not a readable imported model either: {e}")
-                    if is_access_denied(e):
-                        break  # the other candidate would be denied the same way
+                    if is_access_denied(e) and candidate == identifier:
+                        break  # read as a name and denied: no other read can be allowed
             if imported is None and len(answers) == 2 and all(answers):
                 # Read as a name and by its ARN, and neither is a model (without the account the
                 # ID was never read by its ARN, so it may still be one)
