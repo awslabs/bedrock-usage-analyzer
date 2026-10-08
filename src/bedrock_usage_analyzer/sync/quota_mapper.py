@@ -238,14 +238,18 @@ class QuotaMapper:
             region_codes = {q.get('QuotaCode') for q in quotas}
         # Get the candidates (list) of possible quota names for a given FM, based on the keyword search on the FM's common or base name
         matching_quotas = self._find_matching_quotas(quotas, common_name, endpoint_type, model_id)
-        cached = self.lcode_cache.get(cache_key)
-        # Codes are shared across regions, but a region may lack a quota: reuse the cached
-        # mapping only when every code in it exists in this region, and, when it has an empty
-        # slot, only when this region offers no candidate it has not used (a quota the region
-        # it came from lacked, e.g. a TPD quota, would otherwise stay unmapped here)
-        if cached and all(v['code'] in region_codes for v in cached.values() if v):
+        # Codes are shared across regions, but a region may lack a quota: reuse a cached mapping
+        # only when every code in it exists in this region, and no unused candidate here measures
+        # one of its empty slots (a quota the region it came from lacked, e.g. a TPD quota, would
+        # otherwise stay unmapped here). Each mapping is kept, newest first, so regions with and
+        # without such a quota each reuse their own.
+        for cached in self.lcode_cache.get(cache_key, ()):
+            if not all(v['code'] in region_codes for v in cached.values() if v):
+                continue
             used = {v['code'] for v in cached.values() if v}
-            if all(cached.values()) or {q['code'] for q in matching_quotas} <= used:
+            empty = [slot for slot, v in cached.items() if not v]
+            if not any(measures_metric(slot, q['name']) for q in matching_quotas if q['code'] not in used
+                       for slot in empty):
                 return copy.deepcopy(cached)
         if not matching_quotas:
             return None
@@ -260,9 +264,9 @@ class QuotaMapper:
         quota_mapping = self._drop_invalid_choices(quota_mapping, matching_quotas, model_id, endpoint_type)
 
         if quota_mapping:
-            # The newest valid mapping replaces one that did not fit this region, so the next
-            # regions with the same quota set reuse it instead of asking the LLM again
-            self.lcode_cache[cache_key] = quota_mapping
+            # Tried first from now on, so the next regions with the same quota set reuse it
+            # instead of asking the LLM again
+            self.lcode_cache.setdefault(cache_key, []).insert(0, quota_mapping)
 
         return quota_mapping
 

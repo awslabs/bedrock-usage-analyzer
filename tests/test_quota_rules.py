@@ -128,6 +128,14 @@ def test_a_cached_mapping_with_an_empty_slot_is_not_reused_where_the_region_has_
     assert mapper._get_quota_mapping('us-east-2', SONNET4, 'claude', 'us', QUOTAS)['tpd'] is None  # cached
     assert mapper._get_quota_mapping('us-west-2', SONNET4, 'claude', 'us', QUOTAS + [tpd])['tpd']['code'] == 'L-USTPD'
     assert len(calls) == 2 and 'L-USTPD' in calls[1]  # asked again only where the TPD quota is listed
+    # Regions with and without it alternate: each reuses its own mapping
+    assert mapper._get_quota_mapping('eu-west-1', SONNET4, 'claude', 'us', QUOTAS)['tpd'] is None
+    assert mapper._get_quota_mapping('eu-west-2', SONNET4, 'claude', 'us', QUOTAS + [tpd])['tpd']['code'] == 'L-USTPD'
+    assert len(calls) == 2
+    # A candidate of a slot the mapping already fills does not make it ask again
+    other_tpm = {'QuotaName': QUOTAS[0]['QuotaName'] + ' (legacy)', 'QuotaCode': 'L-US-OLD'}
+    mapper._get_quota_mapping('eu-west-3', SONNET4, 'claude', 'us', QUOTAS + [tpd, other_tpm])
+    assert len(calls) == 2
 
 
 def test_quota_index_removes_saved_mismatches_in_every_region(monkeypatch, tmp_path, no_bundle, commercial_creds):

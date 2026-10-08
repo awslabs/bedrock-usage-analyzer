@@ -566,6 +566,22 @@ def test_an_imported_model_id_wins_over_another_models_same_name(monkeypatch):
     assert _inputs(monkeypatch, client)._parse_model_id('imp0000001')['application_profile_ids'] == [IMPORTED]
 
 
+def test_without_the_listing_an_imported_id_is_read_by_its_arn_first(monkeypatch):
+    class Unlisted(FakeImported):
+        def list_imported_models(self, **kwargs):
+            raise aws_error('AccessDeniedException', 'ListImportedModels')
+
+        def get_imported_model(self, modelIdentifier):
+            self.read.append(modelIdentifier)
+            return {'modelArn': IMPORTED, 'modelName': 'my-qwen'}
+    client = Unlisted()
+    client.read = []
+    inputs = _inputs(monkeypatch, client)
+    inputs.account = '111122223333'
+    assert inputs._parse_model_id('imp0000001')['application_profile_ids'] == [IMPORTED]
+    assert client.read == [IMPORTED]  # the ARN its ID would have, before any name
+
+
 def test_an_imported_model_arn_is_named_from_the_listing(monkeypatch):
     client = FakeImported()
     inputs = _inputs(monkeypatch, client)
@@ -583,10 +599,12 @@ def test_an_unreadable_imported_model_arn_is_still_analyzed(monkeypatch, caplog)
         def get_imported_model(self, modelIdentifier):
             self.calls.append('GetImportedModel')
             raise aws_error('AccessDeniedException', 'GetImportedModel')
+    caplog.set_level('INFO')
     client = Denied(imported=())  # e.g. deleted: not listed any more
     inputs = _inputs(monkeypatch, client)
     assert inputs._parse_model_id(IMPORTED)['application_profile_ids'] == [IMPORTED]
-    assert 'imp0000001 could not be read' in caplog.text and 'Hint:' in caplog.text
+    # The read permissions are optional: only the name is missing, said at info level
+    assert 'imp0000001 is named by its ID' in caplog.text and 'WARNING' not in caplog.text
     assert inputs.profile_fetcher._deployment_names[IMPORTED] == 'imp0000001'
     # The failed read is not repeated
     inputs._parse_model_id(IMPORTED)

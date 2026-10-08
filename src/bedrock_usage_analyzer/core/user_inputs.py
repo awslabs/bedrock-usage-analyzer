@@ -589,9 +589,11 @@ class UserInputs:
                 logger.warning(f"  Imported model names need boto3 1.39.7 or later; the report names "
                                f"{deployment_short_id(arn)} by its ID")
                 return None
-            hint = troubleshooting_hint(e, self.region) if is_access_denied(e) else None
-            if hint:
-                logger.warning(f"  Hint: {hint}")
+            if is_access_denied(e):
+                # The permissions are optional: without them only the name is missing
+                logger.info(f"  Imported model {deployment_short_id(arn)} is named by its ID (without "
+                            f"bedrock:ListImportedModels or bedrock:GetImportedModel its name cannot be read)")
+                return None
             logger.warning(f"  WARNING: imported model {deployment_short_id(arn)} could not be read ({e}); "
                            f"if it was deleted, the report still shows the usage CloudWatch keeps for it")
             return None
@@ -712,10 +714,11 @@ class UserInputs:
             return None
         imported = _match_imported(self._imported_models(quiet=True), identifier)
         if imported is None and isinstance(fetcher, InferenceProfileFetcher) and fetcher.imported_models_error is not None:
-            # GetImportedModel takes a name or an ARN: an ID is read by the ARN it would have
+            # GetImportedModel takes a name or an ARN: an ID is read by the ARN it would have,
+            # first, so an ID wins over another model's same name (as with the listing)
             candidates = [identifier]
             if self.account:
-                candidates.append(build_arn('bedrock', self.region, self.account, f"{IMPORTED_KIND}/{identifier}"))
+                candidates.insert(0, build_arn('bedrock', self.region, self.account, f"{IMPORTED_KIND}/{identifier}"))
             answers = []
             for candidate in candidates:
                 try:
