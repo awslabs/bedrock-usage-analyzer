@@ -28,7 +28,10 @@ models:
         rpm:
           code: L-E386A278
           name: On-demand model inference requests per minute for Amazon Nova Lite
-        tpd: null
+        tpd:
+          code: L-45E0AD92
+          name: Model invocation max tokens per day for Amazon Nova Lite (doubled
+            for cross-region calls)
         tpm:
           code: L-70423BF8
           name: On-demand model inference tokens per minute for Amazon Nova Lite
@@ -43,7 +46,10 @@ models:
         rpm:
           code: L-E118F160
           name: On-demand model inference requests per minute for Amazon Nova Micro
-        tpd: null
+        tpd:
+          code: L-D2912E70
+          name: Model invocation max tokens per day for Amazon Nova Micro (doubled
+            for cross-region calls)
         tpm:
           code: L-CFA4FA0D
           name: On-demand model inference tokens per minute for Amazon Nova Micro
@@ -58,7 +64,10 @@ models:
         rpm:
           code: L-F2717A44
           name: On-demand model inference requests per minute for Amazon Nova Pro
-        tpd: null
+        tpd:
+          code: L-D690997B
+          name: Model invocation max tokens per day for Amazon Nova Pro (doubled for
+            cross-region calls)
         tpm:
           code: L-CE33604C
           name: On-demand model inference tokens per minute for Amazon Nova Pro
@@ -500,7 +509,10 @@ models:
         concurrent: null
         rpm: null
         tpd: null
-        tpm: null
+        tpm:
+          code: L-B46CFAB8
+          name: On-demand model inference tokens per minute for Anthropic Claude Sonnet
+            5
     eu:
       quotas:
         concurrent: null

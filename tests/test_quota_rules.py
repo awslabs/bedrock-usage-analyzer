@@ -110,6 +110,26 @@ def test_cached_codes_are_reused_only_where_they_exist(monkeypatch):
     assert elsewhere['tpm']['code'] == 'L-US-OTHER'
 
 
+def test_a_cached_mapping_with_an_empty_slot_is_not_reused_where_the_region_has_more(monkeypatch):
+    """us-east-1 has no TPD quota for the model; us-west-2 lists one: it is mapped there."""
+    mapper = qm.QuotaMapper('us-east-1', 'm')
+    calls = []
+
+    def llm(region, model, fm_model_id, endpoint, candidates):
+        codes = {c['code'] for c in candidates}
+        calls.append(codes)
+        return {'tpm': {'code': 'L-US', 'name': ''}, 'rpm': None, 'concurrent': None,
+                'tpd': {'code': 'L-USTPD', 'name': ''} if 'L-USTPD' in codes else None}
+
+    monkeypatch.setattr(qm, 'extract_quota_codes', llm)
+    tpd = {'QuotaName': 'Model invocation max tokens per day for Anthropic Claude Sonnet 4 V1 (doubled for '
+                        'cross-region calls)', 'QuotaCode': 'L-USTPD'}
+    assert mapper._get_quota_mapping('us-east-1', SONNET4, 'claude', 'us', QUOTAS)['tpd'] is None
+    assert mapper._get_quota_mapping('us-east-2', SONNET4, 'claude', 'us', QUOTAS)['tpd'] is None  # cached
+    assert mapper._get_quota_mapping('us-west-2', SONNET4, 'claude', 'us', QUOTAS + [tpd])['tpd']['code'] == 'L-USTPD'
+    assert len(calls) == 2 and 'L-USTPD' in calls[1]  # asked again only where the TPD quota is listed
+
+
 def test_quota_index_removes_saved_mismatches_in_every_region(monkeypatch, tmp_path, no_bundle, commercial_creds):
     (tmp_path / 'data').mkdir()
     wrong = {'code': 'L-GL46', 'name': 'Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6'}

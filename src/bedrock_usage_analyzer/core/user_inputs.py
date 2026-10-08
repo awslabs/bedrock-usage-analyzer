@@ -741,9 +741,9 @@ class UserInputs:
     def _note_imported_namesake(self, identifier, analyzed):
         """Warn when a bare ID or name resolved to something else also names an imported model:
         that one is not analyzed unless its ARN is passed."""
-        if identifier.startswith('arn:'):
-            return
-        namesake = _match_imported(self._imported_models(quiet=True), identifier)
+        if identifier.startswith('arn:') or any(c in identifier for c in '.:'):
+            return  # an imported model's name and ID have neither '.' nor ':'
+        namesake =_match_imported(self._imported_models(quiet=True), identifier)
         if namesake:
             logger.warning(f"  WARNING: {identifier} is analyzed as {analyzed}; an imported model has the same "
                            f"name or ID. To analyze it, pass its ARN: -m {namesake['arn']}")

@@ -236,14 +236,17 @@ class QuotaMapper:
         region_codes = self._listed_codes.get(region)
         if region_codes is None:  # called without _process_region (the region's listing)
             region_codes = {q.get('QuotaCode') for q in quotas}
-        cached = self.lcode_cache.get(cache_key)
-        # Codes are shared across regions, but a region may lack a quota: reuse the cached
-        # mapping only when every code in it exists in this region
-        if cached and all(v['code'] in region_codes for v in cached.values() if v):
-            return copy.deepcopy(cached)
-
         # Get the candidates (list) of possible quota names for a given FM, based on the keyword search on the FM's common or base name
         matching_quotas = self._find_matching_quotas(quotas, common_name, endpoint_type, model_id)
+        cached = self.lcode_cache.get(cache_key)
+        # Codes are shared across regions, but a region may lack a quota: reuse the cached
+        # mapping only when every code in it exists in this region, and, when it has an empty
+        # slot, only when this region offers no candidate it has not used (a quota the region
+        # it came from lacked, e.g. a TPD quota, would otherwise stay unmapped here)
+        if cached and all(v['code'] in region_codes for v in cached.values() if v):
+            used = {v['code'] for v in cached.values() if v}
+            if all(cached.values()) or {q['code'] for q in matching_quotas} <= used:
+                return copy.deepcopy(cached)
         if not matching_quotas:
             return None
 

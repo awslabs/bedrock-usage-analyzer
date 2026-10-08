@@ -33,6 +33,9 @@ All notable changes to the Bedrock Usage Analyzer will be documented in this fil
   model a quota that names another API version (a "... Claude 3.5 Sonnet V2" quota for
   `anthropic.claude-3-5-sonnet-20240620-v1:0`), or Claude 3.5 Sonnet V2 and Nemotron Nano 12B v2
   and 9B v2 the quotas of their sibling models, so a refresh cannot bring those mappings back.
+- `bua refresh fm-quotas` no longer copies a model's mapping from an earlier region with an
+  empty slot (for example no TPD quota there) to a region that lists that quota; the model is
+  mapped again there.
 - Bundled quota mappings: `nvidia.nemotron-nano-12b-v2` now uses the "NVIDIA Nemotron Nano 2 VL"
   quotas (it had the 9B model's "Nemotron Nano 2" ones, 10 regions); the `us` profiles of
   Stable Image Outpaint, Search and Recolor and Style Transfer (us-east-1, us-east-2, us-west-2)
@@ -43,9 +46,10 @@ All notable changes to the Bedrock Usage Analyzer will be documented in this fil
   new inference profile endpoints. Newly mapped where Service Quotas lists them: Grok 4.7
   `global` TPM (12 regions), Claude Sonnet 5.5 `global` TPM (15 regions), GPT-6.1 Sol `global`
   TPM and TPD (15 regions), the `in` profiles of Claude Haiku 4.5, Sonnet 5 and Opus 5
-  (ap-south-1, ap-south-2), Claude Sonnet 5 on demand TPM (ap-northeast-2, ap-southeast-1),
-  Claude Opus 5 on demand TPM (ap-northeast-2) and Claude 3.5 Sonnet V2 `apac` TPD
-  (ap-south-1). Kimi K3 keeps its `us` and `global` mappings. GLM 5.3 has no Service Quotas
+  (ap-south-1, ap-south-2), Claude Sonnet 5 on demand TPM (ap-northeast-2, ap-southeast-1,
+  eu-west-2), Claude Opus 5 on demand TPM (ap-northeast-2), Claude 3.5 Sonnet V2 `apac` TPD
+  (ap-south-1), and on demand TPD for Claude 3 Haiku (ca-central-1, eu-central-2, sa-east-1),
+  Nova Lite, Micro and Pro (eu-west-2) and Cohere Embed v4 (ap-northeast-1). Kimi K3 keeps its `us` and `global` mappings. GLM 5.3 has no Service Quotas
   yet, so it is reported without limits.
 - Requires boto3 1.39.7 or later (custom model deployment APIs).
 

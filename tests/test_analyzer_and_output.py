@@ -181,7 +181,7 @@ def test_several_imported_models_in_one_report_are_named_by_their_ids(analyzer, 
     analyzer.analyze([{'model_id': HAIKU, 'profile_prefix': 'imported', 'application_profile_ids': ids}],
                      output_dir=str(out))
     files = reports(out)
-    assert files[0].startswith('imported-models-model-4models-')
+    assert files[0].startswith('imported-models-4-')
     data = json.loads((out / files[1]).read_text())
     assert data['endpoint'] == '4 imported models' and data['imported'] is True
     html = (out / files[0]).read_text()

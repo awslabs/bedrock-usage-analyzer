@@ -534,7 +534,7 @@ class BedrockAnalyzer:
                 endpoint = f"{ids[0]} (imported model)" if len(ids) == 1 else f"{len(ids)} imported models"
                 scope_label = IMPORTED_SCOPE
                 file_label = f"imported-model.{ids[0]}" if len(ids) == 1 else \
-                    self._file_label("imported-models", ids, marker='model')
+                    self._file_label("imported", ids, marker='models')
             elif profile_prefix == CUSTOM_ENDPOINT:
                 endpoint = f"{model_id} (custom model deployment)"
                 scope_label = DEPLOYMENT_SCOPE
@@ -573,14 +573,16 @@ class BedrockAnalyzer:
         """Distinct output name per target, so two endpoints of one model do not overwrite each other.
 
         ``marker`` names what the IDs are: 'app' (application profiles), 'deployment' or
-        'model' (imported models).
+        'models' (imported models: 'imported-models-<id>-<id>').
         """
         if app_ids:
             if len(app_ids) <= 3:
                 return f"{endpoint}-{marker}-{'-'.join(app_ids)}"
             # Many targets: a short digest of the sorted IDs keeps different sets apart
             digest = hashlib.sha256('\n'.join(sorted(app_ids)).encode()).hexdigest()[:8]
-            kind = {'app': 'profiles', 'model': 'models'}.get(marker, 'deployments')
+            if marker == 'models':
+                return f"{endpoint}-models-{len(app_ids)}-{digest}"
+            kind = {'app': 'profiles'}.get(marker, 'deployments')
             return f"{endpoint}-{marker}-{len(app_ids)}{kind}-{digest}"
         return endpoint
 
