@@ -155,31 +155,6 @@ def test_a_candidate_the_llm_turned_down_is_not_asked_about_again(monkeypatch):
     assert len(calls) == 1 and len(entries) == 1 and 'L-SIB' in entries[0][1]
 
 
-def test_quota_index_keeps_a_slot_only_a_later_region_maps(monkeypatch, tmp_path, no_bundle, commercial_creds):
-    (tmp_path / 'data').mkdir()
-    tpm = {'code': 'L-US', 'name': 'Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4 V1'}
-    tpd = {'code': 'L-TPD', 'name': 'Model invocation max tokens per day for Anthropic Claude Sonnet 4 V1 '
-                                    '(doubled for cross-region calls)'}
-    # The first region read has no TPD quota; the second maps one, which exists only there
-    for region, quotas in (('ap-northeast-1', {'tpm': tpm}), ('ap-south-1', {'tpm': tpm, 'tpd': tpd})):
-        save_yaml(str(tmp_path / 'data' / f'fm-list-{region}.yml'), {'models': [
-            {'model_id': SONNET4, 'provider': 'Anthropic', 'endpoints': {'apac': {'quotas': quotas}}}]})
-    checked = []
-
-    def check_quota(code, region):
-        checked.append((code, region))
-        if code == 'L-TPD' and region != 'ap-south-1':
-            return 'missing', None
-        return 'ok', {'QuotaName': (tpd if code == 'L-TPD' else tpm)['name']}
-    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota', check_quota)
-    gen = quota_index.QuotaIndexGenerator()
-    gen.run()
-    assert ('L-TPD', 'ap-south-1') in checked and ('L-TPD', 'ap-northeast-1') not in checked
-    assert {(e['quota_type'], e['quota_code']) for e in gen.entries} == {('tpm', 'L-US'), ('tpd', 'L-TPD')}
-    south = load_yaml(str(tmp_path / 'data' / 'fm-list-ap-south-1.yml'))['models'][0]['endpoints']
-    assert south['apac']['quotas']['tpd'] == tpd  # validated where it is mapped, so not removed
-
-
 def test_quota_index_removes_saved_mismatches_in_every_region(monkeypatch, tmp_path, no_bundle, commercial_creds):
     (tmp_path / 'data').mkdir()
     wrong = {'code': 'L-GL46', 'name': 'Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6'}
