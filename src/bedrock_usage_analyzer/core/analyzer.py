@@ -260,7 +260,7 @@ class BedrockAnalyzer:
     @staticmethod
     def _scope_key(model_config):
         """Cache key for one analysis target (model, endpoint and optional profile subset)."""
-        app_ids = tuple(sorted(model_config.get('application_profile_ids') or ()))
+        app_ids = tuple(sorted(set(model_config.get('application_profile_ids') or ())))  # an ARN passed twice is one
         model_id = model_config['model_id']
         if model_config.get('profile_prefix') == IMPORTED_ENDPOINT and app_ids and all(map(is_imported, app_ids)):
             # Imported reports ignore the caller's model_id: the same models are one target

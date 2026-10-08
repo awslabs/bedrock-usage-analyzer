@@ -255,12 +255,14 @@ def test_a_customizable_only_model_points_to_its_deployments(monkeypatch, caplog
     assert 'under their custom model deployments' in caplog.text
 
 
-def test_a_deployment_id_resolves_when_profiles_cannot_be_listed(monkeypatch):
+def test_a_deployment_id_resolves_when_profiles_cannot_be_listed(monkeypatch, caplog):
     class NoProfiles(FakeCustom):
         def list_inference_profiles(self, **kwargs):
             raise RuntimeError('AccessDeniedException: not authorized to ListInferenceProfiles')
     inputs = _inputs(monkeypatch, NoProfiles([SUMMARY]))
     assert inputs._parse_model_id('my-lite')['application_profile_ids'] == [DEPLOYMENT]
+    # An application profile of that name could not be ruled out: said so
+    assert 'application inference profiles could not be listed' in caplog.text
 
 
 def test_a_failed_deployment_listing_is_requested_once_and_reported(monkeypatch, caplog):
@@ -604,6 +606,15 @@ def test_an_older_boto3_without_the_deployment_apis_is_said_for_a_bare_name(monk
     assert inputs._deployment_target('my-lite') is None  # no direct read either: it would fail the same way
     inputs._report_deployment_listing_error('my-lite')
     assert 'Custom model deployments could not be checked' in caplog.text
+
+
+def test_no_pass_its_arn_advice_when_boto3_cannot_analyze_a_deployment(monkeypatch, caplog):
+    class Old(FakeImported):
+        def list_custom_model_deployments(self, **kwargs):
+            raise AttributeError("'Bedrock' object has no attribute 'list_custom_model_deployments'")
+    inputs = _inputs(monkeypatch, Old())
+    assert inputs._parse_model_id('my-qwen')['profile_prefix'] == 'imported'
+    assert 'a deployment may have the same name' not in caplog.text
 
 
 def test_a_profile_id_shared_with_an_imported_models_name_is_warned_about(monkeypatch, caplog):

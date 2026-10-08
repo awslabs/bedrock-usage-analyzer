@@ -897,7 +897,7 @@
         },
         {
           "name": "_imported_summary",
-          "description": "An imported model passed by ARN as the listing has it, else as read with GetImportedModel; None when neither works."
+          "description": "An imported model passed by ARN as the listing has it, else (only when the listing failed) as read with GetImportedModel; None otherwise, with a warning when a working listing lacks it."
         },
         {
           "name": "_custom_deployments",

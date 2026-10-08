@@ -618,6 +618,10 @@ class UserInputs:
                 # The ID or name of a custom model deployment needs no profile listing
                 config = self._deployment_target(identifier)
                 if config:
+                    if not identifier.startswith('arn:'):
+                        logger.warning(f"  WARNING: {self._failed_listing()} inference profiles could not be listed, so "
+                                       f"an application inference profile with the ID or name {identifier} may be the "
+                                       f"one meant; run again when they can be listed to check")
                     return config
                 # An application profile ID or ARN cannot be analyzed without the listings
                 logger.error(f"Could not list {self._failed_listing()} inference profiles in {self.region}, "
@@ -756,7 +760,8 @@ class UserInputs:
         if not imported:
             return None
         if isinstance(fetcher, InferenceProfileFetcher) and fetcher.custom_deployments_error is not None \
-                and identifier not in self._not_found['deployment']:
+                and not missing_deployment_api(fetcher.custom_deployments_error) \
+                and identifier not in self._not_found['deployment']:  # an older boto3 cannot analyze one anyway
             # Deployments could not be checked: one of that name may be the one meant
             logger.warning(f"  WARNING: {identifier} is analyzed as an imported model; custom model deployments "
                            f"could not be checked, so a deployment may have the same name or ID. To analyze it, "
