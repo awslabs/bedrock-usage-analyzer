@@ -788,7 +788,9 @@ class UserInputs:
             # Not when a direct read already said there is no such resource
             if error is None or identifier in self._not_found[kind]:
                 continue
-            if kind == 'imported' and is_access_denied(error):
+            if missing_deployment_api(error):
+                logger.error(f"  ({what} could not be checked, so it may be one: they need boto3 1.39.7 or later)")
+            elif kind == 'imported' and is_access_denied(error):
                 # A region without Custom Model Import denies the listing too
                 logger.error(f"  (Imported models could not be listed either: if {self.region} offers Custom Model "
                              f"Import, it may be one; allow bedrock:ListImportedModels to check)")

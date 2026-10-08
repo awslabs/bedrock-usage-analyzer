@@ -582,6 +582,20 @@ def test_without_the_listing_an_imported_id_is_read_by_its_arn_first(monkeypatch
     assert client.read == [IMPORTED]  # the ARN its ID would have, before any name
 
 
+def test_an_older_boto3_without_the_imported_apis_is_said_for_a_bare_name(monkeypatch, caplog):
+    class Old(FakeImported):
+        def list_imported_models(self, **kwargs):
+            raise AttributeError("'Bedrock' object has no attribute 'list_imported_models'")
+
+        def get_imported_model(self, modelIdentifier):
+            raise AttributeError("'Bedrock' object has no attribute 'get_imported_model'")
+    inputs = _inputs(monkeypatch, Old())
+    assert inputs._deployment_target('my-qwen') is None
+    assert isinstance(inputs.profile_fetcher.imported_models_error, AttributeError)
+    inputs._report_deployment_listing_error('my-qwen')
+    assert 'Imported models could not be checked' in caplog.text and 'boto3 1.39.7' in caplog.text
+
+
 def test_an_imported_model_arn_is_named_from_the_listing(monkeypatch):
     client = FakeImported()
     inputs = _inputs(monkeypatch, client)

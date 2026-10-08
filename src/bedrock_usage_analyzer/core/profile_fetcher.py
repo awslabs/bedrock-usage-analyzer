@@ -226,8 +226,12 @@ class InferenceProfileFetcher:
                 break
             try:
                 self._imported = list_imported_models(self.bedrock_client)
-            except AWS_ERRORS as e:
-                if is_access_denied(e) or attempt + 1 == MAX_LISTING_ATTEMPTS:
+            except Exception as e:
+                if not deployment_read_error(e):
+                    raise  # a bug
+                if missing_deployment_api(e) or is_access_denied(e) or attempt + 1 == MAX_LISTING_ATTEMPTS:
+                    # Recorded, so readers fall back to GetImportedModel and say why (an older
+                    # boto3 is recorded too: retrying cannot help)
                     self._imported_error = e
                     raise
                 logger.debug(f"Listing imported models failed, retrying: {e}")
