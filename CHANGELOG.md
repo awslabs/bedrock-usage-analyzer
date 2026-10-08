@@ -24,7 +24,8 @@ All notable changes to the Bedrock Usage Analyzer will be documented in this fil
   reports show usage and throttles without limits, as imported models have no per-model token or
   request quotas. Optional permissions: `bedrock:ListImportedModels` (the picker; names models
   and resolves IDs and names in one request) and `bedrock:GetImportedModel` (reads one model
-  by ARN, ID or name when the listing fails, or an ARN the listing does not have). API callers pass imported models as
+  by ARN, ID or name when the listing fails; an ARN a working listing does not have is reported
+  as not among the region's imported models). API callers pass imported models as
   `{'model_id': <id>, 'profile_prefix': 'imported', 'application_profile_ids': [<ARN>, ...]}`.
 
 ### Fixed

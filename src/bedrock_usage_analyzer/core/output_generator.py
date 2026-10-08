@@ -199,9 +199,7 @@ class OutputGenerator:
                             'disclaimer': quota_disclaimer
                         }
                 
-                if 'TPD' in metrics:
-                    if not isinstance(metrics['TPD'], dict):
-                        continue
+                if isinstance(metrics.get('TPD'), dict):  # as for TPM: only TPD is left as it is
                     if throttling_disclaimer:
                         metrics['TPD']['disclaimer'] = throttling_disclaimer
                     if quotas.get('tpd'):

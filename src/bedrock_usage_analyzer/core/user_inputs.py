@@ -574,8 +574,9 @@ class UserInputs:
         return {'model_id': deployment_short_id(arn), 'profile_prefix': IMPORTED_ENDPOINT, 'application_profile_ids': [arn]}
 
     def _imported_summary(self, fetcher, arn) -> Optional[Dict]:
-        """An imported model passed by ARN as the listing has it, else as read; None when
-        neither works (the name is cosmetic: the ARN still gives the metrics)."""
+        """An imported model passed by ARN as the listing has it, else (only when the listing
+        failed) as read; None when neither works (the name is cosmetic: the ARN still gives the
+        metrics)."""
         # Quietly: a failed listing does not mean this model is not analyzed
         summary = next((m for m in self._imported_models(quiet=True) if m['arn'] == arn), None)
         if summary:
