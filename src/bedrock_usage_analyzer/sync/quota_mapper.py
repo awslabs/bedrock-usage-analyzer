@@ -276,6 +276,8 @@ class QuotaMapper:
             # instead of asking the LLM again
             entries = self.lcode_cache.setdefault(cache_key, [])
             considered = {q['code'] for q in matching_quotas}
+            if fitting:  # merged with it: what it was judged against is covered too
+                considered |= next(c for m, c in entries if m is fitting)
             same = next((e for e in entries if e[0] == quota_mapping), None)
             if same:  # the same answer: one entry that has now seen both candidate sets
                 entries.remove(same)

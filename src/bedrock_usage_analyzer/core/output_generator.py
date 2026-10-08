@@ -187,9 +187,7 @@ class OutputGenerator:
         for period, period_data in processed.items():
             for profile_id, metrics in period_data.items():
                 # Add throttling disclaimer to TPM and TPD metrics
-                if 'TPM' in metrics:
-                    if not isinstance(metrics['TPM'], dict):
-                        continue
+                if isinstance(metrics.get('TPM'), dict):  # anything else: only TPM is left as it is
                     if throttling_disclaimer:
                         metrics['TPM']['disclaimer'] = throttling_disclaimer
                     if quotas.get('tpm'):

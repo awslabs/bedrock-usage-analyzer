@@ -687,6 +687,9 @@ def test_a_throttled_listing_does_not_blame_the_listing_permission(monkeypatch, 
 
 def test_a_bug_reading_an_imported_model_is_raised(monkeypatch):
     class Broken(FakeImported):
+        def list_imported_models(self, **kwargs):  # so the model is read
+            raise aws_error('AccessDeniedException', 'ListImportedModels')
+
         def get_imported_model(self, modelIdentifier):
             raise KeyError('bug')
     with pytest.raises(KeyError):

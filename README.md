@@ -541,10 +541,10 @@ The HTML report contains several sections:
 - Per metric, rows for P50, P90, Average, Total (summed metrics only) and Data Points
 - Metrics: InputTokenCount, OutputTokenCount, Invocations, InvocationThrottles, InvocationClientErrors, InvocationServerErrors, InvocationLatency; a second table has TPM, RPM and TPD (always from 1-min data)
 
-**Usage by ...** (with `--breakdown` or `--principal`)
+**3. Usage by ...** (with `--breakdown` or `--principal`)
 - Per-caller tokens, requests, shares, TPM/RPM (P50, P90, max) and TPD per period, read from the model invocation logs
 
-**3. Charts**
+**4. Charts**
 - Time series graphs for each metric and time period
 - **Red dashed lines**: Quota limits (when available)
 - **Colored lines**: Model usage over time
