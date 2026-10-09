@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # What the names in a report's application_profile_scope are
 APPLICATION_PROFILE_SCOPE = 'Application inference profiles analyzed'
 DEPLOYMENT_SCOPE = 'Custom model deployments analyzed'
+IMPORTED_SCOPE = 'Imported models analyzed'
 
 
 def safe_filename(label: str) -> str:
@@ -113,8 +114,14 @@ class OutputGenerator:
         # Generate period names (same as HTML)
         period_names = self._generate_period_names(data.get('end_time'), data.get('tz_offset', '+00:00'))
         
-        # Build disclaimers
+        # Build disclaimers. Imported models have no token quotas: their own note, as in the HTML
         disclaimers = {
+            'imported': (
+                "Custom Model Import models have no per-model TPM, RPM or TPD quotas, so this report "
+                "shows usage without limits. Bedrock scales the model copies that serve an imported "
+                "model with its traffic; throttles mean requests arrived faster than copies were added."
+            )
+        } if data.get('imported') else {
             'throttling': (
                 "Low TPM/TPD values do not rule out token-based throttling. "
                 "Bedrock reserves (input_tokens + max_tokens) from your quota at request start, "
@@ -143,8 +150,10 @@ class OutputGenerator:
             'model_id': model_id,
             'endpoint': data.get('endpoint', model_id),
             'application_profile_scope': data.get('application_profile_scope', []),
-            # What the scope names are: application inference profiles or custom model deployments
+            # What the scope names are: application inference profiles, custom model deployments or imported models
             'scope_label': data.get('scope_label') or APPLICATION_PROFILE_SCOPE,
+            # Custom Model Import models: reported without limits (they have no quotas)
+            'imported': bool(data.get('imported')),
             'region': data.get('region', 'N/A'),
             'region_info': self._region_info(data),
             'generated_at': formatted_timestamp,
@@ -178,10 +187,9 @@ class OutputGenerator:
         for period, period_data in processed.items():
             for profile_id, metrics in period_data.items():
                 # Add throttling disclaimer to TPM and TPD metrics
-                if 'TPM' in metrics:
-                    if not isinstance(metrics['TPM'], dict):
-                        continue
-                    metrics['TPM']['disclaimer'] = throttling_disclaimer
+                if isinstance(metrics.get('TPM'), dict):  # anything else: only TPM is left as it is
+                    if throttling_disclaimer:
+                        metrics['TPM']['disclaimer'] = throttling_disclaimer
                     if quotas.get('tpm'):
                         metrics['TPM']['quota'] = {
                             'value': quotas['tpm'].get('value'),
@@ -191,10 +199,9 @@ class OutputGenerator:
                             'disclaimer': quota_disclaimer
                         }
                 
-                if 'TPD' in metrics:
-                    if not isinstance(metrics['TPD'], dict):
-                        continue
-                    metrics['TPD']['disclaimer'] = throttling_disclaimer
+                if isinstance(metrics.get('TPD'), dict):  # as for TPM: only TPD is left as it is
+                    if throttling_disclaimer:
+                        metrics['TPD']['disclaimer'] = throttling_disclaimer
                     if quotas.get('tpd'):
                         metrics['TPD']['quota'] = {
                             'value': quotas['tpd'].get('value'),
@@ -205,9 +212,7 @@ class OutputGenerator:
                         }
                 
                 # Add quota info to RPM (no throttling disclaimer, just quota)
-                if 'RPM' in metrics and quotas.get('rpm'):
-                    if not isinstance(metrics['RPM'], dict):
-                        continue
+                if isinstance(metrics.get('RPM'), dict) and quotas.get('rpm'):
                     metrics['RPM']['quota'] = {
                         'value': quotas['rpm'].get('value'),
                         'code': quotas['rpm'].get('code'),
@@ -263,6 +268,7 @@ class OutputGenerator:
                 endpoint=data.get('endpoint', model_id),
                 application_profile_scope=data.get('application_profile_scope', []),
                 scope_label=data.get('scope_label') or APPLICATION_PROFILE_SCOPE,
+                imported=bool(data.get('imported')),
                 timestamp=formatted_timestamp,
                 region=region_name,
                 region_info=self._region_info(data),

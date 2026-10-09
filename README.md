@@ -20,7 +20,7 @@ This tool works by calling AWS APIs from your local machine, including CloudWatc
 
 You can refresh the available regions, the available foundation models, and the service quotas mapping for the FMs using the `bedrock-usage-analyzer refresh` commands (or `bua refresh` for short). The FM to service quotas mapping is done intelligently with the help of foundation model called through Bedrock.
 
-⚠️ **Important Disclaimer** This tool is currently under 0.5.1-beta version. Before using this tool in any production or critical environment, you are strongly advised to review all code thoroughly and evaluate it against best practices, security and compliance standards, and other requirements.
+⚠️ **Important Disclaimer** This tool is currently under 0.7.0-beta version. Before using this tool in any production or critical environment, you are strongly advised to review all code thoroughly and evaluate it against best practices, security and compliance standards, and other requirements.
 
 ## Example Output
 
@@ -34,12 +34,13 @@ The tool generates HTML report showing token usage over time with quota limits. 
 - **Quota visualization**: Red dashed lines showing TPM/RPM/TPD quotas
 - **Time series charts**: Graphs for each time period that displays usage across application inference profiles for that model
 - **Percentile statistics**: p50, p90, and average values in tables
-- **Multiple metrics**: TPM, RPM, TPD (tokens-per-day), invocations, invocation throttles, input token count, output token count, and invocation latency.
+- **Multiple metrics**: TPM, RPM, TPD (tokens-per-day), invocations, invocation throttles, client and server errors, input token count, output token count, and invocation latency.
 
 ## Prerequisites
 
 ### Required Software
 - **Python** >= 3.9 with [venv](https://packaging.python.org/en/latest/guides/installing-using-pip-and-virtual-environments/)
+- **boto3** >= 1.39.7 (installed with the package; older boto3 has no custom model deployment APIs)
 - **AWS CLI** configured with appropriate credentials
 - **GIT** to clone this repository (only needed for development install)
 
@@ -72,6 +73,8 @@ This tool requires different IAM permissions depending on which features you use
         "bedrock:ListCustomModelDeployments",
         "bedrock:GetCustomModelDeployment",
         "bedrock:GetCustomModel",
+        "bedrock:ListImportedModels",
+        "bedrock:GetImportedModel",
         "bedrock:ListTagsForResource",
         "cloudwatch:GetMetricData",
         "servicequotas:GetServiceQuota",
@@ -101,8 +104,9 @@ Replace the placeholders in the `QueryInvocationLogs` statement with the invocat
 **What this allows:**
 - `sts:GetCallerIdentity` - Get your AWS account ID
 - `bedrock:ListInferenceProfiles` - Discover inference profiles for selected models
-- `bedrock:ListTagsForResource` - Retrieve tags for inference profiles and custom model deployments (for metadata display)
+- `bedrock:ListTagsForResource` - Retrieve tags for inference profiles, custom model deployments and imported models (for metadata display)
 - `bedrock:ListCustomModelDeployments`, `bedrock:GetCustomModelDeployment`, `bedrock:GetCustomModel` - Optional: analyze on-demand custom model deployments (their base model gives the quotas)
+- `bedrock:ListImportedModels`, `bedrock:GetImportedModel` - Optional: list and name Custom Model Import models (an imported model ARN gives its usage without them)
 - `cloudwatch:GetMetricData` - Fetch CloudWatch metrics for token usage (TPM, RPM, TPD, throttles)
 - `servicequotas:GetServiceQuota` - Retrieve service quota limits for visualization
 - `servicequotas:GetAWSDefaultServiceQuota` - Read the default value of a quota that has no applied value (GetServiceQuota does not return those)
@@ -114,7 +118,7 @@ Replace the placeholders in the `QueryInvocationLogs` statement with the invocat
 
 #### Option 2: Full Feature Access (Complete)
 
-**Use this if:** You run metadata refresh commands (`bedrock-usage-analyzer refresh *`) or test data generators. This includes **all permissions from Option 1** plus additional permissions:
+**Use this if:** You run metadata refresh commands (`bedrock-usage-analyzer refresh *`). This includes **all permissions from Option 1** plus additional permissions:
 
 Note: You need to replace some part with your own account ID and the region used.
 
@@ -131,6 +135,8 @@ Note: You need to replace some part with your own account ID and the region used
         "bedrock:ListCustomModelDeployments",
         "bedrock:GetCustomModelDeployment",
         "bedrock:GetCustomModel",
+        "bedrock:ListImportedModels",
+        "bedrock:GetImportedModel",
         "bedrock:ListTagsForResource",
         "cloudwatch:GetMetricData",
         "servicequotas:GetServiceQuota",
@@ -310,18 +316,22 @@ AWS_PROFILE=govcloud bedrock-usage-analyzer analyze
 ```
 
 The script will prompt you to:
-1. **Select AWS region** - Only regions of your credentials' partition are listed (commercial or GovCloud)
-2. **Select granularity** - Choose the time granularity to aggregate usage across (e.g. 1 min, 5 mins, 1 hour)
-3. **Choose what to analyze** (only asked when the region has application inference profiles) - a foundation model, or specific application inference profiles
-4. **Select model provider** - Filter by provider (Amazon, Anthropic, etc.)
-5. **Select model** - Choose the specific model to analyze
-6. **Select inference profile** (if applicable) - Choose base model or cross-region profile
+1. **Confirm the AWS account** - skipped with `-y`
+2. **Select AWS region** - Only regions of your credentials' partition are listed (commercial or GovCloud)
+3. **Select granularity** - Accept the default (5 minutes for every period) or pick 1 min, 5 mins or 1 hour per period
+4. **Choose what to analyze** (only asked when the region has application inference profiles, active custom model deployments or imported models) - a foundation model, specific application inference profiles, custom model deployments, or imported models
+5. **Select model provider** - Filter by provider (Amazon, Anthropic, etc.)
+6. **Select model** - Choose the specific model to analyze
+7. **Select inference profile** (if applicable) - Choose base model or cross-region profile
+8. **Add another model?** - Repeat from step 4 to add more targets to the run
+9. **Break usage down by caller?** (only asked when the region logs model invocations to CloudWatch Logs) - see [Attributing usage to IAM principals](#attributing-usage-to-iam-principals)
+10. **Where to save results** - `./results` (default), the user data directory, or a custom path; skipped with `-o`
 
 ### Analyzing application inference profiles
 
 When you analyze a foundation model endpoint (for example `au.anthropic.claude-haiku-4-5-20251001-v1:0`), the report includes that endpoint plus every [application inference profile](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-create.html) created from it, with a per-profile breakdown and tags. The tool finds the source of each application profile by matching its routing targets against the system-defined profiles, so a copy of `au.*` is not confused with `apac.*` or `jp.*`.
 
-To analyze only some application profiles, choose "Specific application inference profiles" at step 3 and enter their numbers (for example `1,3-4` or `all`), or pass the profile ID or ARN with `--model-id`:
+To analyze only some application profiles, choose "Specific application inference profiles" at step 4 and enter their numbers (for example `1,3-4` or `all`), or pass the profile ID or ARN with `--model-id`:
 
 ```bash
 bedrock-usage-analyzer analyze -r ap-southeast-2 -y -g 5min -o ./results \
@@ -333,7 +343,7 @@ If you analyze an endpoint that has no application profiles while the account ha
 
 ### Analyzing custom model deployments
 
-[On-demand custom model deployments](https://docs.aws.amazon.com/bedrock/latest/userguide/deploy-custom-model-on-demand.html) are analyzed like any other endpoint. Choose "Custom model deployments" at step 3 (shown when the region has an active one), or pass the deployment ARN, ID or name with `--model-id`:
+[On-demand custom model deployments](https://docs.aws.amazon.com/bedrock/latest/userguide/deploy-custom-model-on-demand.html) are analyzed like any other endpoint. Choose "Custom model deployments" at step 4 (shown when the region has an active one), or pass the deployment ARN, ID or name with `--model-id`:
 
 ```bash
 bedrock-usage-analyzer analyze -r us-east-1 -y -g 5min -o ./results \
@@ -341,6 +351,19 @@ bedrock-usage-analyzer analyze -r us-east-1 -y -g 5min -o ./results \
 ```
 
 The report shows the deployment's usage (CloudWatch records it under the deployment ARN) against the custom model deployment quotas of its base model, for example "(Model customization) Sum of on demand custom model deployment tokens per minute for Amazon Nova Lite". These quotas are mapped in the fm-list as the base model's `custom` endpoint. They are account-wide sums over every deployment of models customized from that base model, so select all of them (`all` in the list, or one `-m` per deployment) for one aggregated report; the tool names the ones left out. A deployment whose custom model names no foundation base model shows usage without limits; so does a deployment whose details cannot be read (without the optional permissions above, a deployment ARN still gives its usage).
+
+Customized Amazon Nova models are covered whichever way they were trained: fine-tuned or distilled in Amazon Bedrock, or trained with Amazon SageMaker AI and brought into Bedrock as a custom model. Once deployed on demand, each one is analyzed against the quotas of the Nova model it was customized from (Nova 2 Lite, Nova Lite, Nova Micro or Nova Pro, where Service Quotas lists them; other base models with such quotas, such as Llama 3.3 70B in us-west-2, work the same way).
+
+### Analyzing imported models (Custom Model Import)
+
+Models brought in with [Custom Model Import](https://docs.aws.amazon.com/bedrock/latest/userguide/model-customization-import-model.html) (for example a fine-tuned Llama, Mistral or Qwen) are analyzed under their imported model ARN, which is also the ID CloudWatch records their usage under. Choose "Imported models" at step 4 (shown when the region has one), or pass the ARN, ID or name with `--model-id`:
+
+```bash
+bedrock-usage-analyzer analyze -r us-east-1 -y -g 5min -o ./results \
+  -m arn:aws:bedrock:us-east-1:111122223333:imported-model/imp0example1
+```
+
+Imported models have no per-model token or request quotas: Bedrock scales the model copies that serve them, so the report shows usage and throttles without limits. Passing an ID or name needs `bedrock:ListImportedModels` or `bedrock:GetImportedModel`.
 
 ### Attributing usage to IAM principals
 
@@ -362,7 +385,7 @@ bua analyze -r us-east-1 -m us.amazon.nova-lite-v1:0 -y --principal role/OrdersS
 
 When you pick the models interactively (no `-m`), the tool asks whether to break usage down once the region logs invocations to CloudWatch Logs. With `-m`, pass `--breakdown` (or `--principal`).
 
-- **What a row shows:** a caller's tokens and requests and its share of the endpoint's total, TPM and RPM (P50, P90, max per minute), and TPD, for each period, plus a TPM chart against the quota. The JSON report's `breakdown.time_series` holds each row's TPM and RPM series per period (the HTML chart draws TPM). "Via" lists the profiles or deployments it called; for session, tag and metadata rows, the IAM principals in the group. With `principal`, the callers' IAM tags are shown.
+- **What a row shows:** a caller's tokens and requests and its share of the endpoint's total, TPM and RPM (P50, P90, max per minute), and TPD, for each period, plus a TPM chart against the quota (imported models have none, so their charts show usage only). The JSON report's `breakdown.time_series` holds each row's TPM and RPM series per period (the HTML chart draws TPM). "Via" lists the profiles, deployments or imported models it called; for session, tag and metadata rows, the IAM principals in the group. With `principal`, the callers' IAM tags are shown.
 - **Totals and quotas stay CloudWatch's.** Quotas are per account, Region and model, shared by all callers. Usage CloudWatch counted that the logs do not hold (logging was off, records not delivered) is shown as **(not in the invocation logs)**, so the shares add up.
 - **Setup:** enable model invocation logging in each analyzed Region with a CloudWatch Logs destination. Turn off text, image, embedding and video data delivery to log metadata only (the tool reads only metadata fields, never prompts or completions). Periods older than the log group's retention are marked as partly covered. S3-only logging is not read; add a CloudWatch Logs destination. `--log-group` reads another log group.
 - **Cost:** Logs Insights charges per GB scanned. The tool scans the log group once per run, for all reports, over the longest period, up to 15 days; it prints the number of queries and the GB scanned. A run over very many profiles (a model ID list longer than one 10,000-character query) scans once per batch of them, and a day with more than 100,000 per-minute result rows (for example very many sessions with `--breakdown session`) is queried again in quarter-day windows (10,000 rows with an SDK whose StartQuery is capped at 10,000, such as botocore before 1.43). Metadata-only logging keeps the logs small.
@@ -378,19 +401,19 @@ For automation, CI/CD pipelines, or scheduled runs, you can pass arguments direc
 # Fully non-interactive (all arguments specified)
 bedrock-usage-analyzer analyze \
   --region us-west-2 \
-  --model-id amazon.nova-premier-v1:0 \
+  --model-id amazon.nova-lite-v1:0 \
   --granularity 1min \
   --output-dir ./results
 
 # With cross-region inference profile (note the 'us.' prefix)
 bedrock-usage-analyzer analyze \
   --region us-west-2 \
-  --model-id us.amazon.nova-premier-v1:0 \
+  --model-id us.amazon.nova-lite-v1:0 \
   --granularity 5min
 
 # Several targets in one run (repeat --model-id)
 bedrock-usage-analyzer analyze -r us-west-2 -y -g 5min -o ./results \
-  -m us.amazon.nova-premier-v1:0 -m amazon.nova-premier-v1:0
+  -m us.amazon.nova-lite-v1:0 -m amazon.nova-lite-v1:0
 
 # Partial arguments (prompts only for missing values)
 bedrock-usage-analyzer analyze --region us-west-2 --granularity 1hour
@@ -402,10 +425,13 @@ bedrock-usage-analyzer analyze --region us-west-2 --granularity 1hour
 | Argument | Short | Description |
 |----------|-------|-------------|
 | `--region` | `-r` | AWS region (e.g., `us-west-2`, `eu-west-1`) |
-| `--model-id` | `-m` | Model ID with optional prefix (e.g., `amazon.nova-premier-v1:0` for base, `us.amazon.nova-premier-v1:0` for cross-region, `us-gov.` for GovCloud), or an application inference profile ID/ARN. Repeat to analyze several |
+| `--model-id` | `-m` | Model ID with optional prefix (e.g., `amazon.nova-lite-v1:0` for base, `us.amazon.nova-lite-v1:0` for cross-region, `us-gov.` for GovCloud), a system inference profile or foundation-model ARN, an application inference profile ID/ARN, an on-demand custom model deployment ARN/ID/name, or a Custom Model Import model ARN/ID/name. Repeat to analyze several |
 | `--granularity` | `-g` | Aggregation granularity (see below) |
 | `--output-dir` | `-o` | Directory to save results |
 | `--yes` | `-y` | Skip account confirmation prompt |
+| `--breakdown` | | Break each report down by caller from the model invocation logs: `principal`, `session`, `tag:<key>` or `metadata:<key>` (see [Attributing usage to IAM principals](#attributing-usage-to-iam-principals)) |
+| `--principal` | | Limit the breakdown to this caller (`role/<name>`, `user/<name>` or an IAM ARN). Repeat for several; implies `--breakdown principal` |
+| `--log-group` | | With `--breakdown` or `--principal`: the invocation log group to read (default: the region's model invocation logging destination) |
 
 **Granularity Options:**
 
@@ -414,13 +440,13 @@ You can specify granularity in two ways:
 1. **Single value** - applies to all time periods:
    ```bash
    # Use 1-minute granularity for all periods
-   bedrock-usage-analyzer analyze -r us-west-2 -m amazon.nova-premier-v1:0 -g 1min
+   bedrock-usage-analyzer analyze -r us-west-2 -m amazon.nova-lite-v1:0 -g 1min
    
    # Use 5-minute granularity for all periods
-   bedrock-usage-analyzer analyze -r us-west-2 -m amazon.nova-premier-v1:0 -g 5min
+   bedrock-usage-analyzer analyze -r us-west-2 -m amazon.nova-lite-v1:0 -g 5min
    
    # Use 1-hour granularity for all periods
-   bedrock-usage-analyzer analyze -r us-west-2 -m amazon.nova-premier-v1:0 -g 1hour
+   bedrock-usage-analyzer analyze -r us-west-2 -m amazon.nova-lite-v1:0 -g 1hour
    ```
 
 2. **JSON format** - different granularity per time period:
@@ -428,7 +454,7 @@ You can specify granularity in two ways:
    # Fine granularity for recent data, coarser for older data
    bedrock-usage-analyzer analyze \
      -r us-west-2 \
-     -m amazon.nova-premier-v1:0 \
+     -m amazon.nova-lite-v1:0 \
      -g '{"1hour":"1min","1day":"5min","7days":"1hour","14days":"1hour","30days":"1hour"}'
    ```
 
@@ -445,19 +471,19 @@ AWS_PROFILE=my-profile-name bua analyze -r us-west-2 -m us.meta.llama4-scout-17b
 # Use a specific AWS profile
 AWS_PROFILE=production bedrock-usage-analyzer analyze \
   -r us-west-2 \
-  -m amazon.nova-premier-v1:0 \
+  -m amazon.nova-lite-v1:0 \
   -g 1min \
   -y
 
 # Or export for multiple commands
 export AWS_PROFILE=production
-bedrock-usage-analyzer analyze -r us-west-2 -m amazon.nova-premier-v1:0 -g 1min
-bedrock-usage-analyzer analyze -r us-east-1 -m amazon.nova-premier-v1:0 -g 1min
+bedrock-usage-analyzer analyze -r us-west-2 -m amazon.nova-lite-v1:0 -g 1min
+bedrock-usage-analyzer analyze -r us-east-1 -m amazon.nova-lite-v1:0 -g 1min
 
 # Switch to another account
 AWS_PROFILE=development bedrock-usage-analyzer analyze \
   -r us-west-2 \
-  -m amazon.nova-premier-v1:0 \
+  -m amazon.nova-lite-v1:0 \
   -g 1min
 ```
 
@@ -507,15 +533,18 @@ cat results/<model-name>-<timestamp>.json | jq
 The HTML report contains several sections:
 
 **1. Quota Limits Section** (if available)
-- Shows TPM, RPM, and TPD quota limits for your model (if applicable)
+- Shows the TPM, RPM, TPD and concurrent-request quota limits mapped for the endpoint (none for imported models)
 - Displayed at the top for quick reference
 
-**2. Statistics Table**
-- One colum per time period (1hour, 1day, 7days, 14days, 30days)
-- Columns: Metric Type, p50, p90, Average, Total, Data Points
-- Metrics: TPM, RPM, TPD, InvocationThrottles, Invocations, InvocationServerErrors, InvocationClientErrors, InvocationLatency, InputTokenCount, and OutputTokenCount
+**2. Statistics Summary**
+- One column per time period (1HOUR, 1DAY, 7DAYS, 14DAYS, 30DAYS), labelled with its granularity
+- Per metric, rows for P50, P90, Average, Total (summed metrics only) and Data Points
+- Metrics: InputTokenCount, OutputTokenCount, Invocations, InvocationThrottles, InvocationClientErrors, InvocationServerErrors, InvocationLatency; a second table has TPM, RPM and TPD (always from 1-min data)
 
-**3. Charts**
+**3. Usage by ...** (with `--breakdown` or `--principal`)
+- Per-caller tokens, requests, shares, TPM/RPM (P50, P90, max) and TPD per period, read from the model invocation logs
+
+**4. Charts**
 - Time series graphs for each metric and time period
 - **Red dashed lines**: Quota limits (when available)
 - **Colored lines**: Model usage over time
@@ -554,8 +583,8 @@ bedrock-usage-analyzer refresh fm-quotas
 **How it works:**
 - Uses Bedrock foundation model to extract base model family names (e.g., "nova-lite" → "nova")
 - Matches quota names containing model family + endpoint type
-- Recognizes "on-demand", "cross-region", and "global" quota patterns
-- Only makes 2-3 inference calls per model profile (on-demand, cross-region, global)
+- Recognizes "on-demand", "cross-region", "global" and, for the `custom` endpoint, "custom model deployment" quota patterns
+- Only makes one inference call per endpoint type of a model (on-demand, cross-region, global, custom), plus one to name the model family
 - Caches results to avoid redundant API calls
 
 You can then validate the mapped quota. To make the validation easier, you can run the following command to create a .csv file where each row constitutes the model, endpoint, and metric combination. 
@@ -575,7 +604,7 @@ The analyzer supports various customization options through the interactive prom
 **Model Selection:**
 - Filter by provider to narrow down choices
 - Select specific model variants
-- Choose inference profiles (base, us, eu, jp, au, apac, global)
+- Choose inference profiles (base, us, eu, jp, au, apac, ca, in, us-gov, global)
 
 **Time Periods:**
 - 1hour: Recent short-term patterns
@@ -611,7 +640,7 @@ bedrock-usage-analyzer refresh fm-list --update-bundle
 **`./bin/analyze-bedrock-usage`**
 - Main script for analyzing token usage
 - Interactive prompts for region, provider, model selection
-- Generates JSON and HTML reports in `results/` directory
+- Generates JSON and HTML reports (asks for the output directory unless `-o` is given; default `./results`)
 
 **`./bin/refresh-regions`**
 - Fetches enabled AWS regions for your account
@@ -671,11 +700,10 @@ rm -rf ~/Library/Application\ Support/bedrock-usage-analyzer/
 ## Troubleshooting and advanced scenarios
 ### Analysis Issues
 
-**Q: "No metrics found" error**
-A: This means CloudWatch has no data for the selected model. Verify:
-1. The model has been used in the selected region
-2. You're checking the correct time period
-3. CloudWatch metrics are enabled for Bedrock
+**Q: The report shows no usage (empty charts, zero data points)**
+A: CloudWatch has no Bedrock data for the selected endpoint. Verify:
+1. The model was called in the selected region through this endpoint: base model ID, `us.`/`eu.`/`global.` profile, application profile, deployment or imported model ARN (a cross-region profile's usage is not under the base model ID)
+2. The calls fall inside the analyzed periods (up to 30 days)
 
 **Q: Quota limits not showing in report**
 A: Quotas are only shown if they've been mapped. You can:
@@ -685,10 +713,10 @@ A: Quotas are only shown if they've been mapped. You can:
 If the quota limits are still not shown, it could be that the FM is not yet listed. You can run `bedrock-usage-analyzer refresh fm-list` before `bedrock-usage-analyzer refresh fm-quotas`.
 
 
-**Q: "Model not found" error**
-A: Refresh your foundation model lists:
+**Q: "is not a model, inference profile or application inference profile known in <region>" or "Foundation model list not found for region"**
+A: Refresh the foundation model list of that region:
 ```bash
-bedrock-usage-analyzer refresh fm-list
+bedrock-usage-analyzer refresh fm-list <region>
 ```
 
 ### Quota Mapping Issues
@@ -715,9 +743,9 @@ A: Verify your IAM permissions. See the [IAM Permissions](#iam-permissions) sect
 ### Performance Issues
 
 **Q: Analysis is very slow**
-A: CloudWatch queries can take time for large time ranges. To speed up:
-1. Analyze shorter time periods
-2. Use specific models instead of analyzing all models
+A: CloudWatch queries can take time for large time ranges; the tool always fetches all five periods. To speed up:
+1. Use coarser granularity for the long periods, e.g. `-g '{"1hour":"5min","1day":"5min","7days":"1hour","14days":"1hour","30days":"1hour"}'` (the default is 5 minutes everywhere). This shortens the throttle, error and latency queries; token counts and invocations are always read at 1 minute, for TPM, RPM and TPD
+2. Analyze fewer targets per run (fewer `-m` values or application profiles)
 3. Check your network connection to AWS
 
 ### Advanced scenarios

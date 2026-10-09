@@ -110,6 +110,80 @@ def test_cached_codes_are_reused_only_where_they_exist(monkeypatch):
     assert elsewhere['tpm']['code'] == 'L-US-OTHER'
 
 
+def test_a_cached_mapping_with_an_empty_slot_is_not_reused_where_the_region_has_more(monkeypatch):
+    """us-east-1 has no TPD quota for the model; us-west-2 lists one: it is mapped there."""
+    mapper = qm.QuotaMapper('us-east-1', 'm')
+    calls = []
+
+    def llm(region, model, fm_model_id, endpoint, candidates):
+        codes = {c['code'] for c in candidates}
+        calls.append(codes)
+        return {'tpm': {'code': 'L-US', 'name': ''}, 'rpm': None, 'concurrent': None,
+                'tpd': {'code': 'L-USTPD', 'name': ''} if 'L-USTPD' in codes else None}
+
+    monkeypatch.setattr(qm, 'extract_quota_codes', llm)
+    tpd = {'QuotaName': 'Model invocation max tokens per day for Anthropic Claude Sonnet 4 V1 (doubled for '
+                        'cross-region calls)', 'QuotaCode': 'L-USTPD'}
+    assert mapper._get_quota_mapping('us-east-1', SONNET4, 'claude', 'us', QUOTAS)['tpd'] is None
+    assert mapper._get_quota_mapping('us-east-2', SONNET4, 'claude', 'us', QUOTAS)['tpd'] is None  # cached
+    assert mapper._get_quota_mapping('us-west-2', SONNET4, 'claude', 'us', QUOTAS + [tpd])['tpd']['code'] == 'L-USTPD'
+    assert len(calls) == 2 and 'L-USTPD' in calls[1]  # asked again only where the TPD quota is listed
+    # Regions with and without it alternate: each reuses its own mapping
+    assert mapper._get_quota_mapping('eu-west-1', SONNET4, 'claude', 'us', QUOTAS)['tpd'] is None
+    assert mapper._get_quota_mapping('eu-west-2', SONNET4, 'claude', 'us', QUOTAS + [tpd])['tpd']['code'] == 'L-USTPD'
+    assert len(calls) == 2
+    # A candidate of a slot the mapping already fills does not make it ask again
+    other_tpm = {'QuotaName': QUOTAS[0]['QuotaName'] + ' (legacy)', 'QuotaCode': 'L-US-OLD'}
+    mapper._get_quota_mapping('eu-west-3', SONNET4, 'claude', 'us', QUOTAS + [tpd, other_tpm])
+    assert len(calls) == 2
+
+
+def test_a_failed_llm_call_keeps_the_cached_mapping_that_fits(monkeypatch):
+    mapper = qm.QuotaMapper('us-east-1', 'm')
+    answers = [{'tpm': {'code': 'L-US', 'name': ''}, 'rpm': None, 'tpd': None, 'concurrent': None}, None]
+    monkeypatch.setattr(qm, 'extract_quota_codes', lambda *a: answers.pop(0))
+    tpd = {'QuotaName': 'Model invocation max tokens per day for Anthropic Claude Sonnet 4 V1 (doubled for '
+                        'cross-region calls)', 'QuotaCode': 'L-USTPD'}
+    mapper._get_quota_mapping('us-east-1', SONNET4, 'claude', 'us', QUOTAS)
+    # us-west-2 lists a TPD quota, so it is asked again; the call fails: the TPM mapping stays
+    assert mapper._get_quota_mapping('us-west-2', SONNET4, 'claude', 'us', QUOTAS + [tpd])['tpm']['code'] == 'L-US'
+
+
+def test_an_answer_for_a_new_candidate_keeps_the_fitting_mappings_other_slots(monkeypatch):
+    mapper = qm.QuotaMapper('us-east-1', 'm')
+    answers = [{'tpm': {'code': 'L-US', 'name': ''}, 'rpm': None, 'tpd': None, 'concurrent': None},
+               {'tpm': None, 'rpm': None, 'tpd': {'code': 'L-USTPD', 'name': ''}, 'concurrent': None}]
+    monkeypatch.setattr(qm, 'extract_quota_codes', lambda *a: answers.pop(0))
+    tpd = {'QuotaName': 'Model invocation max tokens per day for Anthropic Claude Sonnet 4 V1 (doubled for '
+                        'cross-region calls)', 'QuotaCode': 'L-USTPD'}
+    mapper._get_quota_mapping('us-east-1', SONNET4, 'claude', 'us', QUOTAS)
+    west = mapper._get_quota_mapping('us-west-2', SONNET4, 'claude', 'us', QUOTAS + [tpd])
+    assert west['tpd']['code'] == 'L-USTPD' and west['tpm']['code'] == 'L-US'
+
+
+def test_a_candidate_the_llm_turned_down_is_not_asked_about_again(monkeypatch):
+    mapper = qm.QuotaMapper('us-east-1', 'm')
+    calls = []
+
+    def llm(region, model, fm_model_id, endpoint, candidates):
+        calls.append(1)  # always ignores the sibling's TPD quota
+        return {'tpm': {'code': 'L-US', 'name': ''}, 'rpm': None, 'tpd': None, 'concurrent': None}
+
+    monkeypatch.setattr(qm, 'extract_quota_codes', llm)
+    sibling_tpd = {'QuotaName': 'Model invocation max tokens per day for Anthropic Claude Sonnet 4 V1 Large '
+                                '(doubled for cross-region calls)', 'QuotaCode': 'L-SIB'}
+    for region in ('us-east-1', 'us-east-2', 'us-west-2'):
+        assert mapper._get_quota_mapping(region, SONNET4, 'claude', 'us', QUOTAS + [sibling_tpd])['tpd'] is None
+    entries = mapper.lcode_cache[(SONNET4, mapper._rules()[0]['us'])]
+    assert len(calls) == 1 and len(entries) == 1 and 'L-SIB' in entries[0][1]
+    # Another region offers a second sibling: asked once, the same answer is one entry that
+    # has now seen both, so a region offering either is not asked again
+    sibling2 = {'QuotaName': sibling_tpd['QuotaName'].replace('Large', 'Small'), 'QuotaCode': 'L-SIB2'}
+    mapper._get_quota_mapping('eu-west-1', SONNET4, 'claude', 'us', QUOTAS + [sibling2])
+    mapper._get_quota_mapping('eu-west-2', SONNET4, 'claude', 'us', QUOTAS + [sibling_tpd, sibling2])
+    assert len(calls) == 2 and len(entries) == 1 and {'L-SIB', 'L-SIB2'} <= entries[0][1]
+
+
 def test_quota_index_removes_saved_mismatches_in_every_region(monkeypatch, tmp_path, no_bundle, commercial_creds):
     (tmp_path / 'data').mkdir()
     wrong = {'code': 'L-GL46', 'name': 'Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.6'}
@@ -280,6 +354,47 @@ def test_a_version_inside_the_name_needs_it_in_the_quota():
                             'On-demand model inference tokens per minute for Qwen3 32B V1', REGIONAL) is None
 
 
+def test_a_quota_of_another_api_version_is_rejected():
+    v2 = 'Cross-Region model inference requests per minute for Anthropic Claude 3.5 Sonnet V2'
+    assert mapping_conflict('anthropic.claude-3-5-sonnet-20240620-v1:0', 'apac', v2, REGIONAL) == \
+        'quota is for V2, model is v1'
+    assert mapping_conflict('anthropic.claude-3-5-sonnet-20241022-v2:0', 'apac', v2, REGIONAL) is None
+    # A name without an API version, or with a generation such as 'V2.7', says nothing
+    assert mapping_conflict('anthropic.claude-3-5-sonnet-20240620-v1:0', 'apac',
+                            'Cross-region model inference requests per minute for Anthropic Claude 3.5 Sonnet',
+                            REGIONAL) is None
+    # Sibling models the version rules cannot tell apart are pinned to their names
+    v1 = 'On-demand model inference tokens per minute for Anthropic Claude 3.5 Sonnet'
+    assert 'sibling' in mapping_conflict('anthropic.claude-3-5-sonnet-20241022-v2:0', 'base', v1, REGIONAL)
+    nano = 'On-demand model inference tokens per minute for NVIDIA Nemotron Nano 2'
+    assert 'sibling' in mapping_conflict('nvidia.nemotron-nano-12b-v2', 'base', nano, REGIONAL)
+    assert mapping_conflict('nvidia.nemotron-nano-12b-v2', 'base', nano + ' VL', REGIONAL) is None
+    assert mapping_conflict('nvidia.nemotron-nano-9b-v2', 'base', nano, REGIONAL) is None
+    assert 'sibling' in mapping_conflict('nvidia.nemotron-nano-9b-v2', 'base', nano + ' VL', REGIONAL)
+    # A context-window variant of the model ID (where the fm-list keeps the 'custom' endpoint)
+    custom_v2 = '(Model customization) Sum of on demand custom model deployment tokens per minute for ' \
+                'Anthropic Claude 3.5 Sonnet V2'
+    assert mapping_conflict('anthropic.claude-3-5-sonnet-20240620-v1:0:200k', 'custom', custom_v2,
+                            REGIONAL) == 'quota is for V2, model is v1'
+    assert mapping_conflict('anthropic.claude-3-5-sonnet-20241022-v2:0:200k', 'custom', custom_v2, REGIONAL) is None
+    assert 'sibling' in mapping_conflict('anthropic.claude-3-5-sonnet-20241022-v2:0:200k', 'custom',
+                                         custom_v2.replace(' V2', ''), REGIONAL)
+    # A context variant without a unit (':512' tokens)
+    embed_v4 = 'On-demand model inference requests per minute for Cohere Embed English V4'
+    assert mapping_conflict('cohere.embed-english-v3:0:512', 'base', embed_v4, REGIONAL) == \
+        mapping_conflict('cohere.embed-english-v3', 'base', embed_v4, REGIONAL) == 'quota is for V4, model is v3'
+    # The API version written in lowercase
+    assert mapping_conflict('anthropic.claude-3-5-sonnet-20240620-v1:0', 'apac',
+                            'Cross-region model inference requests per minute for Anthropic Claude 3.5 Sonnet v2',
+                            REGIONAL) == 'quota is for V2, model is v1'
+    # A 'V3' that is the model's generation, as its ID says
+    assert mapping_conflict('deepseek.v3-v1:0', 'base',
+                            'On-demand model inference tokens per minute for DeepSeek V3', REGIONAL) is None
+    assert mapping_conflict('twelvelabs.marengo-embed-2-7-v1:0', 'base',
+                            'On-demand model inference requests per minute for TwelveLabs Marengo Embed V2.7',
+                            REGIONAL) is None
+
+
 def test_latency_optimized_quota_is_rejected():
     name = 'On-Demand, latency-optimized model inference tokens per minute for Amazon Nova Pro V1'
     assert mapping_conflict('amazon.nova-pro-v1:0', 'base', name, REGIONAL) == 'latency-optimized inference quota'
@@ -301,6 +416,25 @@ def test_quota_index_keeps_other_partitions_rows(monkeypatch, tmp_path, no_bundl
     csv_text = (tmp_path / 'data' / 'quota-index.csv').read_text()
     assert 'L-COMM' in csv_text and 'L-GOV' in csv_text
     assert set(checked) == {'L-GOV'}                  # never the other partition's codes
+
+
+def test_quota_index_keeps_a_slot_only_a_later_region_maps(monkeypatch, tmp_path, no_bundle, commercial_creds):
+    """ap-south-1 maps a TPD the first region leaves empty: it is indexed, checked there."""
+    (tmp_path / 'data').mkdir()
+    save_yaml(str(tmp_path / 'data' / 'regions.yml'), {'regions': ['ap-northeast-2', 'ap-south-1']})
+    name = 'Cross-Region model inference {} for Anthropic Claude 3.5 Sonnet V2'
+    for region, tpd in (('ap-northeast-2', None), ('ap-south-1', {'code': 'L-TPD', 'name': name.format('tokens per day')})):
+        save_yaml(str(tmp_path / 'data' / f'fm-list-{region}.yml'), {'models': [
+            {'model_id': 'anthropic.claude-3-5-sonnet-20241022-v2:0', 'provider': 'Anthropic', 'endpoints': {
+                'apac': {'quotas': {'rpm': {'code': 'L-RPM', 'name': name.format('requests per minute')}, 'tpd': tpd}}}}]})
+    checked = []
+    names = {'L-RPM': name.format('requests per minute'), 'L-TPD': name.format('tokens per day')}
+    monkeypatch.setattr('bedrock_usage_analyzer.aws.servicequotas.check_quota',
+                        lambda code, region: checked.append((code, region)) or ('ok', {'QuotaName': names[code]}))
+    quota_index.QuotaIndexGenerator().run()
+    csv_text = (tmp_path / 'data' / 'quota-index.csv').read_text()
+    assert 'L-RPM' in csv_text and 'L-TPD' in csv_text
+    assert ('L-RPM', 'ap-northeast-2') in checked and ('L-TPD', 'ap-south-1') in checked
 
 
 def test_quota_index_prefers_home_and_enabled_regions_and_writes_partition(monkeypatch, tmp_path, no_bundle, commercial_creds):

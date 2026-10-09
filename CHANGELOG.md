@@ -2,7 +2,7 @@
 
 All notable changes to the Bedrock Usage Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.7.0-beta] - 2026-10-07
 
 ### Added
 - **Usage by IAM principal** (`--breakdown principal|session|tag:<key>|metadata:<key>`, `--principal`,
@@ -12,19 +12,49 @@ All notable changes to the Bedrock Usage Analyzer will be documented in this fil
   Logs Insights (metadata fields only). Rows show tokens, requests, shares of the endpoint total, TPM/RPM
   (P50, P90, max) and TPD; usage the logs do not hold is its own row. Totals and quotas stay CloudWatch's.
 - **Custom model deployments**: analyze on-demand custom model deployments, picked
-  interactively or passed with `-m <custom-model-deployment ARN>`. Usage comes from CloudWatch
+  interactively or passed with `-m` (deployment ARN, ID or name). Usage comes from CloudWatch
   under the deployment ARN; limits are the base model's "(Model customization) Sum of on demand
   custom model deployment ..." quotas, mapped in the fm-list as the base model's `custom`
-  endpoint (added by `refresh fm-list` for models that support customization). A deployment
-  can also be passed by its ID or name.
+  endpoint (added by `refresh fm-list` for models that support customization). This covers
+  customized Amazon Nova models (Nova 2 Lite, Lite, Micro, Pro), whether trained in Bedrock or
+  in SageMaker AI.
+- **Imported models (Custom Model Import)**: analyze models brought in with Custom Model Import,
+  picked interactively ("Imported models", offered when the region has one) or passed with `-m`
+  as the imported model ARN, ID or name. Usage comes from CloudWatch under the imported model ARN;
+  reports show usage and throttles without limits, as imported models have no per-model token or
+  request quotas. Optional permissions: `bedrock:ListImportedModels` (the picker; names models
+  and resolves IDs and names in one request) and `bedrock:GetImportedModel` (reads one model
+  by ARN, ID or name when the listing fails; an ARN a working listing does not have is reported
+  as not among the region's imported models). API callers pass imported models as
+  `{'model_id': <id>, 'profile_prefix': 'imported', 'application_profile_ids': [<ARN>, ...]}`.
+  An imported model's JSON report has `"imported": true` and `disclaimers.imported` in place of
+  `disclaimers.throttling`, and no per-metric TPM/TPD `disclaimer` keys (the token quota
+  disclaimers do not apply).
 
 ### Fixed
-- Quota mapping no longer gives an on-demand endpoint the latency-optimized quotas, or a model
-  whose version is part of its name (Nova 2.5 Sonic) the quota of the unversioned family.
+- Quota mapping no longer gives an on-demand endpoint the latency-optimized quotas, a model
+  whose version is part of its name (Nova 2.5 Sonic) the quota of the unversioned family, a
+  model a quota that names another API version (a "... Claude 3.5 Sonnet V2" quota for
+  `anthropic.claude-3-5-sonnet-20240620-v1:0`), or Claude 3.5 Sonnet V2 and Nemotron Nano 12B v2
+  and 9B v2 the quotas of their sibling models, so a refresh cannot bring those mappings back.
+- `bua refresh fm-quotas` no longer copies a model's mapping from an earlier region with an
+  empty slot (for example no TPD quota there) to a region that lists that quota; the model is
+  mapped again there.
+- Bundled quota mappings: `nvidia.nemotron-nano-12b-v2` now uses the "NVIDIA Nemotron Nano 2 VL"
+  quotas (it had the 9B model's "Nemotron Nano 2" ones, 10 regions); the `us` profiles of
+  Stable Image Outpaint, Search and Recolor and Style Transfer (us-east-1, us-east-2, us-west-2)
+  get their RPM quota, and Stable Diffusion 3.5 Large on demand (us-west-2) its RPM quota.
 
 ### Changed
-- Refreshed bundled fm-lists and quota mappings (adds `amazon.nova-2-5-sonic` and new
-  inference profile endpoints).
+- Refreshed bundled fm-lists and quota mappings: adds `amazon.nova-2-5-sonic`, `zai.glm-5.3` and
+  new inference profile endpoints. Newly mapped where Service Quotas lists them: Grok 4.7
+  `global` TPM (12 regions), Claude Sonnet 5.5 `global` TPM (15 regions), GPT-6.1 Sol `global`
+  TPM and TPD (15 regions), the `in` profiles of Claude Haiku 4.5, Sonnet 5 and Opus 5
+  (ap-south-1, ap-south-2), Claude Sonnet 5 on demand TPM (ap-northeast-2, ap-southeast-1,
+  eu-west-2), Claude Opus 5 on demand TPM (ap-northeast-2), Claude 3.5 Sonnet V2 `apac` TPD
+  (ap-south-1), and on demand TPD for Claude 3 Haiku (ca-central-1, eu-central-2, sa-east-1),
+  Nova Lite, Micro and Pro (eu-west-2) and Cohere Embed v4 (ap-northeast-1). Kimi K3 keeps its `us` and `global` mappings. GLM 5.3 has no Service Quotas
+  yet, so it is reported without limits.
 - Requires boto3 1.39.7 or later (custom model deployment APIs).
 
 ## [0.6.0-beta] - 2026-09-30

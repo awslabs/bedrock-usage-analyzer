@@ -183,9 +183,9 @@ def model_id_forms(cw_ids: Iterable[str], region: str, account: Optional[str],
     """Every spelling of each CloudWatch ModelId value that invocation logs may record.
 
     The log's modelId is what the caller passed: a model ID or its ARN, an inference profile
-    ID or ARN, an application profile ARN, or a deployment ARN. CloudWatch reports all of them
-    under one ModelId value (the profile or model ID, the application profile ID, the
-    deployment ARN). known_models are the region's foundation model IDs. Returns {log
+    ID or ARN, an application profile ARN, a deployment ARN or an imported model ARN. CloudWatch
+    reports all of them under one ModelId value (the profile or model ID, the application profile
+    ID, the deployment or imported model ARN). known_models are the region's foundation model IDs. Returns {log
     spelling: CloudWatch ModelId value}.
     """
     known_models = set(known_models)
@@ -193,7 +193,7 @@ def model_id_forms(cw_ids: Iterable[str], region: str, account: Optional[str],
     for cw_id in cw_ids:
         forms[cw_id] = cw_id
         if cw_id.startswith('arn:'):
-            continue  # a deployment ARN is recorded as it is
+            continue  # a deployment or imported model ARN is recorded as it is
         model_id, prefix = split_profile_id(cw_id)
         if '.' not in cw_id and ':' not in cw_id:
             # An application inference profile ID

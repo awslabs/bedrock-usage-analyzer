@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, FrozenSet, Iterable, List, Optional
 
 from bedrock_usage_analyzer.core.errors import AWS_ERRORS, is_access_denied
-from bedrock_usage_analyzer.utils.yaml_handler import CUSTOM_ENDPOINT, endpoint_keys
+from bedrock_usage_analyzer.utils.yaml_handler import CUSTOM_ENDPOINT, IMPORTED_ENDPOINT, endpoint_keys
 from bedrock_usage_analyzer.aws.bedrock import (
     endpoint_id,
     get_default_region_prefix_map,
@@ -19,7 +19,8 @@ from bedrock_usage_analyzer.aws.bedrock import (
     region_group,
 )
 from bedrock_usage_analyzer.aws.custom_models import (
-    base_model_id, base_model_id_in_arn, deployment_short_id, is_active, list_deployments, read_deployment)
+    base_model_id, base_model_id_in_arn, deployment_short_id, is_active, list_deployments,
+    list_imported_models, read_deployment, read_imported_model)
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ TAG_WORKERS = 8
 
 
 _MISSING_API = re.compile(
-    r"object has no attribute '(list_custom_model_deployments|get_custom_model_deployment|get_custom_model)'$")
+    r"object has no attribute '(list_custom_model_deployments|get_custom_model_deployment|get_custom_model|list_imported_models|get_imported_model)'$")
 
 
 def missing_deployment_api(error: Exception) -> bool:
@@ -130,6 +131,9 @@ class InferenceProfileFetcher:
         # deployed model ARN -> base model ID, or the error reading it (raised again)
         self._base_models: Dict[str, object] = {}
         self._read_deployments: Dict[str, object] = {}  # identifier -> summary, or its read error
+        self._imported: Optional[List[Dict]] = None
+        self._imported_error: Optional[Exception] = None
+        self._read_imported: Dict[str, object] = {}  # identifier -> summary, or its read error
 
     # ------------------------------------------------------------------ custom models
 
@@ -147,8 +151,11 @@ class InferenceProfileFetcher:
                 break
             try:
                 self._deployments = list_deployments(self.bedrock_client)
-            except AWS_ERRORS as e:
-                if is_access_denied(e) or attempt + 1 == MAX_LISTING_ATTEMPTS:
+            except Exception as e:
+                if not deployment_read_error(e):
+                    raise  # a bug
+                if missing_deployment_api(e) or is_access_denied(e) or attempt + 1 == MAX_LISTING_ATTEMPTS:
+                    # Recorded, as for imported models: an older boto3 cannot be retried either
                     self._deployments_error = e
                     raise
                 logger.debug(f"Listing custom model deployments failed, retrying: {e}")
@@ -210,6 +217,46 @@ class InferenceProfileFetcher:
                 return None  # kept: read_custom_deployment raises it again for its caller
         model_arns = in_parallel(read, [i for i in dict.fromkeys(identifiers) if i not in self._read_deployments])
         self.read_base_models([a for a in model_arns if a])
+
+    def list_imported_models(self) -> List[Dict]:
+        """The region's Custom Model Import models, listed once per run. As for deployments, a
+        failed listing is retried once at once; access denied or a second failure is raised
+        again on later calls without another request."""
+        if self._imported_error is not None:
+            raise self._imported_error
+        for attempt in range(MAX_LISTING_ATTEMPTS):
+            if self._imported is not None:
+                break
+            try:
+                self._imported = list_imported_models(self.bedrock_client)
+            except Exception as e:
+                if not deployment_read_error(e):
+                    raise  # a bug
+                if missing_deployment_api(e) or is_access_denied(e) or attempt + 1 == MAX_LISTING_ATTEMPTS:
+                    # Recorded, so readers fall back to GetImportedModel and say why (an older
+                    # boto3 is recorded too: retrying cannot help)
+                    self._imported_error = e
+                    raise
+                logger.debug(f"Listing imported models failed, retrying: {e}")
+        return self._imported
+
+    @property
+    def imported_models_error(self) -> Optional[Exception]:
+        """The error the imported model listing gave up on, or None."""
+        return self._imported_error
+
+    def read_imported_model(self, identifier: str) -> Dict:
+        """An imported model's summary (arn, name), read by its ARN or name once per run: an
+        API error is raised again without another request."""
+        if identifier not in self._read_imported:
+            try:
+                self._read_imported[identifier] = read_imported_model(self.bedrock_client, identifier)
+            except AWS_ERRORS as e:
+                self._read_imported[identifier] = e
+        result = self._read_imported[identifier]
+        if isinstance(result, Exception):
+            raise result
+        return result
 
     def note_deployment_name(self, arn: str, name: str):
         """Remember a selected deployment's name, so find_profiles need not read it again."""
@@ -531,12 +578,12 @@ class InferenceProfileFetcher:
         return profile_id in self._system_ids
 
     def resolve_application_profile(self, identifier: str) -> Optional[Dict]:
-        """Find an application profile by ID, ARN or name."""
+        """Find an application profile by ID or ARN, else by name (a name may equal another
+        profile's ID, so the ID wins, whatever the listing order)."""
         identifier = identifier.strip()
-        for profile in self.list_application_profiles():
-            if identifier in (profile['id'], profile['arn'], profile['name']):
-                return profile
-        return None
+        profiles = self.list_application_profiles()
+        return next((p for p in profiles if identifier in (p['id'], p['arn'])), None) or \
+            next((p for p in profiles if p['name'] == identifier), None)
 
     def routes_to_no_foundation_model(self, identifier: str) -> bool:
         """True for an application profile left out of the listing because it copies no
@@ -558,19 +605,22 @@ class InferenceProfileFetcher:
             self._tags_cache[profile_arn] = tags
         return self._tags_cache[profile_arn]
 
-    def _deployment_targets(self, deployment_arns):
-        """(ARNs, names, metadata) of custom model deployments, named by their deployment name
-        and with their tags, as application profiles are."""
+    def _deployment_targets(self, deployment_arns, imported=False):
+        """(ARNs, names, metadata) of custom model deployments (or imported models), named by
+        their name and with their tags, as application profiles are."""
         def target(arn):
             name = self._deployment_names.get(arn)  # resolved when it was selected
+            if name is None and imported:
+                # Not selected through UserInputs (an API caller): the listing if one was made
+                name = next((m['name'] for m in self._imported or [] if m['arn'] == arn), None)
             if name is None:
                 # The name is cosmetic: the ARN still gives the metrics
                 try:
-                    name = self.read_custom_deployment(arn)['name']
+                    name = (self.read_imported_model(arn) if imported else self.read_custom_deployment(arn))['name']
                 except Exception as e:
                     if not deployment_read_error(e):
                         raise
-                    logger.debug(f"Could not read custom model deployment {arn}: {e}")
+                    logger.debug(f"Could not read {arn}: {e}")
             name = name or deployment_short_id(arn)
             return name, {'id': deployment_short_id(arn), 'tags': self._get_tags(arn, name)}
 
@@ -591,10 +641,12 @@ class InferenceProfileFetcher:
             tuple: (profiles list, profile_names dict, profile_metadata dict)
                    profile_metadata contains 'id' and 'tags' for each profile
         """
-        if profile_prefix == CUSTOM_ENDPOINT:
-            # Custom model deployments: CloudWatch reports each one under its deployment ARN
-            # (no application profiles; the base model's 'custom' quotas apply)
-            return self._deployment_targets(application_profile_ids or [])
+        if profile_prefix in (CUSTOM_ENDPOINT, IMPORTED_ENDPOINT):
+            # Custom model deployments and imported models: CloudWatch reports each one under
+            # its ARN (no application profiles; for deployments the base model's 'custom'
+            # quotas apply, imported models have none)
+            return self._deployment_targets(application_profile_ids or [],
+                                            imported=profile_prefix == IMPORTED_ENDPOINT)
         logger.info("  Discovering inference profiles...")
         target_endpoint = endpoint_id(model_id, profile_prefix)
 

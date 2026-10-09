@@ -14,15 +14,16 @@ from bedrock_usage_analyzer.core.breakdown import BreakdownBuilder
 from bedrock_usage_analyzer.core.profile_fetcher import UNKNOWN_SOURCE, InferenceProfileFetcher, in_parallel
 from bedrock_usage_analyzer.sync.quota_rules import scrub_conflicting
 from bedrock_usage_analyzer.core.metrics_fetcher import PERIOD_DAYS, CloudWatchMetricsFetcher
-from bedrock_usage_analyzer.core.output_generator import APPLICATION_PROFILE_SCOPE, DEPLOYMENT_SCOPE, OutputGenerator
+from bedrock_usage_analyzer.core.output_generator import (
+    APPLICATION_PROFILE_SCOPE, DEPLOYMENT_SCOPE, IMPORTED_SCOPE, OutputGenerator)
 from bedrock_usage_analyzer.aws.bedrock import (
     endpoint_id, get_endpoint_quota_keywords, get_regional_profile_prefixes)
-from bedrock_usage_analyzer.aws.custom_models import deployment_short_id
+from bedrock_usage_analyzer.aws.custom_models import deployment_short_id, is_imported
 from bedrock_usage_analyzer.aws.client_factory import create_client
 from bedrock_usage_analyzer.aws.servicequotas import (
     QUOTA_ERROR, QUOTA_MISSING, QUOTA_OK, list_quota_codes, lookup_quota)
 from bedrock_usage_analyzer.utils.yaml_handler import (
-    CUSTOM_ENDPOINT, endpoint_quotas, fm_endpoints, has_endpoint, load_fm_list, profile_endpoints)
+    CUSTOM_ENDPOINT, IMPORTED_ENDPOINT, endpoint_quotas, fm_endpoints, has_endpoint, load_fm_list, profile_endpoints)
 from bedrock_usage_analyzer.utils.partition import get_region_info, get_service_quota_url
 
 logger = logging.getLogger(__name__)
@@ -259,8 +260,29 @@ class BedrockAnalyzer:
     @staticmethod
     def _scope_key(model_config):
         """Cache key for one analysis target (model, endpoint and optional profile subset)."""
-        app_ids = tuple(sorted(model_config.get('application_profile_ids') or ()))
-        return (model_config['model_id'], model_config.get('profile_prefix'), app_ids)
+        app_ids = tuple(sorted(set(model_config.get('application_profile_ids') or ())))  # an ARN passed twice is one
+        model_id = model_config['model_id']
+        if model_config.get('profile_prefix') == IMPORTED_ENDPOINT and app_ids and all(map(is_imported, app_ids)):
+            # Imported reports ignore the caller's model_id: the same models are one target
+            model_id = deployment_short_id(app_ids[0])
+        return (model_id, model_config.get('profile_prefix'), app_ids)
+
+    @staticmethod
+    def _imported_target(key) -> bool:
+        """True when a target (its scope key) is Custom Model Import models (profile_prefix
+        'imported'), reported under their ARNs without limits. Raises ValueError for imported
+        model ARNs under any other kind, or other ARNs under 'imported': custom model
+        deployments are measured against their base model's quotas, imported models against none."""
+        model_id, profile_prefix, app_ids = key
+        if profile_prefix == IMPORTED_ENDPOINT:
+            if not app_ids or not all(is_imported(a) for a in app_ids):
+                raise ValueError(f"target {model_id}: profile_prefix '{IMPORTED_ENDPOINT}' needs imported "
+                                 f"model ARNs in application_profile_ids")
+            return True
+        if any(is_imported(a) for a in app_ids) or is_imported(model_id):
+            raise ValueError(f"target {model_id}: pass imported model ARNs with profile_prefix "
+                             f"'{IMPORTED_ENDPOINT}', as separate targets")
+        return False
 
     def _warn_other_deployments(self, base, deployment_arns):
         """Tell the user when other active deployments share the base model's custom
@@ -297,6 +319,9 @@ class BedrockAnalyzer:
                 analyze only those application inference profiles.
             output_dir: Directory to save results
         """
+        for model_config in models:
+            # A wrong target fails before any AWS call (and before the output directory is made)
+            self._imported_target(self._scope_key(model_config))
         self.output_generator = OutputGenerator(output_dir)
 
         # Step 0: Discover all profiles once for all models
@@ -328,7 +353,7 @@ class BedrockAnalyzer:
         # quotas is cheaper than one GetServiceQuota call each
         # Counted with the same reader the lookups use (it also reads the legacy model-level
         # 'quotas' of a base endpoint)
-        targets = {(model_id, prefix) for model_id, prefix, _ in all_profiles_map}
+        targets = {(model_id, prefix) for model_id, prefix, _ in all_profiles_map if prefix != IMPORTED_ENDPOINT}
         codes = {q['code'] for model_id, prefix in targets
                  for q in self._load_quota_codes(model_id, prefix, quiet=True).values()
                  if isinstance(q, dict) and q.get('code')}
@@ -358,6 +383,7 @@ class BedrockAnalyzer:
                 continue
             processed.add(key)
             model_id, profile_prefix, app_ids = key
+            imported = self._imported_target(key)
 
             logger.info(f"\n{'='*80}")
             logger.info(f"Processing model: {model_id}")
@@ -371,8 +397,9 @@ class BedrockAnalyzer:
                 continue
 
             # Step 2: Fetch quotas
-            quota_codes = self._load_quota_codes(model_id, profile_prefix)
-            retired = profile_prefix not in (None, UNKNOWN_SOURCE, CUSTOM_ENDPOINT) and \
+            # Imported models have no quotas, whatever model ID an API caller gives them
+            quota_codes = {} if imported else self._load_quota_codes(model_id, profile_prefix)
+            retired = profile_prefix not in (None, UNKNOWN_SOURCE, CUSTOM_ENDPOINT, IMPORTED_ENDPOINT) and \
                 not self._system_profile_listed(endpoint_id(model_id, profile_prefix))
             if profile_prefix is None and app_ids:
                 # A base-model copy of a model the fm-list knows without an on-demand endpoint:
@@ -385,6 +412,10 @@ class BedrockAnalyzer:
                     else "the report will show usage without limits"
                 logger.info(f"  {endpoint_id(model_id, profile_prefix)} is not offered in "
                             f"{self.region}; {ending}")
+            elif imported:
+                # Said here, where CLI and API runs both pass
+                logger.info("  Custom Model Import models have no per-model token or request quotas (Bedrock "
+                            "scales the model copies that serve them), so the report shows usage without limits")
             elif not any(quota_codes.values()) and profile_prefix == CUSTOM_ENDPOINT:
                 if _base_unknown(model_id, app_ids):
                     # No base model: the deployment ID stands in for it (said when it was
@@ -406,7 +437,10 @@ class BedrockAnalyzer:
                     # fm-quotas has no quota keyword for it, so refreshing cannot map one
                     fix = None
                 elif self._endpoint_listed(model_id, profile_prefix):
-                    fix = f"bua refresh fm-quotas {self.region}"
+                    # A new model may have no quotas in Service Quotas yet (zai.glm-5.3): then
+                    # refreshing maps none either
+                    fix = (f"bua refresh fm-quotas {self.region} (if Service Quotas lists quotas for it; "
+                           f"a new model may have none yet)")
                 elif profile_prefix is None and profiles:
                     # No on-demand endpoint: refreshing cannot add one, its profiles have the limits
                     fix = "analyze one of its inference profiles instead: " + \
@@ -493,7 +527,16 @@ class BedrockAnalyzer:
             logger.info(f"  Generating output files...")
             end_time_local = datetime.now(self.local_tz)
             scope_label = APPLICATION_PROFILE_SCOPE
-            if profile_prefix == CUSTOM_ENDPOINT:
+            report_model = model_id
+            if imported:
+                # Named by the imported model IDs, whatever model ID an API caller passed
+                ids = [deployment_short_id(a) for a in app_ids]
+                report_model = ', '.join(ids)
+                endpoint = f"{ids[0]} (imported model)" if len(ids) == 1 else f"{len(ids)} imported models"
+                scope_label = IMPORTED_SCOPE
+                file_label = f"imported-model.{ids[0]}" if len(ids) == 1 else \
+                    self._file_label("imported", ids, marker='models')
+            elif profile_prefix == CUSTOM_ENDPOINT:
                 endpoint = f"{model_id} (custom model deployment)"
                 scope_label = DEPLOYMENT_SCOPE
                 # Deployment IDs, not their ARNs, in the file name
@@ -506,7 +549,7 @@ class BedrockAnalyzer:
             scope = [profile_names.get(pid, pid) for pid in final_model_ids] if app_ids else []
 
             self.output_generator.generate({
-                model_id: {
+                report_model: {
                     'stats': model_results,
                     'time_series': time_series_data,
                     'quotas': quotas,
@@ -520,6 +563,7 @@ class BedrockAnalyzer:
                     'endpoint': endpoint,
                     'application_profile_scope': scope,
                     'scope_label': scope_label,
+                    'imported': imported,
                     'file_label': file_label,
                     'breakdown': breakdown_section,
                 }
@@ -529,14 +573,17 @@ class BedrockAnalyzer:
     def _file_label(endpoint, app_ids, marker='app'):
         """Distinct output name per target, so two endpoints of one model do not overwrite each other.
 
-        ``marker`` names what the IDs are: 'app' (application profiles) or 'deployment'.
+        ``marker`` names what the IDs are: 'app' (application profiles), 'deployment' or
+        'models' (imported models: 'imported-models-<id>-<id>').
         """
         if app_ids:
             if len(app_ids) <= 3:
                 return f"{endpoint}-{marker}-{'-'.join(app_ids)}"
             # Many targets: a short digest of the sorted IDs keeps different sets apart
             digest = hashlib.sha256('\n'.join(sorted(app_ids)).encode()).hexdigest()[:8]
-            kind = 'profiles' if marker == 'app' else 'deployments'
+            if marker == 'models':
+                return f"{endpoint}-models-{len(app_ids)}-{digest}"
+            kind = {'app': 'profiles'}.get(marker, 'deployments')
             return f"{endpoint}-{marker}-{len(app_ids)}{kind}-{digest}"
         return endpoint
 

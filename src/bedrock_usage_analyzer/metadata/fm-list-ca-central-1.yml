@@ -116,7 +116,10 @@ models:
           code: L-2DC80978
           name: On-demand model inference requests per minute for Anthropic Claude
             3 Haiku
-        tpd: null
+        tpd:
+          code: L-A60EE1AF
+          name: Model invocation max tokens per day for Anthropic Claude 3 Haiku (doubled
+            for cross-region calls)
         tpm:
           code: L-8CE99163
           name: On-demand model inference tokens per minute for Anthropic Claude 3
@@ -942,6 +945,19 @@ models:
   - INFERENCE_PROFILE
   model_id: twelvelabs.pegasus-1-2-v1:0
   provider: TwelveLabs
+- endpoints:
+    global:
+      quotas:
+        concurrent: null
+        rpm: null
+        tpd: null
+        tpm: null
+  inference_profiles:
+  - global
+  inference_types:
+  - INFERENCE_PROFILE
+  model_id: zai.glm-5.3
+  provider: Z.AI
 - endpoints:
     global:
       quotas:

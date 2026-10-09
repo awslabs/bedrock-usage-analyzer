@@ -236,16 +236,26 @@ class QuotaMapper:
         region_codes = self._listed_codes.get(region)
         if region_codes is None:  # called without _process_region (the region's listing)
             region_codes = {q.get('QuotaCode') for q in quotas}
-        cached = self.lcode_cache.get(cache_key)
-        # Codes are shared across regions, but a region may lack a quota: reuse the cached
-        # mapping only when every code in it exists in this region
-        if cached and all(v['code'] in region_codes for v in cached.values() if v):
-            return copy.deepcopy(cached)
-
         # Get the candidates (list) of possible quota names for a given FM, based on the keyword search on the FM's common or base name
         matching_quotas = self._find_matching_quotas(quotas, common_name, endpoint_type, model_id)
+        # Codes are shared across regions, but a region may lack a quota: reuse a cached mapping
+        # only when every code in it exists in this region, and no unused candidate here measures
+        # one of its empty slots and was not offered when it was made (a quota the region it came
+        # from lacked, e.g. a TPD quota, would otherwise stay unmapped here; one the LLM already
+        # turned down is not asked about again). Each mapping is kept, newest first, with the
+        # candidate codes it was made from, so regions with and without such a quota each reuse
+        # their own.
+        fitting = None  # a cached mapping this region has every code of, kept if the LLM fails
+        for cached, considered in self.lcode_cache.get(cache_key, ()):
+            if not all(v['code'] in region_codes for v in cached.values() if v):
+                continue
+            fitting = fitting or cached
+            empty = [slot for slot, v in cached.items() if not v]
+            if not any(measures_metric(slot, q['name']) for q in matching_quotas if q['code'] not in considered
+                       for slot in empty):
+                return copy.deepcopy(cached)
         if not matching_quotas:
-            return None
+            return None  # (a fitting cached mapping was already returned: no candidate is new)
 
         # Call LLM
         # Inputs are the possible matching quota names for the given FM
@@ -254,12 +264,33 @@ class QuotaMapper:
             self.bedrock_region, self.model_id, model_id,
             endpoint_type, matching_quotas
         )
+        answered = quota_mapping is not None  # None: the call failed (later regions may ask again)
         quota_mapping = self._drop_invalid_choices(quota_mapping, matching_quotas, model_id, endpoint_type)
+        if quota_mapping and fitting:
+            # Asked again for a new candidate: a slot the fitting mapping filled and the new answer
+            # leaves empty keeps the fitting mapping's quota (it exists in this region)
+            quota_mapping = {slot: quota_mapping.get(slot) or fitting.get(slot)
+                             for slot in {**fitting, **quota_mapping}}
 
         if quota_mapping:
-            # The newest valid mapping replaces one that did not fit this region, so the next
-            # regions with the same quota set reuse it instead of asking the LLM again
-            self.lcode_cache[cache_key] = quota_mapping
+            # Tried first from now on, so the next regions with the same quota set reuse it
+            # instead of asking the LLM again
+            entries = self.lcode_cache.setdefault(cache_key, [])
+            considered = {q['code'] for q in matching_quotas}
+            if fitting:  # merged with it: what it was judged against is covered too
+                considered |= next(c for m, c in entries if m is fitting)
+            same = next((e for e in entries if e[0] == quota_mapping), None)
+            if same:  # the same answer: one entry that has now seen both candidate sets
+                entries.remove(same)
+                considered |= same[1]
+            entries.insert(0, (quota_mapping, considered))
+        elif fitting:
+            # No usable answer: the mapping that fits is better than none. If the LLM answered
+            # (and so turned the new candidates down), they are not asked about again
+            if answered:
+                entry = next(e for e in self.lcode_cache[cache_key] if e[0] is fitting)
+                entry[1].update(q['code'] for q in matching_quotas)
+            return copy.deepcopy(fitting)
 
         return quota_mapping
 

@@ -21,6 +21,23 @@ _API_VERSION_TOKEN = re.compile(r'^v\d+(?:\.\d+)?$')
 _SIZE_TOKEN = re.compile(r'^\d+(?:\.\d+)?[bmk]$')
 # A version in a quota name: '4.6' in 'Sonnet 4.6', '6' in 'GPT-6 Sol'; not '20B', 'V2' or 'K2.5'
 _NAME_VERSION = re.compile(r'(?<![\w.])(\d{1,2}(?:\.\d{1,2})?)(?![\w.])')
+# The API version of a model ID ('-v2:0', '-v1') and of a quota name ('Claude 3.5 Sonnet V2';
+# not 'Marengo Embed V2.7', which is the model's generation)
+_ID_API_VERSION = re.compile(r'-v(\d+)(?::\d+)?$')
+# A context-window variant after the revision: ':200k', ':8k', ':1m', and ':512' (tokens, no unit)
+_CONTEXT_SUFFIX = re.compile(r'(:\d+):\d+[km]?$')
+_NAME_API_VERSION = re.compile(r'(?<![\w.])[Vv](\d+)(?![\w.])')
+# Models whose quotas differ from a sibling's only by words the rules above cannot tell apart:
+# each quota of the model names these words ('... Claude 3.5 Sonnet' is the V1 model's quota,
+# '... Nemotron Nano 2' the 9B model's)
+_NAME_MUST_SAY = {
+    'anthropic.claude-3-5-sonnet-20241022-v2:0': 'claude 3.5 sonnet v2',
+    'nvidia.nemotron-nano-12b-v2': 'nemotron nano 2 vl',
+}
+# ... and the other way: the sibling's words never name this model's quota
+_NAME_MUST_NOT_SAY = {
+    'nvidia.nemotron-nano-9b-v2': 'nemotron nano 2 vl',
+}
 
 
 def model_version(model_id: str) -> Optional[str]:
@@ -132,6 +149,26 @@ def mapping_conflict(model_id: str, endpoint_type: str, quota_name: Optional[str
         return f"quota is for version {'/'.join(sorted(versions))}, model is {version}"
     if version and not versions and _version_inside_name(model_id):
         return f"quota names no version, model is {version}"
+    # The model without its context-window variant ('...-v1:0:200k' is '...-v1:0' with a 200K
+    # context): the fm-list keeps such IDs, with their 'custom' endpoint
+    base_id = _CONTEXT_SUFFIX.sub(r'\1', model_id.lower())
+    id_api = _ID_API_VERSION.search(base_id)
+    name_api = set(_NAME_API_VERSION.findall(quota_name))
+    if id_api:
+        # A 'V3' the ID also has as a name token is the model's generation ('DeepSeek V3' for
+        # deepseek.v3-v1:0), not its API version
+        stem = base_id[:id_api.start()]
+        name_api -= {n for n in name_api if f'v{n}' in re.split(r'[-_.]', stem)}
+    if id_api and name_api and id_api.group(1) not in name_api:
+        # 'Claude 3.5 Sonnet V2' is the quota of claude-3-5-sonnet-20241022-v2:0, not of -v1:0
+        return f"quota is for V{'/V'.join(sorted(name_api))}, model is v{id_api.group(1)}"
+    must_say = _NAME_MUST_SAY.get(base_id)
+    words = ' '.join(name.split())
+    if must_say and must_say not in words:
+        return f"quota is not for {must_say} (a sibling model's)"
+    must_not_say = _NAME_MUST_NOT_SAY.get(base_id)
+    if must_not_say and must_not_say in words:
+        return f"quota is for {must_not_say} (a sibling model's)"
     return None
 
 
